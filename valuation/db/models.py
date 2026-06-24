@@ -113,11 +113,13 @@ class DailySignal(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Consensus(Base):
-    __tablename__ = "consensus"
+    __tablename__ = "consensus_history"
     
     ticker = Column(String, ForeignKey("tickers.ticker"), primary_key=True)
     broker = Column(String, primary_key=True)
     report_date = Column(Date, primary_key=True)
     target_price = Column(Numeric)
     rating = Column(String)
-    source = Column(String)
+    source_url = Column(String)
+    raw_quote = Column(String)
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now())
