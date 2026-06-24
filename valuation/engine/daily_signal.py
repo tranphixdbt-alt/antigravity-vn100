@@ -193,6 +193,9 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         # 9. Calculate Confidence (0.5 - 1.0)
         confidence = 1.0
         
+        if "SECTOR_UNVALIDATED" in flags:
+            confidence -= 0.30
+            
         if is_stale:
             confidence -= 0.20
             

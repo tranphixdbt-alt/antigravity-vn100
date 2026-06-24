@@ -134,8 +134,15 @@ def run_qc_checks(ticker: str, sector_name: str, financials: pd.DataFrame, marke
     bank_sectors = ['Ngân hàng', 'Banks']
     other_fin_sectors = ['Chứng khoán', 'Bảo hiểm', 'Financial Services', 'Insurance', 'Securities', 'Dịch vụ tài chính']
     
+    # Danh sách các sector đã vượt qua cổng chất lượng (validated)
+    VALIDATED_SECTORS = {'Ngân hàng', 'Banks', 'Chứng khoán', 'Securities', 'Thép', 'Steel', 'Công nghệ', 'Technology'}
+    
+    flags = []
+    if not sector_name or sector_name not in VALIDATED_SECTORS:
+        flags.append("SECTOR_UNVALIDATED")
+        
     if sector_name and (sector_name in bank_sectors or sector_name in other_fin_sectors):
-        flags = ["financial_sector_skipped_standard_qc"]
+        flags.append("financial_sector_skipped_standard_qc")
         if sector_name in other_fin_sectors:
             flags.append("FINANCIAL_QC_MISSING")
             
@@ -167,7 +174,6 @@ def run_qc_checks(ticker: str, sector_name: str, financials: pd.DataFrame, marke
     m_score = calculate_beneish_m_score(financials, curr_period, prev_period)
     f_score = calculate_piotroski_f_score(financials, curr_period, prev_period)
     
-    flags = []
     if z_score != 0.0 and z_score < 1.81:
         flags.append("z_score_distress")
     if m_score != 0.0 and m_score > -1.78:
