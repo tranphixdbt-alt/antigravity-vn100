@@ -1,0 +1,11 @@
+.env
+*.env
+secrets/
+*service-account*.json
+*.pem
+*.key
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+n8n_data/

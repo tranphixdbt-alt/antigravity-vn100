@@ -1,0 +1,37 @@
+# ===================================================================
+# COE Convention: Damodaran Global (chống double-count country risk)
+# ===================================================================
+# rf  = UST 10Y (risk-free toàn cầu)            = 4.3%
+# erp = Mature Market ERP + Country Risk Premium = 4.5% + 1.5% = 6.0%
+# beta_default = 1.0
+# terminal_growth = 2.0%
+#
+# QUY TẮC VÀNG:
+#   Nếu rf = TPCP Việt Nam (≈3%) → erp PHẢI = mature ERP only (≈4.5%)
+#     vì TPCP VN đã chứa lạm phát + rủi ro quốc gia
+#   Nếu rf = UST 10Y (≈4.3%) → erp = mature ERP + CRP VN
+#     vì UST chưa chứa rủi ro VN
+#   KHÔNG BAO GIỜ dùng rf=TPCP VN + erp gồm CRP → DOUBLE-COUNT!
+# ===================================================================
+coe_convention:
+  rf: 0.043           # UST 10Y (risk-free toàn cầu)
+  erp_mature: 0.045   # Mature market ERP (Damodaran US ERP)
+  crp_vn: 0.037       # Country Risk Premium Việt Nam (Nguồn: Damodaran Country Risk Premium cho VN, cập nhật 2024-2025 ≈ 3.7%)
+  erp_total: 0.082    # erp_mature + crp_vn = 8.2% (Thực tế Việt Nam để phản ánh đúng rủi ro quốc gia khi tính theo VND-base)
+  beta_default: 1.0
+  terminal_growth: 0.02
+
+wacc_defaults:
+  min_wacc: 8.0
+  max_wacc: 20.0
+
+rating_thresholds:
+  buy: 0.20
+  hold_min: 0.0
+  hold_max: 0.20
+  sell: 0.0
+
+# Margin of Safety mặc định theo ngành
+margin_of_safety:
+  bank: 0.20
+  default: 0.30

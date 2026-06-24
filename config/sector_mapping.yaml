@@ -1,0 +1,9 @@
+# Map ICB_code_lv4 hoặc sector name sang định giá model
+mapping:
+  "Ngân hàng": "bank"
+  "Chứng khoán": "securities"
+  "Bảo hiểm": "insurance"
+  "Bất động sản": "real_estate"
+  "Thép": "steel"
+  # Default
+  "default": "non_financial"
