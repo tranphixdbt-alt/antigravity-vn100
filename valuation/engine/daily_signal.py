@@ -109,17 +109,21 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         # 6. Calculate Fast FV
         fv_fast = fv_base
         applied_deltas = []
+        has_active_greek_error = False
         
         for g in greeks:
             driver = g.driver_code
             if driver in macro_deltas:
+                delta_val = macro_deltas[driver]['delta']
                 if g.dFV_ddriver is None:
                     if "SENSITIVITY_FAILED" not in flags:
                         flags.append("SENSITIVITY_FAILED")
-                    logger.warning(f"[{ticker}] SENSITIVITY_FAILED: Greek for driver {driver} is None. Skipping impact calculation.")
+                    # Nếu vĩ mô thay đổi (delta != 0) nhưng mất greek
+                    if delta_val != 0.0:
+                        has_active_greek_error = True
+                        logger.error(f"[{ticker}] SENSITIVITY_FAILED: Greek for driver {driver} is None while macro delta is active ({delta_val}). Forcing STALE.")
                     continue
                     
-                delta_val = macro_deltas[driver]['delta']
                 dfv = float(g.dFV_ddriver)
                 impact = delta_val * dfv
                 fv_fast += impact
@@ -141,13 +145,14 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         stale_threshold = 0.05 if sector in ("Ngân hàng", "Banks") else 0.10
         deviation = abs(fv_fast - fv_base) / fv_base
         
-        # STALE khi deviation vượt ngưỡng OR fv_fast <= 0 OR giá <= 0/NaN OR upside_fast ngoài [-90%, +300%]
+        # STALE khi deviation vượt ngưỡng OR fv_fast <= 0 OR giá <= 0/NaN OR upside_fast ngoài [-90%, +300%] OR có active greek error
         is_stale = (
             deviation > stale_threshold or
             fv_fast <= 0 or
             current_price <= 0 or
             math.isnan(current_price) or
-            (upside_fast is not None and (upside_fast > 3.0 or upside_fast < -0.90))
+            (upside_fast is not None and (upside_fast > 3.0 or upside_fast < -0.90)) or
+            has_active_greek_error
         )
         
         if is_stale:

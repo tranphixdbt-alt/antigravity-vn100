@@ -486,5 +486,64 @@ def test_past_trade_date_skip_upsert(db_session):
     assert sig_db2.computed_at > ten_days_ago
 
 
+def test_active_greek_error_triggers_stale(db_session):
+    """
+    Test Nhóm B.2 (RED): Khi một driver có macro_delta != 0 nhưng dFV_ddriver là None,
+    hệ thống phải gắn SENSITIVITY_FAILED và đẩy STALE_FV + PROVISIONAL.
+    """
+    ticker = "VCB_TEST_ACTIVE_GREEK"
+    
+    t = Ticker(ticker=ticker, company_name="VCB Test", sector="Banks", is_vn100=True)
+    db_session.add(t)
+    
+    price = PricesDaily(
+        ticker=ticker,
+        trade_date=datetime.date.today(),
+        close=92000,
+        volume=1000000
+    )
+    db_session.add(price)
+    
+    val_out = ValuationOutput(
+        id=3333,
+        ticker=ticker,
+        blended_fair_value_per_share=100000,
+        margin_of_safety=0.20,
+        flags=[],
+        macro_snapshot={"NIM_IND": 0.028}
+    )
+    db_session.add(val_out)
+    
+    sens = ValuationSensitivity(
+        ticker=ticker,
+        assumption_version=3333,
+        driver_code="nim",
+        dFV_ddriver=None,
+        base_driver_value=0.028
+    )
+    db_session.add(sens)
+    
+    radar = MacroRadar(
+        sector="Banks",
+        indicator_code="NIM_IND",
+        frequency="Q",
+        mapped_driver="nim"
+    )
+    db_session.add(radar)
+    
+    m1 = MacroSeries(indicator_code="NIM_IND", date=datetime.date.today(), value=0.029)
+    db_session.add(m1)
+    db_session.flush()
+    
+    res = calculate_daily_signal(ticker, db=db_session)
+    
+    assert "SENSITIVITY_FAILED" in res['flags']
+    assert "STALE_FV" in res['flags']
+    assert "PROVISIONAL" in res['flags']
+    assert res['effective_fv'] == 100000
+    assert abs(res['confidence'] - 0.65) < 0.01
+
+
+
 
 
