@@ -74,6 +74,9 @@ class SecuritiesValuationModel(BaseValuationModel):
         target_pb = (term_roe - self.g) / (self.coe - self.g)
         if target_pb < 1.0 and term_roe > self.coe:
             target_pb = 1.0 # Floor
+        # Đảm bảo target_pb không âm (floor tối thiểu ở mức thanh lý/sách chiết khấu 0.3x)
+        if target_pb < 0.3:
+            target_pb = 0.3
             
         pb_fvps = (current_bv * target_pb) / shares_out if shares_out > 0 else 0.0
         
@@ -82,6 +85,10 @@ class SecuritiesValuationModel(BaseValuationModel):
         weight_pb = 1.0 - weight_ri
         blended_fvps = (ri_fvps * weight_ri) + (pb_fvps * weight_pb)
         
+        # Đảm bảo blended_fvps không âm
+        if blended_fvps < 0.0:
+            blended_fvps = 0.0
+            
         return {
             "blended_fair_value_per_share": blended_fvps,
             "ri_fvps": ri_fvps,

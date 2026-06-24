@@ -119,15 +119,15 @@ def get_ttm_value(
 def get_shares_outstanding(db: Session, ticker: str) -> float:
     """
     Tính shares outstanding từ:
-    1. Trực tiếp từ shares_outstanding_value (HPG, SSI)
+    1. Trực tiếp từ outstanding_shares_volume hay shares_outstanding_value (HPG, SSI)
     2. Vốn điều lệ / Vốn góp / paid_in_capital (VCB, FPT) chia cho mệnh giá (10,000 VND/cp).
     """
-    direct_shares = get_latest_balance(db, ticker, ["shares_outstanding_value"])
+    direct_shares = get_latest_balance(db, ticker, ["outstanding_shares_volume", "shares_outstanding_value"])
     if direct_shares > 0:
         return direct_shares
 
     von_dieu_le = get_latest_balance(
-        db, ticker, ["Vốn điều lệ", "Vốn góp của chủ sở hữu", "paid_in_capital", "owners_equity"]
+        db, ticker, ["Vốn điều lệ", "Vốn góp của chủ sở hữu", "paid_in_capital", "common_shares", "owners_equity"]
     )
     if von_dieu_le > 0:
         return von_dieu_le / 10_000  # Mệnh giá cổ phiếu VN = 10,000 VND
@@ -442,7 +442,7 @@ def build_fpt_current_financials(db: Session, ticker: str = "FPT") -> dict:
     """
     Xây dựng current_financials cho FPT từ DB (dùng line items tiếng Anh).
     """
-    equity = get_latest_balance(db, ticker, ["capital_and_reserves", "Vốn chủ sở hữu"])
+    equity = get_latest_balance(db, ticker, ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"])
     assets = get_latest_balance(db, ticker, ["total_assets", "Tổng tài sản"])
     cash = get_latest_balance(db, ticker, ["cash_and_cash_equivalents", "Tiền và các khoản tương đương tiền"])
     
@@ -475,7 +475,7 @@ def build_hpg_current_financials(db: Session, ticker: str = "HPG") -> dict:
     """
     Xây dựng current_financials cho HPG từ DB.
     """
-    equity = get_latest_balance(db, ticker, ["capital_and_reserves", "Vốn chủ sở hữu"])
+    equity = get_latest_balance(db, ticker, ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"])
     assets = get_latest_balance(db, ticker, ["total_assets", "Tổng tài sản"])
     cash = get_latest_balance(db, ticker, ["cash_and_cash_equivalents", "Tiền và các khoản tương đương tiền"])
     st_invest = get_latest_balance(db, ticker, ["short_term_financial_investments", "Đầu tư tài chính ngắn hạn"])
@@ -487,7 +487,15 @@ def build_hpg_current_financials(db: Session, ticker: str = "HPG") -> dict:
     
     net_sales = get_ttm_value(db, ticker, ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần"])
     net_income = get_ttm_value(db, ticker, ["net_profit_loss_after_tax", "Lợi nhuận sau thuế"])
+    
+    # HPG: EBITDA thật từ vnstock có thể không có dòng "ebitda". Dự phòng EBITDA = EBIT + D&A.
+    # EBIT = operating_profit_loss hoặc net_profit_loss_before_tax + interest_expenses.
+    # Ta lấy ebitda từ DB, nếu bằng 0 thì tính toán xấp xỉ
     ebitda = get_ttm_value(db, ticker, ["ebitda"])
+    if ebitda <= 0:
+        operating_profit = get_ttm_value(db, ticker, ["operating_profit_loss", "Lợi nhuận từ hoạt động kinh doanh"])
+        depr = get_ttm_value(db, ticker, ["depreciation_and_amortization", "Khấu hao"])
+        ebitda = operating_profit + depr if operating_profit > 0 or depr > 0 else net_income * 1.2
     
     return {
         "total_equity": equity,
@@ -506,7 +514,7 @@ def build_ssi_current_financials(db: Session, ticker: str = "SSI") -> dict:
     """
     Xây dựng current_financials cho SSI từ DB.
     """
-    equity = get_latest_balance(db, ticker, ["capital_and_reserves", "Vốn chủ sở hữu"])
+    equity = get_latest_balance(db, ticker, ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"])
     assets = get_latest_balance(db, ticker, ["total_assets", "Tổng tài sản"])
     net_sales = get_ttm_value(db, ticker, ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần"])
     net_income = get_ttm_value(db, ticker, ["net_profit_loss_after_tax", "Lợi nhuận sau thuế"])
