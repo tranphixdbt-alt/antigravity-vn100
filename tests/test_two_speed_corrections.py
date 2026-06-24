@@ -544,6 +544,79 @@ def test_active_greek_error_triggers_stale(db_session):
     assert abs(res['confidence'] - 0.65) < 0.01
 
 
+def test_worst_case_confidence_floor(db_session):
+    """
+    Test Nhóm B.3: Xác nhận confidence chạm sàn 0.5 đúng và không bị âm khi hội tụ tất cả penalty:
+    - FINANCIAL_QC_MISSING (-0.15)
+    - STALE_FV (-0.20)
+    - SENSITIVITY_FAILED (-0.10)
+    - WIDE_SPREAD (-0.10)
+    - LOW_LIQUIDITY (-0.10)
+    Tổng cộng penalty = -0.65 -> confidence lý thuyết = 0.35 -> chạm sàn = 0.5.
+    """
+    ticker = "SSI_TEST_WORST"
+    
+    t = Ticker(ticker=ticker, company_name="SSI Worst Test", sector="Securities", is_vn100=True)
+    db_session.add(t)
+    
+    # Volume 100,000 < 500,000 (LOW_LIQUIDITY -> -0.10)
+    price = PricesDaily(
+        ticker=ticker,
+        trade_date=datetime.date.today(),
+        close=35000,
+        volume=100000
+    )
+    db_session.add(price)
+    
+    # Có bull/bear nhưng spread rộng: (150k - 50k) / 100k = 1.0 > 0.60 (WIDE_SPREAD -> -0.10)
+    val_out = ValuationOutput(
+        id=2222,
+        ticker=ticker,
+        blended_fair_value_per_share=100000,
+        fair_value_bull=150000,
+        fair_value_bear=50000,
+        margin_of_safety=0.30,
+        flags=["FINANCIAL_QC_MISSING"], # FINANCIAL_QC_MISSING -> -0.15
+        macro_snapshot={"NIM_IND": 0.028}
+    )
+    db_session.add(val_out)
+    
+    # dFV_ddriver = None + macro delta != 0 (SENSITIVITY_FAILED + STALE_FV -> -0.10 - 0.20)
+    sens = ValuationSensitivity(
+        ticker=ticker,
+        assumption_version=2222,
+        driver_code="nim",
+        dFV_ddriver=None,
+        base_driver_value=0.028
+    )
+    db_session.add(sens)
+    
+    radar = MacroRadar(
+        sector="Securities",
+        indicator_code="NIM_IND",
+        frequency="Q",
+        mapped_driver="nim"
+    )
+    db_session.add(radar)
+    
+    m1 = MacroSeries(indicator_code="NIM_IND", date=datetime.date.today(), value=0.029)
+    db_session.add(m1)
+    db_session.flush()
+    
+    res = calculate_daily_signal(ticker, db=db_session)
+    
+    # Assert flags
+    assert "FINANCIAL_QC_MISSING" in res['flags']
+    assert "STALE_FV" in res['flags']
+    assert "SENSITIVITY_FAILED" in res['flags']
+    assert "WIDE_SPREAD" in res['flags']
+    assert "LOW_LIQUIDITY" in res['flags']
+    
+    # Confidence lý thuyết: 1.0 - 0.15 - 0.20 - 0.10 - 0.10 - 0.10 = 0.35 -> floor = 0.50
+    assert res['confidence'] == 0.50
+
+
+
 
 
 
