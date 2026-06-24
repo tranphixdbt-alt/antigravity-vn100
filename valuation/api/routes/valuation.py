@@ -138,6 +138,8 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
     elif ticker == "VHM":
         model = RNAVValuationModel(ticker, current_financials, assumptions)
     elif ticker == "SSI":
+        assumptions['brokerage_market_share'] = 0.10
+        assumptions['net_margin_rate'] = 0.05
         assumptions['drivers'] = {'brokerage_market_share': {'bump': 0.01}, 'net_margin_rate': {'bump': 0.005}}
         model = SecuritiesValuationModel(ticker, current_financials, assumptions)
     elif ticker == "MSN":
