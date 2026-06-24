@@ -52,7 +52,7 @@ def calculate_beneish_m_score(df: pd.DataFrame, curr_period: tuple, prev_period:
     
     rec_t = get(["Phải thu ngắn hạn", "short_term_receivables"], curr_period)
     rec_t1 = get(["Phải thu ngắn hạn", "short_term_receivables"], prev_period)
-    DSRI = (rec_t / sales_t) / (rec_t1 / sales_t1) if sales_t1 > 0 else 1.0
+    DSRI = (rec_t / sales_t) / (rec_t1 / sales_t1) if (sales_t1 > 0 and rec_t1 > 0) else 1.0
     
     gp_t = get(["Lợi nhuận gộp", "gross_profit"], curr_period)
     gp_t1 = get(["Lợi nhuận gộp", "gross_profit"], prev_period)
@@ -60,7 +60,7 @@ def calculate_beneish_m_score(df: pd.DataFrame, curr_period: tuple, prev_period:
     gm_t1 = gp_t1 / sales_t1 if sales_t1 > 0 else 0
     GMI = gm_t1 / gm_t if gm_t > 0 else 1.0
     
-    SGI = sales_t / sales_t1
+    SGI = sales_t / sales_t1 if sales_t1 > 0 else 1.0
     
     ca_t = get(["Tài sản ngắn hạn", "current_assets"], curr_period)
     ca_t1 = get(["Tài sản ngắn hạn", "current_assets"], prev_period)
@@ -71,7 +71,7 @@ def calculate_beneish_m_score(df: pd.DataFrame, curr_period: tuple, prev_period:
     
     aq_t = (ta_t - ca_t - ppe_t) / ta_t if ta_t > 0 else 0
     aq_t1 = (ta_t1 - ca_t1 - ppe_t1) / ta_t1 if ta_t1 > 0 else 0
-    AQI = aq_t / aq_t1 if aq_t1 > 0 else 1.0
+    AQI = aq_t / aq_t1 if aq_t1 != 0.0 else 1.0
     
     depr_t = get(["Khấu hao", "depreciation_and_amortization"], curr_period)
     depr_t1 = get(["Khấu hao", "depreciation_and_amortization"], prev_period)

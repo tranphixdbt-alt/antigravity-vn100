@@ -121,6 +121,263 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         
         return {"ticker": ticker, "current_price": curr_price, "valuation": full_valuation, "greeks": greeks, "qc": qc_result}
     
+    # Generic assumptions / special flows for FPT, HPG, SSI
+    if ticker in ["FPT", "HPG", "SSI"]:
+        from valuation.engine.ttm_helper import (
+            build_fpt_current_financials,
+            build_hpg_current_financials,
+            build_ssi_current_financials,
+            get_latest_tpcp_10y,
+            estimate_vcb_beta,
+        )
+        from valuation.config import load_defaults
+        import yaml
+        
+        # 1. Trích xuất financials thật từ DB
+        if ticker == "FPT":
+            current_financials = build_fpt_current_financials(db_read, ticker)
+        elif ticker == "HPG":
+            current_financials = build_hpg_current_financials(db_read, ticker)
+        else: # SSI
+            current_financials = build_ssi_current_financials(db_read, ticker)
+            
+        current_financials['current_price'] = curr_price
+        
+        # 2. Xây dựng assumptions động từ nguyên tắc
+        config_defaults = load_defaults()
+        erp_total = config_defaults.get("coe_convention", {}).get("erp_total", 0.082)
+        rf_dynamic = get_latest_tpcp_10y(db_read)
+        beta_dynamic = estimate_vcb_beta(db_read, ticker)
+        
+        coe = rf_dynamic + beta_dynamic * erp_total
+        # Sanity floor cho COE
+        if coe < rf_dynamic + 0.05:
+            raise ValueError("COE_TOO_LOW")
+            
+        # Tính WACC động cho phi tài chính
+        wacc = None
+        if ticker in ["FPT", "HPG"]:
+            E = float(current_financials['total_equity'])
+            D = float(current_financials['total_debt'])
+            tax_rate = 0.20 if ticker == "HPG" else 0.10
+            cod = rf_dynamic + 0.03
+            if E + D > 0:
+                wacc = coe * (E / (E + D)) + cod * (1 - tax_rate) * (D / (E + D))
+            else:
+                wacc = coe
+            wacc = max(wacc, rf_dynamic + 0.03)
+            
+        # Thiết lập assumptions cho từng mã
+        if ticker == "FPT":
+            assumptions = {
+                'cost_of_equity': coe,
+                'wacc': wacc,
+                'revenue_growth_1_to_3': 0.18,
+                'revenue_growth_4_to_5': 0.15,
+                'ebit_margin': 0.16,
+                'tax_rate': 0.10,
+                'reinvestment_rate': 0.35,
+                'target_ev_ebitda': 13.0,
+                'long_term_growth': 0.05,
+                'weight_dcf': 0.5,
+                'drivers': {
+                    'revenue_growth_1_to_3': {'bump': 0.01},
+                    'ebit_margin': {'bump': 0.01},
+                    'wacc': {'bump': 0.005}
+                }
+            }
+            model = DCFValuationModel(ticker, current_financials, assumptions)
+        elif ticker == "HPG":
+            assumptions = {
+                'cost_of_equity': coe,
+                'wacc': wacc,
+                'revenue_growth_1_to_3': 0.12,
+                'revenue_growth_4_to_5': 0.08,
+                'ebit_margin': 0.11,
+                'tax_rate': 0.20,
+                'reinvestment_rate': 0.50,
+                'target_ev_ebitda': 7.0,
+                'long_term_growth': 0.03,
+                'weight_dcf': 0.5,
+                'drivers': {
+                    'revenue_growth_1_to_3': {'bump': 0.01},
+                    'ebit_margin': {'bump': 0.01},
+                    'wacc': {'bump': 0.005}
+                }
+            }
+            model = DCFValuationModel(ticker, current_financials, assumptions)
+        else: # SSI
+            assumptions = {
+                'cost_of_equity': coe,
+                'long_term_growth': 0.04,
+                'market_liquidity_vnd_billion': 18000.0,
+                'brokerage_market_share': 0.095,
+                'brokerage_margin': 0.0015,
+                'margin_loans': 16000.0,
+                'net_margin_rate': 0.055,
+                'prop_trading_income': 1800.0,
+                'opex_ratio': 0.35,
+                'tax_rate': 0.20,
+                'payout_ratio': 0.20,
+                'weight_ri': 0.5,
+                'drivers': {
+                    'brokerage_market_share': {'bump': 0.01},
+                    'net_margin_rate': {'bump': 0.005}
+                }
+            }
+            model = SecuritiesValuationModel(ticker, current_financials, assumptions)
+            
+        try:
+            full_valuation = model.perform_valuation()
+            val_result = model.calculate_greeks() 
+            blended_fvps = float(val_result['base_fair_value'])
+            greeks = {k: float(v) if v is not None else None for k, v in val_result['greeks'].items()}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+            
+        # 3. Tầng 1 — Reverse Sanity
+        net_income_ttm = float(current_financials['net_income'])
+        total_equity = float(current_financials['total_equity'])
+        shares = float(current_financials['shares_outstanding'])
+        
+        eps_ttm = net_income_ttm / shares if shares > 0 else 0.0
+        bvps_ttm = total_equity / shares if shares > 0 else 0.0
+        
+        implied_pe = blended_fvps / eps_ttm if eps_ttm > 0 else None
+        implied_pb = blended_fvps / bvps_ttm if bvps_ttm > 0 else None
+        
+        implied_ev_ebitda = None
+        if ticker in ["FPT", "HPG"]:
+            ebitda_ttm = float(current_financials['ebitda'])
+            total_debt = float(current_financials['total_debt'])
+            cash = float(current_financials['cash_and_equivalents'])
+            
+            implied_ev = blended_fvps * shares + total_debt - cash
+            implied_ev_ebitda = implied_ev / ebitda_ttm if ebitda_ttm > 0 else None
+            
+        from valuation.config import PROJECT_ROOT
+        benchmarks_path = PROJECT_ROOT / "config" / "valuation_benchmarks.yaml"
+        benchmarks_config = {}
+        if benchmarks_path.exists():
+            with open(benchmarks_path, "r", encoding="utf-8") as f:
+                benchmarks_config = yaml.safe_load(f).get("benchmarks", {}).get(ticker, {})
+                
+        # Gắn cờ Tầng 1
+        flags = []
+        if implied_pe is not None:
+            if implied_pe < 4.0 or implied_pe > 50.0:
+                flags.append("IMPLIED_PE_OUT_OF_BOUNDS_EXTREME")
+            pe_bench = benchmarks_config.get("pe", {})
+            if pe_bench:
+                low = pe_bench.get("low")
+                high = pe_bench.get("high")
+                if low is not None and implied_pe < low:
+                    flags.append("IMPLIED_PE_OUT_OF_BOUNDS")
+                elif high is not None and implied_pe > high:
+                    flags.append("IMPLIED_PE_OUT_OF_BOUNDS")
+                    
+        if implied_pb is not None:
+            pb_bench = benchmarks_config.get("pb", {})
+            if pb_bench:
+                low = pb_bench.get("low")
+                high = pb_bench.get("high")
+                if low is not None and implied_pb < low:
+                    flags.append("IMPLIED_PB_OUT_OF_BOUNDS")
+                elif high is not None and implied_pb > high:
+                    flags.append("IMPLIED_PB_OUT_OF_BOUNDS")
+                    
+        if implied_ev_ebitda is not None:
+            ev_bench = benchmarks_config.get("ev_ebitda", {})
+            if ev_bench:
+                low = ev_bench.get("low")
+                high = ev_bench.get("high")
+                if low is not None and implied_ev_ebitda < low:
+                    flags.append("IMPLIED_EV_EBITDA_OUT_OF_BOUNDS")
+                elif high is not None and implied_ev_ebitda > high:
+                    flags.append("IMPLIED_EV_EBITDA_OUT_OF_BOUNDS")
+                    
+        # 4. Tầng 2 — Consensus Check
+        consensus_path = PROJECT_ROOT / "config" / "consensus.yaml"
+        consensus_config = {}
+        if consensus_path.exists():
+            with open(consensus_path, "r", encoding="utf-8") as f:
+                consensus_config = yaml.safe_load(f).get("consensus", {}).get(ticker, {})
+                
+        consensus_vals = [float(val) for val in consensus_config.values() if val is not None]
+        consensus_mean = sum(consensus_vals) / len(consensus_vals) if consensus_vals else None
+        deviation_pct = None
+        if consensus_mean is not None:
+            deviation_pct = (blended_fvps - consensus_mean) / consensus_mean
+            if abs(deviation_pct) > 0.25:
+                flags.append("CONSENSUS_DEVIATION_HIGH")
+                
+        # QC Checks
+        qc_result = run_qc_checks(
+            ticker=ticker,
+            sector_name=t.sector if t.sector else 'Unknown',
+            financials=df_fin,
+            market_cap=curr_price * shares
+        )
+        qc_flags = qc_result.get("flags", [])
+        
+        # Append các cờ của Tầng 1 và Tầng 2 vào qc_flags
+        for flg in flags:
+            if flg not in qc_flags:
+                qc_flags.append(flg)
+                
+        if any(v is None for v in greeks.values()):
+            if "SENSITIVITY_FAILED" not in qc_flags:
+                qc_flags.append("SENSITIVITY_FAILED")
+                
+        # In bảng tổng hợp
+        print(f"\n========================================================")
+        print(f" BẢNG TỔNG HỢP KIỂM ĐỊNH ĐỊNH GIÁ (3 TẦNG) - {ticker}")
+        print(f"========================================================")
+        print(f"Giá thị trường hiện tại: {curr_price:,.0f} VND")
+        print(f"Giá trị hợp lý (Base FV): {blended_fvps:,.0f} VND")
+        print(f"P/E ngụ ý (Implied P/E): {f'{implied_pe:.2f}x' if implied_pe else 'N/A'}")
+        print(f"P/B ngụ ý (Implied P/B): {f'{implied_pb:.2f}x' if implied_pb else 'N/A'}")
+        print(f"EV/EBITDA ngụ ý: {f'{implied_ev_ebitda:.2f}x' if implied_ev_ebitda else 'N/A'}")
+        if consensus_mean:
+            print(f"Consensus trung bình: {consensus_mean:,.0f} VND (lệch: {deviation_pct:+.2%})")
+        else:
+            print(f"Consensus trung bình: N/A")
+        print(f"Cảnh báo (Flags): {', '.join(qc_flags) if qc_flags else 'Không có (PASS)'}")
+        print(f"========================================================\n")
+        
+        from valuation.analysis.macro_radar import capture_macro_snapshot
+        macro_snap = capture_macro_snapshot(t.sector if t.sector else 'Unknown', db_read)
+
+        # Save to DB
+        out_record = ValuationOutput(
+            ticker=ticker,
+            blended_fair_value_per_share=blended_fvps,
+            fair_value_bull=float(full_valuation['bull_fair_value']) if full_valuation.get('bull_fair_value') is not None else None,
+            fair_value_bear=float(full_valuation['bear_fair_value']) if full_valuation.get('bear_fair_value') is not None else None,
+            flags=qc_flags,
+            macro_snapshot=macro_snap
+        )
+        db_write.add(out_record)
+        db_write.commit()
+        db_write.refresh(out_record)
+        
+        for d, dfv in greeks.items():
+            db_write.add(ValuationSensitivity(
+                ticker=ticker, assumption_version=out_record.id, driver_code=d, dFV_ddriver=dfv
+            ))
+        db_write.commit()
+            
+        return {
+            "ticker": ticker,
+            "current_price": curr_price,
+            "valuation": full_valuation,
+            "greeks": greeks,
+            "qc": {
+                **qc_result,
+                "flags": qc_flags
+            }
+        }
+        
     # Generic assumptions for others
     assumptions = {
         'cost_of_equity': 0.13,

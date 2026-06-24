@@ -180,9 +180,9 @@ def test_sensitivity_failed_reduces_confidence(db_session):
     res = calculate_daily_signal(ticker, db=db_session)
     
     assert "SENSITIVITY_FAILED" in res['flags']
-    # Confidence mặc định = 1.0. Bị phạt vì: SENSITIVITY_FAILED (-0.1), DATA_INCOMPLETE (-0.05) vì thiếu bull/bear.
-    # Tổng confidence = 1.0 - 0.15 = 0.85
-    assert abs(res['confidence'] - 0.85) < 0.01
+    # Confidence mặc định = 1.0. Bị phạt vì: SENSITIVITY_FAILED (-0.1), DATA_INCOMPLETE (-0.05) vì thiếu bull/bear, và STALE_FV (-0.20) do macro delta hoạt động mà mất Greek.
+    # Tổng confidence = 1.0 - 0.35 = 0.65
+    assert abs(res['confidence'] - 0.65) < 0.01
 
 def test_baseline_macro_snapshot_prevents_double_counting(db_session):
     """

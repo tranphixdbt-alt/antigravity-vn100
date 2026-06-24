@@ -1,0 +1,29 @@
+benchmarks:
+  FPT:
+    pe:
+      low: 12.0
+      high: 25.0
+    pb:
+      low: 3.0
+      high: 6.5
+    ev_ebitda:
+      low: 8.0
+      high: 16.0
+  HPG:
+    pe:
+      low: 5.0
+      high: 15.0
+    pb:
+      low: 0.8
+      high: 2.5
+    ev_ebitda:
+      low: 4.5
+      high: 10.0
+  SSI:
+    pe:
+      low: 10.0
+      high: 22.0
+    pb:
+      low: 1.0
+      high: 2.8
+    ev_ebitda: null  # N/A for Securities
