@@ -15,12 +15,13 @@ from valuation.engine.ttm_helper import (
     build_dgc_current_financials
 )
 from valuation.engine.consensus_helper import get_consensus_stats
+from valuation.analysis.ai_insight import generate_ai_insight
 
 logger = logging.getLogger(__name__)
 
 def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Session = None):
     """
-    Xuất bảng DailySignal trong ngày ra Google Sheets với giao diện chuyên nghiệp và các chỉ số bổ sung.
+    Xuất bảng DailySignal trong ngày ra Google Sheets với giao diện chuyên nghiệp, các chỉ số bổ sung và nhận định AI.
     """
     if not settings.google_service_account_json or not settings.google_sheet_master_id:
         logger.warning("Google Sheets config missing. Skipping export.")
@@ -116,6 +117,20 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
                 else:
                     rating = "THEO DÕI"
                     
+            # Gọi DeepSeek tạo nhận định AI (AI Insight)
+            ai_insight = generate_ai_insight(
+                ticker=s.ticker,
+                sector=display_sector,
+                close_price=close_price,
+                fair_value=fv_fast,
+                upside=s.upside,
+                flags=s.flags,
+                roe=roe,
+                pe=pe,
+                pb=pb,
+                consensus_target=consensus_target
+            )
+            
             data.append({
                 "Mã CK": s.ticker,
                 "Ngành": display_sector,
@@ -131,7 +146,8 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
                 "ROE": roe,
                 "Định giá Consensus": consensus_target,
                 "Độ lệch Consensus": consensus_dev,
-                "Cờ Cảnh Báo": ", ".join(s.flags) if s.flags else "OK"
+                "Cờ Cảnh Báo": ", ".join(s.flags) if s.flags else "OK",
+                "Nhận định AI": ai_insight
             })
             
         df = pd.DataFrame(data)
@@ -155,8 +171,8 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
         # === Định dạng Google Sheets chuyên nghiệp ===
         num_rows = len(df) + 1 # bao gồm cả header
         
-        # 1. Định dạng header (Dòng 1)
-        worksheet.format('A1:O1', {
+        # 1. Định dạng header (Dòng 1 từ cột A đến P)
+        worksheet.format('A1:P1', {
             'backgroundColor': {
                 'red': 0.12,
                 'green': 0.23,
@@ -175,8 +191,8 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
             }
         })
         
-        # 2. Định dạng font chữ chung cho data
-        worksheet.format(f'A2:O{num_rows}', {
+        # 2. Định dạng font chữ chung cho data (A đến P)
+        worksheet.format(f'A2:P{num_rows}', {
             'textFormat': {
                 'fontSize': 10
             },
@@ -237,6 +253,7 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
         })
         
         worksheet.format(f'O2:O{num_rows}', {'horizontalAlignment': 'LEFT'})
+        worksheet.format(f'P2:P{num_rows}', {'horizontalAlignment': 'LEFT'}) # Cột P: Nhận định AI
         
         # 4. Tô màu có điều kiện cho cột Khuyến nghị
         for idx, row in df.iterrows():
