@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import datetime
 from valuation.db.session import get_read_db, get_write_db
 from valuation.db.models import FinancialsQuarterly, PricesDaily, ValuationSensitivity, Ticker, ValuationOutput
+from valuation.engine.consensus_helper import get_consensus_stats
 from valuation.engine.models.bank_vcb import VCBValuationModel
 from valuation.engine.models.dcf import DCFValuationModel
 from valuation.engine.models.rnav import RNAVValuationModel
@@ -297,17 +299,15 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                     flags.append("IMPLIED_EV_EBITDA_OUT_OF_BOUNDS")
                     
         # 4. Tầng 2 — Consensus Check
-        consensus_path = PROJECT_ROOT / "config" / "consensus.yaml"
-        consensus_config = {}
-        if consensus_path.exists():
-            with open(consensus_path, "r", encoding="utf-8") as f:
-                consensus_config = yaml.safe_load(f).get("consensus", {}).get(ticker, {})
-                
-        consensus_vals = [float(val) for val in consensus_config.values() if val is not None]
-        consensus_mean = sum(consensus_vals) / len(consensus_vals) if consensus_vals else None
+        eval_date = latest_price.trade_date if latest_price else datetime.date.today()
+        consensus_stats = get_consensus_stats(ticker, eval_date, db_read)
+        consensus_median = consensus_stats["median"]
+        consensus_mean = consensus_stats["mean"]
+        consensus_count = consensus_stats["count"]
+        
         deviation_pct = None
-        if consensus_mean is not None:
-            deviation_pct = (blended_fvps - consensus_mean) / consensus_mean
+        if consensus_median is not None:
+            deviation_pct = (blended_fvps - consensus_median) / consensus_median
             if abs(deviation_pct) > 0.25:
                 flags.append("CONSENSUS_DEVIATION_HIGH")
                 
@@ -338,10 +338,11 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         print(f"P/E ngụ ý (Implied P/E): {f'{implied_pe:.2f}x' if implied_pe else 'N/A'}")
         print(f"P/B ngụ ý (Implied P/B): {f'{implied_pb:.2f}x' if implied_pb else 'N/A'}")
         print(f"EV/EBITDA ngụ ý: {f'{implied_ev_ebitda:.2f}x' if implied_ev_ebitda else 'N/A'}")
-        if consensus_mean:
-            print(f"Consensus trung bình: {consensus_mean:,.0f} VND (lệch: {deviation_pct:+.2%})")
+        if consensus_median is not None:
+            print(f"Consensus trung vị: {consensus_median:,.0f} VND (lệch: {deviation_pct:+.2%})")
+            print(f"Consensus trung bình: {consensus_mean:,.0f} VND (Số báo cáo: {consensus_count})")
         else:
-            print(f"Consensus trung bình: N/A")
+            print(f"Consensus trung vị: N/A")
         print(f"Cảnh báo (Flags): {', '.join(qc_flags) if qc_flags else 'Không có (PASS)'}")
         print(f"========================================================\n")
         

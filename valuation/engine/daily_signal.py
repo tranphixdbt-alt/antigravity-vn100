@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from valuation.db.models import Ticker, PricesDaily, ValuationSensitivity, ValuationOutput, DailySignal
 from valuation.db.session import SessionLocalWrite
 from valuation.analysis.macro_radar import get_macro_deltas
+from valuation.engine.consensus_helper import get_consensus_stats
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,14 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         if upside is not None and upside > 3.0:
             flags.append("ABSURD_UPSIDE")
             
+        # 7.5. Consensus Check
+        consensus_stats = get_consensus_stats(ticker, trade_date_used, db)
+        consensus_median = consensus_stats["median"]
+        if consensus_median is not None:
+            deviation_pct = (effective_fv - consensus_median) / consensus_median
+            if abs(deviation_pct) > 0.25:
+                flags.append("CONSENSUS_DEVIATION_HIGH")
+            
         # 8. Calculate Attractiveness (0-100)
         if upside is None:
             attractiveness = 0.0
@@ -223,6 +232,10 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         # Low Liquidity
         if volume < 500_000:
             flags.append("LOW_LIQUIDITY")
+            confidence -= 0.10
+            
+        # Consensus Deviation High
+        if "CONSENSUS_DEVIATION_HIGH" in flags:
             confidence -= 0.10
             
         # Add floor to confidence
