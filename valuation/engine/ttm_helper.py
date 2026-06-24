@@ -527,3 +527,41 @@ def build_ssi_current_financials(db: Session, ticker: str = "SSI") -> dict:
         "shares_outstanding": get_shares_outstanding(db, ticker),
         "current_price": 0.0,
     }
+
+
+def build_dgc_current_financials(db: Session, ticker: str = "DGC") -> dict:
+    """
+    Xây dựng current_financials cho DGC từ DB.
+    """
+    equity = get_latest_balance(db, ticker, ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"])
+    assets = get_latest_balance(db, ticker, ["total_assets", "Tổng tài sản"])
+    cash = get_latest_balance(db, ticker, ["cash_and_cash_equivalents", "Tiền và các khoản tương đương tiền"])
+    st_invest = get_latest_balance(db, ticker, ["short_term_financial_investments", "Đầu tư tài chính ngắn hạn"])
+    cash_total = cash + st_invest
+    
+    st_borrow = get_latest_balance(db, ticker, ["short_term_borrowings", "Vay ngắn hạn"])
+    lt_borrow = get_latest_balance(db, ticker, ["long_term_borrowings", "Vay dài hạn"])
+    total_debt = st_borrow + lt_borrow
+    
+    net_sales = get_ttm_value(db, ticker, ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần"])
+    net_income = get_ttm_value(db, ticker, ["net_profit_loss_after_tax", "Lợi nhuận sau thuế"])
+    
+    # EBITDA = operating_profit_loss + depreciation_and_amortization
+    ebitda = get_ttm_value(db, ticker, ["ebitda"])
+    if ebitda <= 0:
+        operating_profit = get_ttm_value(db, ticker, ["operating_profit_loss", "Lợi nhuận từ hoạt động kinh doanh"])
+        depr = get_ttm_value(db, ticker, ["depreciation_and_amortization", "Khấu hao"])
+        ebitda = operating_profit + depr if operating_profit > 0 or depr > 0 else net_income * 1.2
+        
+    return {
+        "total_equity": equity,
+        "total_assets": assets,
+        "cash_and_equivalents": cash_total,
+        "total_debt": total_debt,
+        "total_revenue": net_sales,
+        "net_income": net_income,
+        "ebitda": ebitda,
+        "shares_outstanding": get_shares_outstanding(db, ticker),
+        "current_price": 0.0,
+    }
+

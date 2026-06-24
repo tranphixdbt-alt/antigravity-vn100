@@ -27,3 +27,14 @@ benchmarks:
       low: 0.56
       high: 2.97
     ev_ebitda: null  # N/A for Securities
+  DGC:
+    pe:
+      low: 8.0
+      high: 16.0
+    pb:
+      low: 2.0
+      high: 4.5
+    ev_ebitda:
+      low: 5.5
+      high: 10.0
+

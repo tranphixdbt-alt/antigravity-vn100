@@ -123,12 +123,13 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         
         return {"ticker": ticker, "current_price": curr_price, "valuation": full_valuation, "greeks": greeks, "qc": qc_result}
     
-    # Generic assumptions / special flows for FPT, HPG, SSI
-    if ticker in ["FPT", "HPG", "SSI"]:
+    # Generic assumptions / special flows for FPT, HPG, SSI, DGC
+    if ticker in ["FPT", "HPG", "SSI", "DGC"]:
         from valuation.engine.ttm_helper import (
             build_fpt_current_financials,
             build_hpg_current_financials,
             build_ssi_current_financials,
+            build_dgc_current_financials,
             get_latest_tpcp_10y,
             estimate_vcb_beta,
         )
@@ -140,6 +141,8 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             current_financials = build_fpt_current_financials(db_read, ticker)
         elif ticker == "HPG":
             current_financials = build_hpg_current_financials(db_read, ticker)
+        elif ticker == "DGC":
+            current_financials = build_dgc_current_financials(db_read, ticker)
         else: # SSI
             current_financials = build_ssi_current_financials(db_read, ticker)
             
@@ -158,10 +161,10 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             
         # Tính WACC động cho phi tài chính
         wacc = None
-        if ticker in ["FPT", "HPG"]:
+        if ticker in ["FPT", "HPG", "DGC"]:
             E = float(current_financials['total_equity'])
             D = float(current_financials['total_debt'])
-            tax_rate = 0.20 if ticker == "HPG" else 0.10
+            tax_rate = 0.20 if ticker in ["HPG", "DGC"] else 0.10
             cod = rf_dynamic + 0.03
             if E + D > 0:
                 wacc = coe * (E / (E + D)) + cod * (1 - tax_rate) * (D / (E + D))
@@ -200,6 +203,25 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                 'reinvestment_rate': 0.50,
                 'target_ev_ebitda': 7.0,
                 'long_term_growth': 0.03,
+                'weight_dcf': 0.5,
+                'drivers': {
+                    'revenue_growth_1_to_3': {'bump': 0.01},
+                    'ebit_margin': {'bump': 0.01},
+                    'wacc': {'bump': 0.005}
+                }
+            }
+            model = DCFValuationModel(ticker, current_financials, assumptions)
+        elif ticker == "DGC":
+            assumptions = {
+                'cost_of_equity': coe,
+                'wacc': wacc,
+                'revenue_growth_1_to_3': 0.15,
+                'revenue_growth_4_to_5': 0.10,
+                'ebit_margin': 0.22,
+                'tax_rate': 0.20,
+                'reinvestment_rate': 0.35,
+                'target_ev_ebitda': 8.0,
+                'long_term_growth': 0.04,
                 'weight_dcf': 0.5,
                 'drivers': {
                     'revenue_growth_1_to_3': {'bump': 0.01},
