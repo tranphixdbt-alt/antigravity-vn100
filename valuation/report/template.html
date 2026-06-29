@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Báo cáo Định giá Cổ phiếu {{ ticker }}</title>
+    <style>
+        body {
+            font-family: 'DejaVu Sans', 'Helvetica Neue', Arial, sans-serif;
+            color: #1E293B;
+            margin: 40px;
+            line-height: 1.6;
+        }
+        .header {
+            border-bottom: 3px solid #0F172A;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0F172A;
+            margin: 0;
+        }
+        .meta {
+            color: #64748B;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .rec-box {
+            background-color: #F8FAFC;
+            border-left: 8px solid {{ rec_color }};
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+        }
+        .rec-title {
+            font-size: 14px;
+            color: #64748B;
+            font-weight: bold;
+            margin: 0 0 5px 0;
+        }
+        .rec-val {
+            font-size: 36px;
+            font-weight: bold;
+            color: {{ rec_color }};
+            margin: 0;
+        }
+        .section-title {
+            font-size: 18px;
+            color: #0F172A;
+            border-bottom: 1.5px solid #CBD5E1;
+            padding-bottom: 5px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #E2E8F0;
+            padding: 8px 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        th {
+            background-color: #F1F5F9;
+            color: #334155;
+            font-weight: bold;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .chart-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .chart-img {
+            max-width: 90%;
+            height: auto;
+            border: 1px solid #E2E8F0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">BÁO CÁO PHÂN TÍCH & ĐỊNH GIÁ DOANH NGHIỆP</div>
+        <div class="meta">Mã cổ phiếu: <b>{{ ticker }}</b> | Ngày lập: {{ date }} | Nhà phân tích: {{ analyst }}</div>
+    </div>
+
+    <div class="rec-box">
+        <div class="rec-title">KHUYẾN NGHỊ ĐẦU TƯ</div>
+        <table style="border: none; margin: 0; background: transparent; width: 100%;">
+            <tr style="background: transparent;">
+                <td style="border: none; padding: 0; width: 50%;">
+                    <div class="rec-val">{{ recommendation }}</div>
+                    <div style="font-size: 14px; color: #64748B; margin-top: 5px;">Upside dự phóng: <b>{{ upside }}%</b></div>
+                </td>
+                <td style="border: none; padding: 0; text-align: right; width: 50%;">
+                    <div style="font-size: 14px; color: #64748B;">Giá mục tiêu hợp lý (Blended):</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #0F172A;">{{ target_price }} VND</div>
+                    <div style="font-size: 13px; color: #64748B;">Thị giá hiện tại: {{ current_price }} VND</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {% if ai_narrative %}
+    <div class="section-title">0. Tóm tắt Đầu tư (Executive Summary)</div>
+    <div style="font-size: 13.5px; line-height: 1.6; text-align: justify; margin-bottom: 20px;">
+        {{ ai_narrative | replace('\n', '<br>') }}
+    </div>
+    {% endif %}
+
+    <div class="section-title">1. Tổng quan & Thị giá</div>
+    <p>Doanh nghiệp phân tích: <b>{{ name }}</b> (Ngành: {{ sector }}). Cổ phiếu đang được giao dịch ở mức giá <b>{{ current_price }} VND/cổ phiếu</b> với số lượng cổ phiếu lưu hành đạt <b>{{ shares }} triệu cổ phiếu</b>.</p>
+
+    <div class="section-title">2. Phương pháp định giá</div>
+    <p>Báo cáo áp dụng mô hình định giá pha trộn bao gồm định giá nội tại (<b>{{ weight_intrinsic }}%</b>) và định giá so sánh multiples (<b>{{ weight_relative }}%</b>).</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Phương pháp định giá</th>
+                <th class="text-right">Trọng số</th>
+                <th class="text-right">Giá trị định giá (VND)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Mô hình Nội tại ({{ intrinsic_method }})</td>
+                <td class="text-right">{{ weight_intrinsic }}%</td>
+                <td class="text-right">{{ intrinsic_price }}</td>
+            </tr>
+            <tr>
+                <td>Mô hình So sánh ({{ relative_method }})</td>
+                <td class="text-right">{{ weight_relative }}%</td>
+                <td class="text-right">{{ relative_price }}</td>
+            </tr>
+            <tr style="font-weight: bold; background-color: #F8FAFC;">
+                <td>Giá mục tiêu pha trộn (Blended Target)</td>
+                <td class="text-right">100%</td>
+                <td class="text-right">{{ target_price }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if chart_football %}
+    <div class="chart-container">
+        <img class="chart-img" src="{{ chart_football }}" alt="Football Field Chart">
+    </div>
+    {% endif %}
+
+    <div class="section-title">3. Bảng dự phóng tài chính chi tiết (5 năm)</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Chỉ tiêu (Tỷ VND)</th>
+                {% for col in proj_cols %}
+                <th class="text-right">{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in proj_rows %}
+            <tr>
+                <td>{{ row.label }}</td>
+                {% for val in row['values'] %}
+                <td class="text-right">{{ val }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="section-title">4. Phân tích độ nhạy & Kịch bản</div>
+    <p>Bảng độ nhạy 2 chiều thay đổi theo WACC/Re và tăng trưởng vĩnh viễn g:</p>
+    {% if chart_heatmap %}
+    <div class="chart-container">
+        <img class="chart-img" src="{{ chart_heatmap }}" alt="Sensitivity Heatmap">
+    </div>
+    {% endif %}
+
+    <div class="section-title">5. Luận điểm & Ghi chú kịch bản</div>
+    <p>{{ notes if notes else "Không có ghi chú thêm." }}</p>
+    
+    <div style="margin-top: 50px; font-size: 11px; color: #94A3B8; text-align: center; border-top: 1px solid #E2E8F0; padding-top: 10px;">
+        Báo cáo được tạo tự động bởi Hệ thống định giá VN100.
+    </div>
+</body>
+</html>

@@ -14,6 +14,33 @@ def load_defaults() -> dict:
 
 _defaults = load_defaults()
 
+
+ELASTICITIES_FILE = PROJECT_ROOT / "config" / "elasticities.yaml"
+
+
+def load_elasticities() -> dict:
+    """Đọc config macro overlay (elasticities.yaml)."""
+    if ELASTICITIES_FILE.exists():
+        with open(ELASTICITIES_FILE, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def get_macro_series_registry() -> dict:
+    """Registry các series_code vĩ mô được phép ghi vào macro_series."""
+    return _defaults.get("macro_series_registry", {})
+
+
+def get_macro_allowed_domains() -> list[str]:
+    """Allowlist domain mà scraper macro được phép gọi (Bảo mật mục 5)."""
+    return list(_defaults.get("macro_sources", {}).get("allowed_domains", []))
+
+
+def get_macro_source_config() -> dict:
+    """Cấu hình chung cho scraper macro (timeout, user-agent, allowlist)."""
+    return _defaults.get("macro_sources", {})
+
+
 class Settings(BaseSettings):
     vnstock_api_key: str = Field(default="")
     database_url_readonly: str = Field(...)
@@ -24,6 +51,7 @@ class Settings(BaseSettings):
     discord_webhook_url: str = Field(default="")
     recompute_webhook_token: str = Field(default="")
     deepseek_api_key: str = Field(default="")
+    discord_bot_token: str = Field(default="")
     
     erp_vn: float = Field(default=_defaults.get("erp_vn", 8.5))
     

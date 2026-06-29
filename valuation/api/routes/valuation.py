@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from valuation.output.gsheets_exporter import update_single_ticker_to_gsheets
 from sqlalchemy.orm import Session
 import datetime
 from valuation.db.session import get_read_db, get_write_db
@@ -16,7 +17,7 @@ from valuation.quality.scores import run_qc_checks
 router = APIRouter(prefix="/valuation", tags=["valuation"])
 
 @router.post("/revalue/{ticker}")
-def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_write: Session = Depends(get_write_db)):
+def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Session = Depends(get_read_db), db_write: Session = Depends(get_write_db)):
     # 1. Verify ticker
     t = db_read.query(Ticker).filter(Ticker.ticker == ticker).first()
     if not t:
@@ -69,7 +70,11 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
     }
     
     # Routing Logic (Factory)
-    if ticker == "VCB":
+    BANK_TICKERS = [
+        "VCB", "ACB", "CTG", "BID", "TCB", "MBB", "VPB", "STB", "HDB", "VIB", "TPB", "MSB", "SHB", "OCB",
+        "ABB", "BAB", "BVB", "EIB", "KLB", "LPB", "NAB", "NVB", "PGB", "SGB", "SSB", "VAB", "VBB"
+    ]
+    if ticker in BANK_TICKERS:
         # --- Dùng TTM Helper lấy dữ liệu thật từ DB ---
         from valuation.engine.ttm_helper import (
             build_vcb_current_financials,
@@ -121,6 +126,17 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             ))
         db_write.commit()
         
+        # Tự động cập nhật vào Google Sheets dạng chạy nền
+        background_tasks.add_task(
+            update_single_ticker_to_gsheets,
+            ticker=ticker,
+            curr_price=curr_price,
+            blended_fv=blended_fvps,
+            greeks=greeks,
+            qc_flags=qc_flags,
+            db=db_read
+        )
+        
         return {"ticker": ticker, "current_price": curr_price, "valuation": full_valuation, "greeks": greeks, "qc": qc_result}
     
     # Generic assumptions / special flows for FPT, HPG, SSI, DGC
@@ -147,16 +163,23 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             current_financials = build_ssi_current_financials(db_read, ticker)
             
         current_financials['current_price'] = curr_price
-        
+
+        # G3 guardrail: biên mid-cycle (median lịch sử) cho terminal — dùng cho HPG/DGC
+        # (cyclical: thép/hóa chất). Các mã khác không cyclical → None (no-op).
+        from valuation.data_access.repo import compute_midcycle_ebit_margin
+        _midcycle = compute_midcycle_ebit_margin(db_read, ticker) if ticker in ("HPG", "DGC") else None
+
         # 2. Xây dựng assumptions động từ nguyên tắc
         config_defaults = load_defaults()
-        erp_total = config_defaults.get("coe_convention", {}).get("erp_total", 0.082)
+        # VND-base: rf=TPCP_VN đã chứa CRP → erp = mature ERP (chống double-count).
+        from valuation.engine.coe import compute_coe, get_erp, MIN_EQUITY_PREMIUM
+        erp_mature = get_erp()
         rf_dynamic = get_latest_tpcp_10y(db_read)
         beta_dynamic = estimate_vcb_beta(db_read, ticker)
-        
-        coe = rf_dynamic + beta_dynamic * erp_total
-        # Sanity floor cho COE
-        if coe < rf_dynamic + 0.05:
+
+        coe = compute_coe(rf_dynamic, beta_dynamic, erp_mature)
+        # Sanity floor: equity premium (beta*erp) phải >= ngưỡng tối thiểu
+        if coe < rf_dynamic + MIN_EQUITY_PREMIUM:
             raise ValueError("COE_TOO_LOW")
             
         # Tính WACC động cho phi tài chính
@@ -165,25 +188,29 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             E = float(current_financials['total_equity'])
             D = float(current_financials['total_debt'])
             tax_rate = 0.20 if ticker in ["HPG", "DGC"] else 0.10
-            cod = rf_dynamic + 0.03
-            if E + D > 0:
-                wacc = coe * (E / (E + D)) + cod * (1 - tax_rate) * (D / (E + D))
-            else:
-                wacc = coe
-            wacc = max(wacc, rf_dynamic + 0.03)
+            from valuation.engine.wacc import compute_wacc, cost_of_debt_from_rf, DEFAULT_DEBT_SPREAD
+            cod = cost_of_debt_from_rf(rf_dynamic)
+            wacc = compute_wacc(coe, cod, E, D, tax_rate, floor=rf_dynamic + DEFAULT_DEBT_SPREAD)
             
         # Thiết lập assumptions cho từng mã
         if ticker == "FPT":
             assumptions = {
                 'cost_of_equity': coe,
                 'wacc': wacc,
-                'revenue_growth_1_to_3': 0.18,
-                'revenue_growth_4_to_5': 0.15,
+                'revenue_growth_1_to_3': 0.15,
+                'revenue_growth_4_to_5': 0.12,
                 'ebit_margin': 0.16,
                 'tax_rate': 0.10,
-                'reinvestment_rate': 0.35,
+                'capex_to_revenue': 0.10,
+                'depr_to_revenue': 0.05,
+                'dso': 45.0,
+                'dio': 30.0,
+                'dpo': 40.0,
+                'interest_rate': 0.06,
+                'debt_repayment_rate': 0.20,
+                'new_borrowing_rate': 0.05,
                 'target_ev_ebitda': 13.0,
-                'long_term_growth': 0.05,
+                'long_term_growth': 0.04,
                 'weight_dcf': 0.5,
                 'drivers': {
                     'revenue_growth_1_to_3': {'bump': 0.01},
@@ -191,6 +218,7 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                     'wacc': {'bump': 0.005}
                 }
             }
+            assumptions['risk_free_rate'] = rf_dynamic
             model = DCFValuationModel(ticker, current_financials, assumptions)
         elif ticker == "HPG":
             assumptions = {
@@ -199,8 +227,16 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                 'revenue_growth_1_to_3': 0.12,
                 'revenue_growth_4_to_5': 0.08,
                 'ebit_margin': 0.11,
+                'mid_cycle_ebit_margin': _midcycle,  # G3: terminal về mid-cycle
                 'tax_rate': 0.20,
-                'reinvestment_rate': 0.50,
+                'capex_to_revenue': 0.15,
+                'depr_to_revenue': 0.07,
+                'dso': 30.0,
+                'dio': 90.0,
+                'dpo': 30.0,
+                'interest_rate': 0.06,
+                'debt_repayment_rate': 0.15,
+                'new_borrowing_rate': 0.08,
                 'target_ev_ebitda': 7.0,
                 'long_term_growth': 0.03,
                 'weight_dcf': 0.5,
@@ -210,6 +246,7 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                     'wacc': {'bump': 0.005}
                 }
             }
+            assumptions['risk_free_rate'] = rf_dynamic
             model = DCFValuationModel(ticker, current_financials, assumptions)
         elif ticker == "DGC":
             assumptions = {
@@ -218,10 +255,18 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                 'revenue_growth_1_to_3': 0.15,
                 'revenue_growth_4_to_5': 0.10,
                 'ebit_margin': 0.22,
+                'mid_cycle_ebit_margin': _midcycle,  # G3: terminal về mid-cycle
                 'tax_rate': 0.20,
-                'reinvestment_rate': 0.35,
+                'capex_to_revenue': 0.12,
+                'depr_to_revenue': 0.06,
+                'dso': 30.0,
+                'dio': 60.0,
+                'dpo': 20.0,
+                'interest_rate': 0.06,
+                'debt_repayment_rate': 0.20,
+                'new_borrowing_rate': 0.05,
                 'target_ev_ebitda': 8.0,
-                'long_term_growth': 0.04,
+                'long_term_growth': 0.035,
                 'weight_dcf': 0.5,
                 'drivers': {
                     'revenue_growth_1_to_3': {'bump': 0.01},
@@ -229,6 +274,7 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                     'wacc': {'bump': 0.005}
                 }
             }
+            assumptions['risk_free_rate'] = rf_dynamic
             model = DCFValuationModel(ticker, current_financials, assumptions)
         else: # SSI
             assumptions = {
@@ -249,6 +295,7 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
                     'net_margin_rate': {'bump': 0.005}
                 }
             }
+            assumptions['risk_free_rate'] = rf_dynamic
             model = SecuritiesValuationModel(ticker, current_financials, assumptions)
             
         try:
@@ -346,7 +393,12 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         for flg in flags:
             if flg not in qc_flags:
                 qc_flags.append(flg)
-                
+
+        # Cờ guardrail terminal growth (cap g<=rf, ép spread WACC-g) từ model
+        for w in getattr(model, "valuation_warnings", []):
+            if w not in qc_flags:
+                qc_flags.append(w)
+
         if any(v is None for v in greeks.values()):
             if "SENSITIVITY_FAILED" not in qc_flags:
                 qc_flags.append("SENSITIVITY_FAILED")
@@ -413,9 +465,9 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         }
     }
     
-    if ticker in ["FPT", "HPG", "VNM", "GAS"]:
-        model = DCFValuationModel(ticker, current_financials, assumptions)
-    elif ticker == "VHM":
+    shares_for_qc = current_financials.get('shares_outstanding', 0.0)
+
+    if ticker in ["VHM", "DIG"]:
         model = RNAVValuationModel(ticker, current_financials, assumptions)
     elif ticker == "SSI":
         assumptions['brokerage_market_share'] = 0.10
@@ -426,14 +478,83 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         assumptions['drivers'] = {'wcm_target_ev_sales': {'bump': 0.1}, 'mch_target_ev_ebitda': {'bump': 1.0}}
         model = SOTPValuationModel(ticker, current_financials, assumptions)
     else:
-        raise HTTPException(status_code=400, detail=f"No valuation model implemented for ticker {ticker}")
-        
+        # ROUTER: bảng CTCK (sector_router, nguồn routing.json) chọn phương pháp đúng.
+        # build_company_data đọc đúng line_item tiếng Anh + assumptions động + overlay.
+        from valuation.engine.sector_router import route as _route
+        from valuation.data_access.repo import build_company_data
+        from valuation.models.financials_bank import CompanyBank as _CompanyBank
+        _plan = _route(ticker)
+        _method = _plan["method"] if _plan else "DCF"
+
+        company = build_company_data(db_read, ticker, mode="TTM")
+        if isinstance(company, _CompanyBank):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{ticker} là ngân hàng nhưng không nằm trong BANK_TICKERS"
+            )
+
+        if _method == "RNAV":
+            # BĐS: RNAV proxy (vốn CSH + thặng dư BĐS), gắn cờ VALUATION_PROXY.
+            from valuation.engine.models.rnav import RNAVValuationModel
+            model = RNAVValuationModel.from_pydantic(company)
+        elif _method == "SOTP":
+            # Holding/đa ngành: SOTP proxy (book − holding discount), cờ VALUATION_PROXY.
+            from valuation.engine.models.sotp import SOTPValuationModel
+            model = SOTPValuationModel.from_pydantic(company)
+        elif _method == "EV_EBITDA":
+            # Hàng không/xi măng: EV/EBITDA với EBITDA CHUẨN HÓA 3 năm (G2 chống nhiễu chu kỳ).
+            from valuation.engine.models.ev_ebitda import EVEBITDAValuationModel
+            model = EVEBITDAValuationModel.from_pydantic(company)
+        elif _method == "PE":
+            # Dệt may/thủy sản/xây dựng: P/E so sánh với EPS CHUẨN HÓA median (chống nhiễu).
+            from valuation.engine.models.pe_relative import PERelativeValuationModel
+            # Dùng nhóm ngành Excel (router) cho P/E mục tiêu, không phải DB sector.
+            model = PERelativeValuationModel.from_pydantic(company, sector=_plan["group"] if _plan else None)
+        elif _method == "PB":
+            # Chứng khoán/bảo hiểm: justified P/B = (ROE−g)/(COE−g), link ROE (Guardrail 1).
+            from valuation.engine.models.pb_relative import PBRelativeValuationModel
+            model = PBRelativeValuationModel.from_pydantic(company)
+        elif _method in ("DCF", "DCF_EVEBITDA"):
+            model = DCFValuationModel.from_pydantic(company)
+            model.assumptions['drivers'] = {
+                'revenue_growth_1_to_3': {'bump': 0.01},
+                'ebit_margin': {'bump': 0.01},
+                'wacc': {'bump': 0.005},
+            }
+            model.assumptions['risk_free_rate'] = company.assumptions.risk_free_rate
+            # ĐIỆN: blend DCF (chủ đạo) + DDM cross-check (genco trả cổ tức ổn định).
+            # Excel: "DCF/FCFF (theo nhà máy)" + DDM phụ. Greeks/QC vẫn theo DCF.
+            if _plan and _plan.get("group") == "Điện":
+                from valuation.engine.models.ddm import DDMValuationModel
+                from valuation.config import load_defaults as _ld
+                _w = _ld().get("ddm", {}).get("power_dcf_weight", 0.6)
+                _ddm_fv = DDMValuationModel.from_pydantic(company).perform_valuation()["blended_fair_value_per_share"]
+                model._power_ddm = (_ddm_fv, _w)
+        else:
+            # PE / PB / EV_EBITDA / PB_EV — chưa có model → gắn cờ, không định giá sai.
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"METHOD_NOT_IMPLEMENTED: {ticker} (nhóm {_plan['group'] if _plan else '?'}) "
+                    f"cần phương pháp {_method} theo bảng CTCK — chưa hỗ trợ định giá tự động."
+                ),
+            )
+        shares_for_qc = company.shares_outstanding * 1e6  # triệu cp → cp thô
+
     try:
         full_valuation = model.perform_valuation()
-        val_result = model.calculate_greeks() 
+        val_result = model.calculate_greeks()
         blended_fvps = float(val_result['base_fair_value'])
         greeks = {k: float(v) if v is not None else None for k, v in val_result['greeks'].items()}
-        
+
+        # ĐIỆN: hoà DCF + DDM (greeks giữ theo DCF — phương pháp chủ đạo).
+        _pd = getattr(model, "_power_ddm", None)
+        if _pd and _pd[0] > 0:
+            _ddm_fv, _w = _pd
+            blended_fvps = _w * blended_fvps + (1 - _w) * float(_ddm_fv)
+            full_valuation["ddm_fvps"] = float(_ddm_fv)
+            full_valuation["blend_note"] = f"DCF {_w:.0%} + DDM {1-_w:.0%}"
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         
@@ -442,14 +563,19 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
         ticker=ticker,
         sector_name=t.sector if t.sector else 'Unknown',
         financials=df_fin,
-        market_cap=curr_price * current_financials['shares_outstanding']
+        market_cap=curr_price * shares_for_qc
     )
     qc_flags = qc_result.get("flags", [])
-    
+
+    # Cờ guardrail terminal growth (cap g<=rf, ép spread WACC-g) từ model
+    for w in getattr(model, "valuation_warnings", []):
+        if w not in qc_flags:
+            qc_flags.append(w)
+
     if any(v is None for v in greeks.values()):
         if "SENSITIVITY_FAILED" not in qc_flags:
             qc_flags.append("SENSITIVITY_FAILED")
-    
+
     from valuation.analysis.macro_radar import capture_macro_snapshot
     macro_snap = capture_macro_snapshot(t.sector if t.sector else 'Unknown', db_read)
 
@@ -471,6 +597,17 @@ def revalue_ticker(ticker: str, db_read: Session = Depends(get_read_db), db_writ
             ticker=ticker, assumption_version=out_record.id, driver_code=d, dFV_ddriver=dfv
         ))
     db_write.commit()
+        
+    # Tự động cập nhật vào Google Sheets dạng chạy nền
+    background_tasks.add_task(
+        update_single_ticker_to_gsheets,
+        ticker=ticker,
+        curr_price=curr_price,
+        blended_fv=blended_fvps,
+        greeks=greeks,
+        qc_flags=qc_flags,
+        db=db_read
+    )
         
     return {
         "ticker": ticker,

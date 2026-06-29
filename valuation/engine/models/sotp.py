@@ -1,57 +1,139 @@
+import statistics
 from typing import Dict, Any
 from .base import BaseValuationModel
+from valuation.models.financials import Company
+from valuation.config import load_defaults
+
 
 class SOTPValuationModel(BaseValuationModel):
     """
-    Mô hình Sum-Of-The-Parts (SOTP) dùng cho Đa ngành (VD: MSN).
+    SOTP (Sum of the Parts) dành cho các Tập đoàn đa ngành.
+
+    Phiên bản MỚI:
+    - Nhất quán phân tách EV và Equity.
+    - Tổng_EV = Sum(các mảng định giá theo EV)
+    - Equity_từ_EV = Tổng_EV - Nợ vay ròng tập đoàn.
+    - Tổng_Equity = Equity_từ_EV + Sum(các mảng định giá theo Equity).
+    - Trừ đi lợi ích CĐTS.
     """
+
     def __init__(self, ticker: str, current_financials: Dict[str, Any], assumptions: Dict[str, Any]):
         super().__init__(ticker, current_financials, assumptions)
-        self.use_wacc = True
-        self.validators()
+        self.valuation_warnings.append("VALUATION_PROXY")
+
+    @classmethod
+    def from_pydantic(cls, company: Company) -> "SOTPValuationModel":
+        bs = company.historical_bs[-1]
+        cfg = load_defaults().get("proxy_valuation", {})
+        cf_dict = {
+            'total_equity': bs.total_equity * 1e9,
+            'cash_and_equivalents': bs.cash_and_equivalents * 1e9,
+            'total_debt': (bs.short_term_debt + bs.long_term_debt) * 1e9,
+            'minority_interest': getattr(bs, 'minority_interest', 0.0) * 1e9,
+            'net_income_history': [is_.net_income for is_ in company.historical_is],  # tỷ
+            'shares_outstanding': company.shares_outstanding * 1e6,
+            'current_price': company.current_price,
+        }
+        
+        assumptions = {
+            'sotp_operating_pe': cfg.get('sotp_operating_pe', 11.0),
+            'sotp_earnings_weight': cfg.get('sotp_earnings_weight', 0.6),
+            'sotp_holding_discount': getattr(company.assumptions, 'sotp_discount', cfg.get('sotp_holding_discount', 0.10)),
+            'sotp_segments': getattr(company.assumptions, 'sotp_segments', [])
+        }
+        return cls(company.ticker, cf_dict, assumptions)
 
     def perform_valuation(self) -> Dict[str, Any]:
-        """
-        Định giá bằng tổng EV của các mảnh ghép trừ đi Net Debt của Holding.
-        """
-        # Part 1: Bán lẻ (WCM)
-        wcm_rev = self.assumptions.get('wcm_revenue', 30000.0) * 1e9
-        wcm_ev_sales = self.assumptions.get('wcm_target_ev_sales', 1.5)
-        wcm_ev = wcm_rev * wcm_ev_sales
+        shares = self.current_financials.get('shares_outstanding', 1)
+        equity = self.current_financials.get('total_equity', 0)
+        cash = self.current_financials.get('cash_and_equivalents', 0)
+        total_debt = self.current_financials.get('total_debt', 0)
+        minority_interest = self.current_financials.get('minority_interest', 0)
+        net_debt = total_debt - cash
         
-        # Part 2: Hàng tiêu dùng (MCH)
-        mch_ebitda = self.assumptions.get('mch_ebitda', 8000.0) * 1e9
-        mch_ev_ebitda = self.assumptions.get('mch_target_ev_ebitda', 15.0)
-        mch_ev = mch_ebitda * mch_ev_ebitda
-        
-        # Part 3: Khoáng sản/Vật liệu (MHT)
-        mht_ebitda = self.assumptions.get('mht_ebitda', 2000.0) * 1e9
-        mht_ev_ebitda = self.assumptions.get('mht_target_ev_ebitda', 6.0)
-        mht_ev = mht_ebitda * mht_ev_ebitda
-        
-        total_enterprise_value = wcm_ev + mch_ev + mht_ev
-        
-        holding_discount = self.assumptions.get('holding_discount', 0.15)
-        adjusted_ev = total_enterprise_value * (1 - holding_discount)
-        
-        net_debt = self.current_financials.get('total_debt', 40000.0 * 1e9) - self.current_financials.get('cash_and_equivalents', 10000.0 * 1e9)
-        
-        equity_value = adjusted_ev - net_debt
-        shares_out = self.current_financials.get('shares_outstanding', 1400.0 * 1e6)
-        
-        blended_fvps = equity_value / shares_out if shares_out > 0 else 0.0
-        
-        return {
-            "blended_fair_value_per_share": blended_fvps,
-            "sotp_components": {
-                "WCM_EV": wcm_ev,
-                "MCH_EV": mch_ev,
-                "MHT_EV": mht_ev
-            },
-            "adjusted_ev": adjusted_ev,
-            "equity_value": equity_value
-        }
+        hist = [x for x in self.current_financials.get('net_income_history', []) if x is not None]
 
-    def forecast_drivers(self):
-        # Không dùng chung pattern với DCF
-        pass
+        operating_pe = self.assumptions.get('sotp_operating_pe', 11.0)
+        w_earn = self.assumptions.get('sotp_earnings_weight', 0.6)
+        discount = self.assumptions.get('sotp_holding_discount', 0.10)
+        sotp_segments = self.assumptions.get('sotp_segments', [])
+
+        if shares <= 0:
+            return {"blended_fair_value_per_share": 0.0, "flags": ["NO_SOTP_DATA"]}
+
+        flags = []
+        if sotp_segments and len(sotp_segments) > 0:
+            # AI_SOTP_MODE
+            total_ev_segments = 0.0
+            total_equity_segments = 0.0
+            
+            for seg in sotp_segments:
+                # Get value in VND
+                try:
+                    val_billion = float(seg.get('gia_tri', 0) or 0)
+                except ValueError:
+                    val_billion = 0.0
+                
+                val = val_billion * 1e9
+                
+                try:
+                    mult = float(seg.get('multiple_ky_vong', 0) or 0)
+                except ValueError:
+                    mult = 0.0
+                
+                if mult > 0:
+                    segment_value = val * mult
+                else:
+                    # Fallback to absolute value if mult is 0/null (e.g., DCF already outputs absolute value)
+                    segment_value = val
+                
+                loai_gia_tri = str(seg.get('loai_gia_tri', '')).upper()
+                
+                if 'EV' in loai_gia_tri:
+                    total_ev_segments += segment_value
+                else:
+                    # Mặc định coi là Equity nếu không rõ hoặc là Equity
+                    total_equity_segments += segment_value
+            
+            # Tính Equity từ EV
+            equity_from_ev = total_ev_segments - net_debt
+            
+            # Tổng VCSH (trừ CĐTS)
+            total_equity_value = equity_from_ev + total_equity_segments - minority_interest
+            
+            # Giá mục tiêu
+            sotp_ps = (total_equity_value / shares) * (1 - discount)
+            
+            flags = ["AI_SOTP_MODE"]
+            if "VALUATION_PROXY" in self.valuation_warnings:
+                self.valuation_warnings.remove("VALUATION_PROXY")
+                
+            earnings_ps = 0.0
+            nav_ps = 0.0
+        else:
+            # PROXY_MODE: Phần vận hành (Earnings) + NAV
+            flags = ["VALUATION_PROXY"]
+            norm_ni = 0.0
+            if hist:
+                window = hist[-3:] if len(hist) >= 3 else hist
+                norm_ni = statistics.median(window) * 1e9
+            operating_value = max(0.0, norm_ni) * operating_pe
+            earnings_ps = operating_value / shares
+
+            nav_ps = equity / shares if equity > 0 else 0.0
+
+            if earnings_ps <= 0:
+                w_earn = 0.0
+                flags.append("SOTP_NAV_FALLBACK")
+
+            sotp_ps = (w_earn * earnings_ps + (1 - w_earn) * nav_ps) * (1 - discount)
+            
+        sotp_ps = max(0.0, sotp_ps)
+
+        return {
+            "blended_fair_value_per_share": sotp_ps, # Dùng luôn làm target price
+            "earnings_value_per_share": earnings_ps if not (sotp_segments and len(sotp_segments) > 0) else sotp_ps,
+            "nav_per_share": nav_ps if not (sotp_segments and len(sotp_segments) > 0) else 0.0,
+            "discount_applied": discount,
+            "flags": flags,
+        }

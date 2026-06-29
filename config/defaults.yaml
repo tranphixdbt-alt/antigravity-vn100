@@ -13,11 +13,17 @@
 #     vì UST chưa chứa rủi ro VN
 #   KHÔNG BAO GIỜ dùng rf=TPCP VN + erp gồm CRP → DOUBLE-COUNT!
 # ===================================================================
+# CONVENTION ĐANG DÙNG (chốt): VND-base.
+#   rf  = TPCP VN 10Y (lấy động từ macro_series, KHÔNG dùng giá trị tĩnh dưới đây)
+#   erp = erp_mature (KHÔNG cộng crp_vn — rf_VN đã chứa rủi ro quốc gia)
+#   COE = rf_VN + beta * erp_mature   → code: valuation/engine/coe.py
+# erp_total chỉ giữ để THAM CHIẾU cho cách USD-base (rf=UST + erp_total); KHÔNG
+# dùng trong code định giá hiện tại (sẽ double-count nếu ghép với rf_VN).
 coe_convention:
-  rf: 0.043           # UST 10Y (risk-free toàn cầu)
-  erp_mature: 0.045   # Mature market ERP (Damodaran US ERP)
-  crp_vn: 0.037       # Country Risk Premium Việt Nam (Nguồn: Damodaran Country Risk Premium cho VN, cập nhật 2024-2025 ≈ 3.7%)
-  erp_total: 0.082    # erp_mature + crp_vn = 8.2% (Thực tế Việt Nam để phản ánh đúng rủi ro quốc gia khi tính theo VND-base)
+  rf: 0.043           # UST 10Y — chỉ tham chiếu (code lấy rf động = TPCP VN)
+  erp_mature: 0.045   # Mature market ERP (Damodaran US ERP) — ERP đang dùng
+  crp_vn: 0.037       # Country Risk Premium VN (Damodaran 2024-2025 ≈ 3.7%)
+  erp_total: 0.082    # erp_mature + crp_vn — CHỈ cho USD-base, KHÔNG dùng với rf_VN
   beta_default: 1.0
   terminal_growth: 0.02
 
@@ -35,3 +41,146 @@ rating_thresholds:
 margin_of_safety:
   bank: 0.20
   default: 0.30
+
+# ===================================================================
+# Tăng trưởng GDP danh nghĩa dài hạn (neo cho revenue_growth fade trong
+# build_company_data): doanh thu các DN phi tài chính được fade từ median
+# lịch sử (năm 1) về mức này (năm 5) — mean-reversion, chống extrapolate
+# tăng trưởng đỉnh chu kỳ. ~8% = GDP thực VN ~6% + lạm phát ~2-3%.
+# ===================================================================
+long_run_nominal_gdp_growth: 0.08
+
+# ===================================================================
+# Thuế suất TNDN theo ngành (effective tax rate mặc định)
+# Nguồn: Luật thuế TNDN VN + ưu đãi đầu tư theo lĩnh vực
+# repo.py ưu tiên effective_tax tính từ lịch sử; giá trị này là
+# fallback khi lịch sử không đủ dữ liệu (< 3 năm).
+# ===================================================================
+sector_tax_rates:
+  default: 0.20          # Thuế TNDN phổ thông 20%
+  banks: 0.20
+  securities: 0.20
+  insurance: 0.20
+  real_estate: 0.20
+  technology: 0.10       # Phần mềm/CNTT — ưu đãi Luật CNTT
+  industrial_zone: 0.10  # KCN — ưu đãi đầu tư
+  agriculture: 0.15      # Nông nghiệp/chế biến thực phẩm
+  steel: 0.20
+  utilities: 0.20
+  consumer: 0.20
+  retail: 0.20
+
+# ===================================================================
+# EV/EBITDA mục tiêu theo ngành (NTM, dùng cho multiples valuation)
+# Nguồn: Bloomberg consensus peer multiples Asia EM / VN
+# Không áp dụng cho banks/securities/insurance (dùng P/B).
+# ===================================================================
+sector_ev_ebitda:
+  default: 7.0
+  technology: 13.0       # FPT, CMG — tăng trưởng cao
+  real_estate: 15.0      # VHM, VIC — NAV premium
+  steel: 5.5             # HPG, HSG — chu kỳ, mid-cycle
+  consumer: 9.0          # VNM, MSN, SAB
+  retail: 8.0            # MWG, FRT, PNJ
+  utilities: 10.0        # GAS, POW, REE
+  oil_gas: 6.0           # PLX, BSR — phân phối/lọc dầu, biên mỏng commodity
+  aviation: 6.0          # HVN, VJC — hàng không, lợi nhuận biến động mạnh
+  industrial_zone: 12.0  # BCM, KBC, IDC
+  agriculture: 7.0
+  banks: null            # Không dùng — P/B / Residual Income
+  securities: null       # Không dùng — P/B
+
+# ===================================================================
+# P/E mục tiêu theo ngành (NTM) — dùng cho định giá P/E so sánh.
+# Áp cho dệt may/thủy sản, xây dựng... (Excel: P/E chủ đạo). EPS chuẩn hóa
+# (median lịch sử) để chống nhiễu lợi nhuận một năm.
+# ===================================================================
+# ===================================================================
+# Tham số PROXY cho RNAV/SOTP (ước lượng từ BCTC — KHÔNG phải định giá CTCK
+# chi tiết). Kết quả luôn gắn cờ VALUATION_PROXY.
+# ===================================================================
+# DDM (điện): genco trả cổ tức ổn định → DDM cross-check (Excel: DCF chủ đạo + DDM phụ).
+ddm:
+  power_payout: 0.50         # tỷ lệ chi trả cổ tức điển hình của genco điện
+  near_growth: 0.05          # tăng trưởng LN/cổ tức giai đoạn đầu (5 năm)
+  terminal_growth: 0.03      # tăng trưởng vĩnh viễn
+  power_dcf_weight: 0.6      # blend cho ngành điện: 60% DCF + 40% DDM
+
+proxy_valuation:
+  rnav_land_premium: 0.30        # đánh giá lại hàng tồn kho BĐS + BĐS đầu tư so giá sổ
+  rnav_weight_nav: 0.7           # trọng số NAV vs P/B trong blend RNAV
+  sotp_operating_pe: 11.0        # bội số LN cho giá trị mảng vận hành (holding)
+  sotp_earnings_weight: 0.6      # trọng số định giá theo LN vs NAV sổ sách
+  sotp_holding_discount: 0.10    # chiết khấu holding
+
+sector_pe:
+  default: 10.0
+  textile_seafood: 8.0   # VHC, ANV, MSH, STK, GIL — chu kỳ XK, biên mỏng
+  construction: 9.0      # CTD, VCG — biên thấp, dòng tiền dự án
+  pharma: 13.0           # DHG, IMP — phòng thủ, ổn định
+  consumer: 14.0
+  technology: 15.0
+
+# ===================================================================
+# Nguồn dữ liệu vĩ mô được phép gọi (allowlist — Bảo mật mục 5).
+# Scraper macro chỉ được fetch từ các domain liệt kê ở đây. Mọi domain
+# khác bị từ chối (chống gọi endpoint lạ / SSRF).
+# ===================================================================
+macro_sources:
+  allowed_domains:
+    - sbv.gov.vn          # Ngân hàng Nhà nước — lãi suất điều hành, tỷ giá, tín dụng, M2
+    - www.sbv.gov.vn
+    - gso.gov.vn          # Tổng cục Thống kê — GDP, CPI, IIP, bán lẻ, FDI
+    - www.gso.gov.vn
+  request_timeout_sec: 15
+  user_agent: "antigravity-vn100-macro/1.0"
+
+# ===================================================================
+# Registry chuỗi vĩ mô chuẩn hóa (Luật vàng #5 — truy vết).
+# Chỉ series_code khai báo ở đây mới được ghi vào bảng macro_series.
+# - unit: đơn vị value đã chuẩn hóa khi lưu DB.
+# - source: nguồn dữ liệu (phải nằm trong macro_sources.allowed_domains
+#   nếu scrape; 'vnstock'/'derived' nếu lấy gián tiếp).
+# series_code phải KHỚP với indicator_code trong bảng macro_radar.
+# ===================================================================
+macro_series_registry:
+  TPCP_10Y:                 # Lợi suất trái phiếu Chính phủ VN kỳ hạn 10 năm
+    unit: decimal_rate      # 0.032 = 3.2%
+    source: vnstock         # lấy qua vnstock/bond; fallback SBV
+    frequency: DAILY
+  CPI_YOY:                  # CPI so cùng kỳ năm trước
+    unit: decimal_rate
+    source: gso.gov.vn
+    frequency: MONTHLY
+  GDP_YOY:                  # Tăng trưởng GDP so cùng kỳ
+    unit: decimal_rate
+    source: gso.gov.vn
+    frequency: QUARTERLY
+  USDVND:                   # Tỷ giá USD/VND
+    unit: vnd_per_usd
+    source: yfinance        # VND=X (fallback SBV tỷ giá trung tâm)
+    frequency: DAILY
+  M2_YOY:                   # Tăng trưởng cung tiền M2 so cùng kỳ
+    unit: decimal_rate
+    source: sbv.gov.vn
+    frequency: MONTHLY
+  CREDIT_GROWTH:            # Tăng trưởng tín dụng toàn hệ thống YTD
+    unit: decimal_rate
+    source: sbv.gov.vn
+    frequency: MONTHLY
+  POLICY_RATE:             # Lãi suất tái cấp vốn điều hành SBV
+    unit: decimal_rate
+    source: sbv.gov.vn
+    frequency: EVENT
+  STEEL_HRC:                # Giá thép cuộn cán nóng (HRC futures, USD/tấn) — driver biên LN thép
+    unit: usd_per_tonne
+    source: yfinance        # HRC=F (US Midwest HRC futures) làm proxy
+    frequency: WEEKLY
+  CRUDE_OIL:                # Dầu thô WTI (USD/thùng) — driver chi phí năng lượng
+    unit: usd_per_barrel
+    source: yfinance        # CL=F
+    frequency: DAILY
+  RETAIL_SALES_YOY:         # Tổng mức bán lẻ HHDV so cùng kỳ — driver bán lẻ
+    unit: decimal_rate
+    source: gso.gov.vn
+    frequency: MONTHLY

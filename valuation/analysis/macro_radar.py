@@ -51,17 +51,20 @@ def get_macro_deltas(sector: str, macro_snapshot: dict = None, db: Session = Non
                 continue
                 
             latest = float(latest_row.value)
-            
+
+            # Elasticity: driver_delta = elasticity * macro_delta. Mặc định 1.0 (map 1:1).
+            elasticity = float(cfg.elasticity) if cfg.elasticity is not None else 1.0
+
             if macro_snapshot is not None:
                 # Tính delta so với snapshot vĩ mô
                 previous = macro_snapshot.get(cfg.indicator_code)
                 if previous is not None:
                     previous = float(previous)
-                    delta_val = latest - previous
+                    macro_delta = latest - previous
                 else:
                     # Nếu chưa có snapshot cho indicator này, delta coi như bằng 0
                     previous = latest
-                    delta_val = 0.0
+                    macro_delta = 0.0
             else:
                 # Fallback: Lấy 2 giá trị gần nhất như cũ
                 series = db.query(MacroSeries).filter(
@@ -69,10 +72,13 @@ def get_macro_deltas(sector: str, macro_snapshot: dict = None, db: Session = Non
                 ).order_by(desc(MacroSeries.date)).limit(2).all()
                 if len(series) >= 2:
                     previous = float(series[1].value)
-                    delta_val = latest - previous
+                    macro_delta = latest - previous
                 else:
                     previous = latest
-                    delta_val = 0.0
+                    macro_delta = 0.0
+
+            # Quy đổi biến động vĩ mô sang biến động driver qua elasticity.
+            delta_val = macro_delta * elasticity
                     
             # Check warn limits
             status = "NEUTRAL"

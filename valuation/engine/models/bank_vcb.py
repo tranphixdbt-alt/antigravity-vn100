@@ -67,10 +67,11 @@ class VCBValuationModel:
         self.non_ii_to_assets = hist_non_ii / hist_assets if hist_assets > 0 else 0.005
 
 
-        # --- Sanity Floor Check ---
-        if self.coe < self.rf + 0.05:
+        # --- Sanity Floor Check (VND-base: equity premium >= MIN_EQUITY_PREMIUM) ---
+        from valuation.engine.coe import MIN_EQUITY_PREMIUM
+        if self.coe < self.rf + MIN_EQUITY_PREMIUM:
             raise ValueError(
-                f"COE_TOO_LOW: Chi phí vốn cổ phần COE={self.coe:.2%} quá thấp (thấp hơn rf={self.rf:.2%} + 5.0%). "
+                f"COE_TOO_LOW: Chi phí vốn cổ phần COE={self.coe:.2%} quá thấp (thấp hơn rf={self.rf:.2%} + {MIN_EQUITY_PREMIUM:.1%}). "
                 f"Vui lòng kiểm tra lại hệ số Beta ({self.beta}) hoặc ERP ({self.erp:.2%})."
             )
 
@@ -78,7 +79,16 @@ class VCBValuationModel:
         hist_equity = self.current_financials.get('total_equity', 0.0)
         hist_ni = self.current_financials.get('net_income', 0.0)
         self.roe_ttm = hist_ni / hist_equity if hist_equity > 0 else 0.18
-        
+
+        # --- ROE fade: terminal/perpetuity dùng ROE bền vững, KHÔNG dùng ROE năm 5 ---
+        # Bank VN ROE ~20% hiện tại nhưng cạnh tranh + tích lũy vốn nén dần về mức
+        # bền vững dài hạn. terminal_roe chặn trên ROE dùng cho terminal value (RI + P/B).
+        # Mặc định 0.15; không bao giờ NÂNG ROE (min với roe hiện tại).
+        self.terminal_roe = min(
+            assumptions.get('terminal_roe', 0.15),
+            self.roe_ttm if self.roe_ttm > 0 else 0.15,
+        )
+
         if self.coe > self.g:
             self.implied_pb = (self.roe_ttm - self.g) / (self.coe - self.g)
             if self.implied_pb > 4.0 or self.implied_pb < 0.5:
@@ -215,10 +225,13 @@ class VCBValuationModel:
             pv_ri += ri[i] / ((1 + self.coe) ** (i + 1))
             
             beg_equity = proj['total_equity'][i]
-            
-        # Terminal Value RI
-        # Assuming RI continues to grow at g
-        terminal_ri = (ri[-1] * (1 + self.g)) / (self.coe - self.g)
+
+        # Terminal Value RI — DÙNG ROE BỀN VỮNG (fade), không dùng ri[-1] (ROE năm 5
+        # còn cao). Sau khi loop, beg_equity = vốn cuối năm 5 = vốn đầu kỳ terminal.
+        # RI_perpetuity = (terminal_roe - coe) * equity_đầu_terminal, tăng g vĩnh viễn.
+        eq_terminal_begin = beg_equity
+        sustainable_ri = (self.terminal_roe - self.coe) * eq_terminal_begin
+        terminal_ri = sustainable_ri / (self.coe - self.g)
         pv_terminal_ri = terminal_ri / ((1 + self.coe) ** self.years)
         
         total_ri_value = pv_ri + pv_terminal_ri
@@ -236,12 +249,14 @@ class VCBValuationModel:
         if not hasattr(self, 'projections'):
             self.forecast_drivers()
             
-        # Long-term ROE is based on year 5
+        # ROE năm 5 (tham chiếu, để báo cáo)
         ni_yr5 = self.projections['net_income'].iloc[-1]
         eq_yr4 = self.projections['total_equity'].iloc[-2] # Beg equity for yr 5
-        long_term_roe = ni_yr5 / eq_yr4 if eq_yr4 > 0 else 0
-        
-        # Target P/B = (ROE - g) / (CoE - g)
+        roe_yr5 = ni_yr5 / eq_yr4 if eq_yr4 > 0 else 0
+
+        # Justified P/B dùng ROE BỀN VỮNG (fade), không dùng ROE năm 5 còn cao.
+        long_term_roe = self.terminal_roe
+        # Target P/B = (ROE_bền_vững - g) / (CoE - g)
         if self.coe <= self.g:
             target_pb = 1.0 # fallback
         else:
@@ -251,6 +266,7 @@ class VCBValuationModel:
         
         self.pb_valuation = {
             'long_term_roe': long_term_roe,
+            'roe_yr5': roe_yr5,
             'target_pb': target_pb,
             'equity_value': equity_value_pb,
             'fair_value_per_share': equity_value_pb / self.current_financials['shares_outstanding']

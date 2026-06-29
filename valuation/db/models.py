@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Integer, Numeric, Date, BigInteger, DateTime, JSON, ForeignKey
+from sqlalchemy import Column, String, Boolean, Integer, Numeric, Date, BigInteger, DateTime, JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 import datetime
 from valuation.db.session import Base
@@ -87,6 +87,12 @@ class MacroSeries(Base):
     source = Column(String(50))
     created_at = Column(DateTime, default=datetime.datetime.utcnow, server_default=func.now())
 
+    # Idempotent ingest: một (indicator_code, date) chỉ tồn tại một bản ghi.
+    # Bắt buộc cho UPSERT (Luật vàng #6 — ghi DB idempotent, chạy lại không nhân đôi).
+    __table_args__ = (
+        UniqueConstraint('indicator_code', 'date', name='uq_macro_series_code_date'),
+    )
+
 class MacroRadar(Base):
     __tablename__ = "macro_radar"
     
@@ -97,6 +103,10 @@ class MacroRadar(Base):
     warn_low = Column(Numeric)
     warn_high = Column(Numeric)
     mapped_driver = Column(String)
+    # Độ nhạy driver theo biến vĩ mô: driver_delta = elasticity * (macro_now - baseline).
+    # Mặc định 1.0 (map trực tiếp 1:1, vd TPCP_10Y→wacc). Cho GDP→revenue beta khác 1
+    # theo ngành (thép 2.0, tech 1.2). Nguồn: config/elasticities.yaml.
+    elasticity = Column(Numeric, default=1.0)
 
 class DailySignal(Base):
     __tablename__ = "daily_signal"
@@ -123,3 +133,25 @@ class Consensus(Base):
     source_url = Column(String)
     raw_quote = Column(String)
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ValuationRun(Base):
+    __tablename__ = "valuation_runs"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String, ForeignKey("tickers.ticker"), nullable=False)
+    analyst = Column(String, default="Analyst")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    engine = Column(String)  # 'dcf' hoặc 'bank'
+    method = Column(String)  # 'FCFF + EV/EBITDA' hoặc 'Justified P/B'
+    scenario = Column(String)  # 'Base', 'Bull', 'Bear'
+    assumptions_json = Column(JSON)  # Lưu JSONB giả định định giá
+    base_year_mode = Column(String)  # 'TTM' hoặc 'FY'
+    wacc = Column(Numeric, nullable=True)
+    terminal_g = Column(Numeric)
+    target_price = Column(Numeric)
+    current_price = Column(Numeric)
+    upside = Column(Numeric)
+    recommendation = Column(String)
+    report_path = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+

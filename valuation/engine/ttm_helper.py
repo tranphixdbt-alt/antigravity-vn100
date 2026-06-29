@@ -126,8 +126,10 @@ def get_shares_outstanding(db: Session, ticker: str) -> float:
     if direct_shares > 0:
         return direct_shares
 
+    # Vốn điều lệ thật: charter_capital/paid_in_capital. KHÔNG dùng owners_equity
+    # làm proxy (đó là TỔNG vốn CSH, không phải vốn điều lệ → phóng đại số cp).
     von_dieu_le = get_latest_balance(
-        db, ticker, ["Vốn điều lệ", "Vốn góp của chủ sở hữu", "paid_in_capital", "common_shares", "owners_equity"]
+        db, ticker, ["charter_capital", "Vốn điều lệ", "Vốn góp của chủ sở hữu", "paid_in_capital", "common_shares"]
     )
     if von_dieu_le > 0:
         return von_dieu_le / 10_000  # Mệnh giá cổ phiếu VN = 10,000 VND
@@ -157,15 +159,15 @@ def compute_historical_nim(
         return 0.0
 
     nii_ttm = sum(
-        _query_value(db, ticker, ["Thu nhập lãi thuần"], yr, q)
+        _query_value(db, ticker, ["net_interest_income", "Thu nhập lãi thuần"], yr, q)
         for yr, q in quarters[:n_quarters]
     )
     # Tổng tài sản: đầu kỳ (quý cũ nhất) và cuối kỳ (quý mới nhất)
     ta_end = _query_value(
-        db, ticker, ["TỔNG TÀI SẢN"], quarters[0][0], quarters[0][1]
+        db, ticker, ["total_assets", "TỔNG TÀI SẢN"], quarters[0][0], quarters[0][1]
     )
     ta_start = _query_value(
-        db, ticker, ["TỔNG TÀI SẢN"], quarters[-1][0], quarters[-1][1]
+        db, ticker, ["total_assets", "TỔNG TÀI SẢN"], quarters[-1][0], quarters[-1][1]
     )
     avg_ta = (ta_start + ta_end) / 2
     if avg_ta <= 0:
@@ -184,11 +186,11 @@ def compute_historical_cir(
         return 0.0
 
     opex_ttm = abs(sum(
-        _query_value(db, ticker, ["IX. Chi phí hoạt động", "Chi phí hoạt động"], yr, q)
+        _query_value(db, ticker, ["general_and_admin_expenses", "IX. Chi phí hoạt động", "Chi phí hoạt động"], yr, q)
         for yr, q in quarters[:n_quarters]
     ))
     toi_ttm = sum(
-        _query_value(db, ticker, ["VIII. Tổng thu nhập hoạt động", "Tổng thu nhập hoạt động"], yr, q)
+        _query_value(db, ticker, ["total_operating_income", "VIII. Tổng thu nhập hoạt động", "Tổng thu nhập hoạt động"], yr, q)
         for yr, q in quarters[:n_quarters]
     )
     if toi_ttm <= 0:
@@ -208,10 +210,10 @@ def compute_historical_credit_growth(
     latest_yr, latest_q = quarters[0]
 
     loans_now = _query_value(
-        db, ticker, ["1. Cho vay khách hàng"], latest_yr, latest_q
+        db, ticker, ["loans_and_advances_to_customers_net", "loans_and_advances_to_customers", "1. Cho vay khách hàng"], latest_yr, latest_q
     )
     loans_prev = _query_value(
-        db, ticker, ["1. Cho vay khách hàng"], latest_yr - 1, latest_q
+        db, ticker, ["loans_and_advances_to_customers_net", "loans_and_advances_to_customers", "1. Cho vay khách hàng"], latest_yr - 1, latest_q
     )
     if loans_prev <= 0:
         return 0.0
@@ -231,17 +233,17 @@ def compute_historical_credit_cost(
     provision_ttm = abs(sum(
         _query_value(
             db, ticker,
-            ["Chi phí dự phòng rủi ro tín dụng", "Chi phí dự phòng"],
+            ["provision_for_credit_losses", "Chi phí dự phòng rủi ro tín dụng", "Chi phí dự phòng"],
             yr, q,
         )
         for yr, q in quarters[:n_quarters]
     ))
     loans_end = _query_value(
-        db, ticker, ["1. Cho vay khách hàng"],
+        db, ticker, ["loans_and_advances_to_customers_net", "loans_and_advances_to_customers", "1. Cho vay khách hàng"],
         quarters[0][0], quarters[0][1],
     )
     loans_start = _query_value(
-        db, ticker, ["1. Cho vay khách hàng"],
+        db, ticker, ["loans_and_advances_to_customers_net", "loans_and_advances_to_customers", "1. Cho vay khách hàng"],
         quarters[-1][0], quarters[-1][1],
     )
     avg_loans = (loans_start + loans_end) / 2
@@ -261,15 +263,46 @@ def get_latest_tpcp_10y(db: Session) -> float:
         return float(row.value)
     return 0.032  # Fallback
 
+def _beta_from_db(db: Session, ticker: str) -> Optional[float]:
+    """Beta từ giá DB (PricesDaily) — KHÔNG gọi live. None nếu thiếu dữ liệu/VNINDEX."""
+    import numpy as np
+    import datetime
+    from valuation.db.models import PricesDaily
+    start = datetime.date.today() - datetime.timedelta(days=2 * 365)
+
+    def series(tk):
+        rows = (db.query(PricesDaily.trade_date, PricesDaily.close)
+                .filter(PricesDaily.ticker == tk, PricesDaily.trade_date >= start)
+                .order_by(PricesDaily.trade_date).all())
+        return {d: float(c) for d, c in rows if c is not None}
+
+    st, si = series(ticker), series("VNINDEX")
+    common = sorted(set(st) & set(si))
+    if len(common) < 30:
+        return None
+    pt = np.array([st[d] for d in common])
+    pi = np.array([si[d] for d in common])
+    rt, ri = np.diff(pt) / pt[:-1], np.diff(pi) / pi[:-1]
+    var = np.var(ri, ddof=1)
+    if var <= 0:
+        return None
+    return max(0.5, min(float(np.cov(rt, ri)[0, 1] / var), 1.5))
+
+
 def estimate_vcb_beta(db: Session, ticker: str = "VCB") -> float:
     """
-    Ước lượng beta của ticker so với VNINDEX từ giá lịch sử 2 năm qua.
-    Sử dụng vnstock_client để lấy dữ liệu động. Fallback về 0.7674 nếu có lỗi.
+    Ước lượng beta vs VNINDEX từ giá 2 năm. ƯU TIÊN giá DB (PricesDaily, không gọi
+    live — an toàn cho batch); chỉ fallback live vnstock nếu DB thiếu VNINDEX.
+    Fallback cuối 0.7674.
     """
     import numpy as np
     import pandas as pd
     from valuation.ingest.vnstock_client import vnstock_client
     import datetime
+
+    db_beta = _beta_from_db(db, ticker)
+    if db_beta is not None:
+        return db_beta
 
     try:
         # Lấy dữ liệu 2 năm trước đến nay
@@ -311,19 +344,20 @@ def build_vcb_current_financials(db: Session, ticker: str = "VCB") -> dict:
     BS items: lấy quý cuối.
     IS items: tổng hợp TTM (4 quý).
     """
-    nii = get_ttm_value(db, ticker, ["I. Thu nhập lãi thuần", "Thu nhập lãi thuần"])
-    toi = get_ttm_value(db, ticker, ["VIII. Tổng thu nhập hoạt động", "Tổng thu nhập hoạt động"])
+    # Ưu tiên key tiếng Anh (vnstock English line_item), fallback tiếng Việt.
+    nii = get_ttm_value(db, ticker, ["net_interest_income", "I. Thu nhập lãi thuần", "Thu nhập lãi thuần"])
+    toi = get_ttm_value(db, ticker, ["total_operating_income", "VIII. Tổng thu nhập hoạt động", "Tổng thu nhập hoạt động"])
     non_interest_income = toi - nii
 
     return {
-        "total_equity": get_latest_balance(db, ticker, ["Vốn chủ sở hữu"]),
-        "total_assets": get_latest_balance(db, ticker, ["TỔNG TÀI SẢN"]),
-        "customer_loans": get_latest_balance(db, ticker, ["1. Cho vay khách hàng"]),
+        "total_equity": get_latest_balance(db, ticker, ["owners_equity", "shareholders_equity", "Vốn chủ sở hữu"]),
+        "total_assets": get_latest_balance(db, ticker, ["total_assets", "TỔNG TÀI SẢN"]),
+        "customer_loans": get_latest_balance(db, ticker, ["loans_and_advances_to_customers_net", "loans_and_advances_to_customers", "1. Cho vay khách hàng"]),
         "customer_deposits": get_latest_balance(
-            db, ticker, ["Tiền gửi của khách hàng"]
+            db, ticker, ["deposits_from_customers", "Tiền gửi của khách hàng"]
         ),
         "net_income": get_ttm_value(
-            db, ticker, ["XIV. Lợi nhuận sau thuế", "Lợi nhuận sau thuế"]
+            db, ticker, ["net_profit_loss_after_tax", "XIV. Lợi nhuận sau thuế", "Lợi nhuận sau thuế"]
         ),
         "net_interest_income": nii,
         "non_interest_income": non_interest_income,
@@ -342,22 +376,22 @@ def build_vcb_assumptions_from_history(
 
     COE Convention (Chốt từ nguyên tắc):
       rf  = TPCP VN 10Y (lấy động từ DB)
-      erp = Mature market ERP + Country Risk Premium VN = erp_total (đọc từ config defaults.yaml)
+      erp = Mature market ERP (erp_mature) — KHÔNG cộng CRP (rf_VN đã chứa CRP)
       beta = ước lượng từ giá VCB vs VNINDEX
       COE = rf + beta * erp
     """
     rf_dynamic = get_latest_tpcp_10y(db)
     beta_dynamic = estimate_vcb_beta(db, ticker)
     
-    from valuation.config import load_defaults
-    config_defaults = load_defaults()
-    coe_conv = config_defaults.get("coe_convention", {})
-    erp_total = coe_conv.get("erp_total", 0.082)  # Đọc động từ defaults.yaml
+    # VND-base convention: rf = TPCP_VN (đã chứa CRP) → erp = mature ERP, KHÔNG
+    # cộng CRP lần nữa. Nguồn sự thật: valuation.engine.coe.get_erp()
+    from valuation.engine.coe import get_erp
+    erp_mature = get_erp()
 
     if coe_config is None:
         coe_config = {
             "risk_free_rate": rf_dynamic,
-            "erp": erp_total,
+            "erp": erp_mature,
             "beta": beta_dynamic,
             "terminal_growth_rate": 0.02,
         }
@@ -367,9 +401,9 @@ def build_vcb_assumptions_from_history(
             coe_config["risk_free_rate"] = rf_dynamic
         if coe_config.get("beta") == 1.0:
             coe_config["beta"] = beta_dynamic
-        # Nếu erp cũ là 6.0% hoặc chưa cập nhật, ta cập nhật lên erp_total mới
+        # Ghi đè ERP cũ (6.0% / 8.2% double-count) bằng mature ERP đúng convention
         if coe_config.get("erp") in (0.060, 0.082) or coe_config.get("erp") is None:
-            coe_config["erp"] = erp_total
+            coe_config["erp"] = erp_mature
 
     # Lấy driver thật từ DB
     hist_nim = compute_historical_nim(db, ticker)
@@ -419,6 +453,10 @@ def build_vcb_assumptions_from_history(
         "cir": cir_schedule,
         "credit_cost": cc_schedule,
         "dividend_payout_ratio": 0.15,  # VCB payout thấp ~15%
+        # ROE bền vững dài hạn cho terminal value (RI + justified P/B). Bank VN ROE
+        # ~20% hiện tại bị cạnh tranh/tích lũy vốn nén dần; 15% là mức thận trọng,
+        # tunable. Model chặn trên = min(terminal_roe, roe_ttm) — không bao giờ nâng.
+        "terminal_roe": 0.15,
         "risk_free_rate": coe_config["risk_free_rate"],
         "beta": coe_config["beta"],
         "erp": coe_config["erp"],

@@ -74,7 +74,9 @@ class TestDGCSanityGates:
             
         # Chạy revalue_ticker
         db_write = SessionLocalWrite()
-        res = revalue_ticker("DGC", db_read=db, db_write=db_write)
+        from fastapi import BackgroundTasks
+        bg_tasks = BackgroundTasks()
+        res = revalue_ticker("DGC", background_tasks=bg_tasks, db_read=db, db_write=db_write)
         
         assert res["ticker"] == "DGC"
         assert "valuation" in res

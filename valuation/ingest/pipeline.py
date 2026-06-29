@@ -164,11 +164,25 @@ def run_ingest(ticker: str, data_types: list):
 
         if 'financials' in data_types:
             for stmt_type in ['BS', 'IS', 'CF']:
-                df_fin = vnstock_client.get_financials(ticker, stmt_type)
-                df_long = unpivot_financials(df_fin, stmt_type)
-                upsert_financials(df_long, ticker)
-                if not df_long.empty and not last_fin:
-                    last_fin = f"{df_long['fiscal_year'].max()}-Q{df_long[df_long['fiscal_year']==df_long['fiscal_year'].max()]['fiscal_quarter'].max()}"
+                # Lấy dữ liệu quý (Quarterly)
+                try:
+                    df_fin_q = vnstock_client.get_financials(ticker, stmt_type, period='quarter')
+                    df_long_q = unpivot_financials(df_fin_q, stmt_type)
+                    upsert_financials(df_long_q, ticker)
+                except Exception as e:
+                    logger.warning(f"Could not fetch quarterly {stmt_type} for {ticker}: {e}")
+                    df_long_q = pd.DataFrame()
+
+                # Lấy dữ liệu năm (Yearly)
+                try:
+                    df_fin_y = vnstock_client.get_financials(ticker, stmt_type, period='year')
+                    df_long_y = unpivot_financials(df_fin_y, stmt_type)
+                    upsert_financials(df_long_y, ticker)
+                except Exception as e:
+                    logger.warning(f"Could not fetch yearly {stmt_type} for {ticker}: {e}")
+
+                if not df_long_q.empty and not last_fin:
+                    last_fin = f"{df_long_q['fiscal_year'].max()}-Q{df_long_q[df_long_q['fiscal_year']==df_long_q['fiscal_year'].max()]['fiscal_quarter'].max()}"
 
     except Exception as e:
         logger.error(f"Ingest failed for {ticker}: {e}")

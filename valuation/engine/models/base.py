@@ -1,6 +1,12 @@
 from typing import Dict, Any
 import copy
 
+# Spread tối thiểu giữa WACC và terminal growth g.
+# Khi discount rate thấp (VND-base COE ~8%), g 4-5% làm spread mỏng → terminal
+# value phình bất thường. Ép spread tối thiểu để TV ổn định (Gordon sanity check).
+MIN_WACC_G_SPREAD = 0.03
+
+
 class BaseValuationModel:
     """
     Base class cho tất cả các mô hình định giá.
@@ -18,16 +24,33 @@ class BaseValuationModel:
         self.coe = assumptions.get('cost_of_equity', 0.13)
         self.wacc = assumptions.get('wacc', 0.11)
         self.g = assumptions.get('long_term_growth', 0.05)
-        
+        self.valuation_warnings = []
+
         self.validators()
 
     def validators(self):
-        """Kiểm tra các quy tắc tài chính cơ bản"""
-        if self.g >= self.wacc and hasattr(self, 'use_wacc') and self.use_wacc:
-            # Trong một số context, model có thể ko báo lỗi mà clamp lại
-            self.g = self.wacc - 0.005 
-        if self.g >= self.coe:
-            self.g = self.coe - 0.005
+        """
+        Guardrail terminal growth g:
+        1. Damodaran cap: g không vượt risk-free rate (rf proxy tăng trưởng kinh tế
+           danh nghĩa dài hạn — một perpetuity không thể tăng nhanh hơn nền kinh tế).
+        2. Spread tối thiểu WACC−g (và COE−g) ≥ MIN_WACC_G_SPREAD để TV không phình.
+        """
+        rf = self.assumptions.get('risk_free_rate')
+        if rf is not None and self.g > rf:
+            self.valuation_warnings.append(
+                f"TERMINAL_G_CAPPED_AT_RF: g={self.g:.4f} > rf={rf:.4f} → clamp về rf"
+            )
+            self.g = rf
+
+        uses_wacc = getattr(self, 'use_wacc', False)
+        discount = self.wacc if uses_wacc else self.coe
+        if self.g > discount - MIN_WACC_G_SPREAD:
+            new_g = discount - MIN_WACC_G_SPREAD
+            self.valuation_warnings.append(
+                f"TERMINAL_G_CLAMPED_SPREAD: g={self.g:.4f} → {new_g:.4f} "
+                f"(ép spread {'WACC' if uses_wacc else 'COE'}−g ≥ {MIN_WACC_G_SPREAD:.2f})"
+            )
+            self.g = new_g
 
     def forecast_drivers(self):
         """Phải được override bởi model con. Trả về dataframe hoặc dict forecast."""

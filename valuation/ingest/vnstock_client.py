@@ -15,12 +15,13 @@ class VnstockClient:
         company = Company(source=self.source, symbol=symbol)
         return company.overview()
     
-    def get_financials(self, symbol: str, statement_type: str = "BS") -> pd.DataFrame:
+    def get_financials(self, symbol: str, statement_type: str = "BS", period: str = "quarter") -> pd.DataFrame:
         """
         Lấy báo cáo tài chính
         statement_type: 'BS' (Balance Sheet), 'IS' (Income Statement), 'CF' (Cash Flow)
+        period: 'quarter' hoặc 'year'
         """
-        finance = Finance(source=self.source, symbol=symbol, period='quarter', get_all=True)
+        finance = Finance(source=self.source, symbol=symbol, period=period, get_all=True)
         if statement_type == "BS":
             return finance.balance_sheet()
         elif statement_type == "IS":

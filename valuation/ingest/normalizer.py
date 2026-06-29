@@ -36,8 +36,8 @@ def unpivot_financials(df_wide: pd.DataFrame, statement_type: str) -> pd.DataFra
     
     id_vars = ['item_id']
     
-    # Tìm các cột là quý (format: YYYY-QX)
-    value_vars = [c for c in df_wide.columns if re.match(r'^\d{4}-Q\d$', str(c))]
+    # Tìm các cột là quý (format: YYYY-QX) hoặc năm (format: YYYY)
+    value_vars = [c for c in df_wide.columns if re.match(r'^\d{4}(-Q\d)?$', str(c))]
     
     df_long = df_wide.melt(id_vars=id_vars, value_vars=value_vars, 
                            var_name='period', value_name='value')
@@ -50,7 +50,13 @@ def unpivot_financials(df_wide: pd.DataFrame, statement_type: str) -> pd.DataFra
     
     # Parse period -> fiscal_year, fiscal_quarter
     df_long['fiscal_year'] = df_long['period'].str[:4].astype(int)
-    df_long['fiscal_quarter'] = df_long['period'].str[-1].astype(int)
+    
+    def parse_quarter(p):
+        if '-Q' in p:
+            return int(p[-1])
+        return 0  # 0 indicates Full Year data
+        
+    df_long['fiscal_quarter'] = df_long['period'].apply(parse_quarter)
     
     df_long['statement'] = statement_type
     df_long['is_consolidated'] = True # Ưu tiên lấy hợp nhất từ vnstock

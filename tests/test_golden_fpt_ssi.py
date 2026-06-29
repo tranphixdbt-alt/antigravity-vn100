@@ -126,7 +126,9 @@ class TestThreeTierValidationGates:
         # Chạy revalue_ticker qua API route
         from valuation.db.session import SessionLocalWrite
         db_write = SessionLocalWrite()
-        res = revalue_ticker("FPT", db_read=db, db_write=db_write)
+        from fastapi import BackgroundTasks
+        bg_tasks = BackgroundTasks()
+        res = revalue_ticker("FPT", background_tasks=bg_tasks, db_read=db, db_write=db_write)
         
         assert res["ticker"] == "FPT"
         assert "valuation" in res

@@ -1,0 +1,146 @@
+"""
+Financial models — Các mô hình Pydantic v2 để validate dữ liệu tài chính cho doanh nghiệp phi tài chính.
+"""
+from typing import List, Dict, Optional
+from pydantic import BaseModel, Field, model_validator
+
+class IncomeStatement(BaseModel):
+    year: int
+    revenue: float = Field(..., description="Doanh thu thuần (tỷ đồng)")
+    cogs: float = Field(..., description="Giá vốn hàng bán (tỷ đồng)")
+    gross_profit: float = Field(..., description="Lợi nhuận gộp (tỷ đồng)")
+    opex: float = Field(..., description="Chi phí hoạt động (bán hàng + QLDN) (tỷ đồng)")
+    ebit: float = Field(..., description="Lợi nhuận trước lãi vay và thuế (tỷ đồng)")
+    interest_expense: float = Field(..., description="Chi phí lãi vay (tỷ đồng)")
+    tax: float = Field(..., description="Thuế TNDN (tỷ đồng)")
+    net_income: float = Field(..., description="Lợi nhuận sau thuế (tỷ đồng)")
+
+class BalanceSheet(BaseModel):
+    year: int
+    cash_and_equivalents: float = Field(..., description="Tiền và tương đương tiền (tỷ đồng)")
+    receivables: float = Field(..., description="Phải thu khách hàng (tỷ đồng)")
+    inventory: float = Field(..., description="Hàng tồn kho (tỷ đồng)")
+    other_current_assets: float = Field(..., description="Tài sản ngắn hạn khác (tỷ đồng)")
+    fixed_assets: float = Field(..., description="Tài sản cố định ròng (tỷ đồng)")
+    other_long_term_assets: float = Field(..., description="Tài sản dài hạn khác (tỷ đồng)")
+    total_assets: float = Field(..., description="Tổng tài sản (tỷ đồng)")
+    short_term_debt: float = Field(..., description="Nợ vay ngắn hạn (tỷ đồng)")
+    accounts_payable: float = Field(..., description="Phải trả người bán (tỷ đồng)")
+    other_current_liabilities: float = Field(..., description="Nợ ngắn hạn khác (tỷ đồng)")
+    long_term_debt: float = Field(..., description="Nợ vay dài hạn (tỷ đồng)")
+    other_long_term_liabilities: float = Field(..., description="Nợ dài hạn khác (tỷ đồng)")
+    total_equity: float = Field(..., description="Vốn chủ sở hữu (tỷ đồng)")
+
+    @property
+    def total_liabilities(self) -> float:
+        return (self.short_term_debt + self.accounts_payable + self.other_current_liabilities +
+                self.long_term_debt + self.other_long_term_liabilities)
+
+    @property
+    def total_liabilities_and_equity(self) -> float:
+        return self.total_liabilities + self.total_equity
+
+class CashFlow(BaseModel):
+    year: int
+    cfo: float = Field(..., description="Dòng tiền từ hoạt động kinh doanh (tỷ đồng)")
+    capex: float = Field(..., description="Chi phí đầu tư tài sản cố định (tỷ đồng)")
+    cf_other: float = Field(0.0, description="Dòng tiền đầu tư/tài chính khác (tỷ đồng)")
+
+class Assumptions(BaseModel):
+    # Chi phí vốn (COE)
+    risk_free_rate: float = Field(0.03, description="Lợi suất phi rủi ro")
+    beta: float = Field(1.0, description="Hệ số Beta")
+    erp: float = Field(0.045, description="Mature-market ERP (VND-base: rf=TPCP_VN đã chứa CRP)")
+    cost_of_equity: Optional[float] = Field(None, description="Chi phí vốn cổ phần (nếu tự nhập)")
+    
+    # Cơ cấu vốn & Nợ
+    cost_of_debt: float = Field(0.06, description="Chi phí nợ vay trước thuế")
+    tax_rate: float = Field(0.20, description="Thuế suất TNDN")
+    debt_ratio: Optional[float] = Field(None, description="Tỷ lệ nợ/tổng nguồn vốn (nếu cố định)")
+
+    # Giả định dự phóng (5 năm tiếp theo)
+    revenue_growth: List[float] = Field(..., description="Tốc độ tăng trưởng doanh thu 5 năm")
+    ebit_margin: List[float] = Field(..., description="Biên EBIT 5 năm")
+    mid_cycle_ebit_margin: Optional[float] = Field(None, description="Biên EBIT mid-cycle cho terminal (ngành cyclical); None nếu không cyclical")
+    capex_to_revenue: List[float] = Field(..., description="CapEx/Doanh thu 5 năm")
+    depr_to_revenue: List[float] = Field(..., description="Khấu hao/Doanh thu 5 năm")
+    
+    # Working Capital Schedule (3 vòng quay)
+    dso: List[float] = Field(..., description="Days Sales Outstanding (Số ngày phải thu)")
+    dio: List[float] = Field(..., description="Days Inventory Outstanding (Số ngày tồn kho)")
+    dpo: List[float] = Field(..., description="Days Payable Outstanding (Số ngày phải trả)")
+    
+    # Debt Schedule
+    interest_rate: List[float] = Field(..., description="Lãi suất vay trung bình (%)")
+    debt_repayment_rate: List[float] = Field(
+        default_factory=lambda: [0.20] * 5,
+        description="Tỷ lệ trả nợ gốc hàng năm (% trên tổng nợ đầu kỳ)"
+    )
+    new_borrowing_rate: List[float] = Field(
+        default_factory=lambda: [0.05] * 5,
+        description="Tỷ lệ vay mới hàng năm (% trên doanh thu dự phóng)"
+    )
+    
+    # Giả định vĩnh viễn
+    terminal_growth_rate: float = Field(0.02, description="Tăng trưởng vĩnh viễn g")
+    roic_terminal: Optional[float] = Field(None, description="ROIC vĩnh viễn")
+    
+    # Định giá so sánh & Pha trộn
+    target_ev_ebitda: float = Field(8.0, description="EV/EBITDA mục tiêu")
+    weight_dcf: float = Field(0.5, description="Trọng số DCF")
+    
+    # RNAV & SOTP
+    rnav_revaluation_premium: float = Field(0.2, description="Tỷ lệ đánh giá lại (premium) cho hàng tồn kho (dành cho RNAV BĐS)")
+    rnav_wacc: float = Field(0.11, description="WACC áp dụng cho dự án BĐS")
+    rnav_discount: float = Field(0.40, description="Tỷ lệ chiết khấu NAV của công ty BĐS")
+    sotp_discount: float = Field(0.1, description="Tỷ lệ chiết khấu tập đoàn đa ngành (SOTP)")
+    rnav_projects: Optional[List[Dict]] = Field(default_factory=list, description="Danh sách dự án BĐS do AI bóc tách")
+    sotp_segments: Optional[List[Dict]] = Field(default_factory=list, description="Danh sách mảng kinh doanh SOTP do AI bóc tách")
+
+class Company(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    current_price: float = Field(..., description="Giá thị trường hiện tại (VND)")
+    shares_outstanding: float = Field(..., description="Số lượng cổ phiếu lưu hành (triệu cổ phiếu)")
+    
+    historical_is: List[IncomeStatement]
+    historical_bs: List[BalanceSheet]
+    historical_cf: List[CashFlow]
+    assumptions: Assumptions
+    
+    warnings: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_model_integrity(self) -> 'Company':
+        warnings = []
+        for bs in self.historical_bs:
+            # Kiểm tra cân đối kế toán: Tổng tài sản vs Tổng nguồn vốn
+            diff = abs(bs.total_assets - bs.total_liabilities_and_equity)
+            if diff > 0.01:  # Lệch quá 10 triệu VND (0.01 tỷ)
+                warnings.append(
+                    f"Năm {bs.year}: Bảng cân đối kế toán không cân đối! "
+                    f"Tổng tài sản ({bs.total_assets:.3f}) lệch so với Tổng nguồn vốn ({bs.total_liabilities_and_equity:.3f}) "
+                    f"một khoảng {diff:.3f} tỷ đồng."
+                )
+                
+        # Cash Flow Check
+        for i in range(1, len(self.historical_bs)):
+            prev_bs = self.historical_bs[i-1]
+            curr_bs = self.historical_bs[i]
+            
+            cf_match = [cf for cf in self.historical_cf if cf.year == curr_bs.year]
+            if not cf_match:
+                continue
+            curr_cf = cf_match[0]
+            
+            delta_cash = curr_bs.cash_and_equivalents - prev_bs.cash_and_equivalents
+            total_cf = curr_cf.cfo + curr_cf.capex + curr_cf.cf_other
+            
+            diff_cash = abs(delta_cash - total_cf)
+            if diff_cash > 1.0 and curr_cf.cf_other == 0.0:
+                # Tự động bù phần thiếu vào cf_other để cân bằng Cash Flow
+                curr_cf.cf_other = delta_cash - (curr_cf.cfo + curr_cf.capex)
+                
+        self.warnings.extend(warnings)
+        return self

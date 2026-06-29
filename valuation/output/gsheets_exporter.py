@@ -291,3 +291,314 @@ def export_daily_signals_to_gsheets(trade_date: datetime.date = None, db: Sessio
     finally:
         if close_db:
             db.close()
+
+
+def update_single_ticker_to_gsheets(
+    ticker: str, 
+    curr_price: float, 
+    blended_fv: float, 
+    greeks: dict, 
+    qc_flags: list, 
+    db: Session
+):
+    """
+    Cập nhật hoặc chèn mới kết quả định giá của một mã CK đơn lẻ vào Google Sheets 'Daily_Screener'.
+    Đảm bảo chống trùng lặp: nếu đã có thì ghi đè dòng cũ, nếu chưa có thì append dòng mới.
+    """
+    if not settings.google_service_account_json or not settings.google_sheet_master_id:
+        logger.warning("Google Sheets config missing. Skipping single ticker update.")
+        return {"status": "skipped", "reason": "Missing GS config"}
+        
+    try:
+        # 1. Xác định Ngành và map tiếng Việt
+        ticker_obj = db.query(Ticker).filter(Ticker.ticker == ticker).first()
+        sector = ticker_obj.sector if ticker_obj else "Unknown"
+        
+        SECTOR_MAP = {
+            "Banks": "Ngân hàng",
+            "Technology": "Công nghệ",
+            "Chemicals": "Hóa chất",
+            "Securities": "Chứng khoán",
+            "Thép / vật liệu": "Thép & Vật liệu"
+        }
+        display_sector = SECTOR_MAP.get(sector, sector)
+        if not display_sector or display_sector == "":
+            BANK_TICKERS = [
+                "VCB", "ACB", "CTG", "BID", "TCB", "MBB", "VPB", "STB", "HDB", "VIB", "TPB", "MSB", "SHB", "OCB",
+                "ABB", "BAB", "BVB", "EIB", "KLB", "LPB", "NAB", "NVB", "PGB", "SGB", "SSB", "VAB", "VBB"
+            ]
+            if ticker in BANK_TICKERS:
+                display_sector = "Ngân hàng"
+            else:
+                display_sector = "Unknown"
+
+        # 2. Tính toán ROE, P/E, P/B
+        pe = None
+        pb = None
+        roe = None
+        
+        # Load builders
+        fin_builders = {
+            "VCB": build_vcb_current_financials,
+            "FPT": build_fpt_current_financials,
+            "HPG": build_hpg_current_financials,
+            "SSI": build_ssi_current_financials,
+            "DGC": build_dgc_current_financials
+        }
+        
+        BANK_TICKERS = [
+            "VCB", "ACB", "CTG", "BID", "TCB", "MBB", "VPB", "STB", "HDB", "VIB", "TPB", "MSB", "SHB", "OCB",
+            "ABB", "BAB", "BVB", "EIB", "KLB", "LPB", "NAB", "NVB", "PGB", "SGB", "SSB", "VAB", "VBB"
+        ]
+        
+        builder_fn = None
+        if ticker in BANK_TICKERS:
+            builder_fn = build_vcb_current_financials
+        elif ticker in fin_builders:
+            builder_fn = fin_builders[ticker]
+            
+        if builder_fn and curr_price:
+            try:
+                fin_data = builder_fn(db, ticker) if ticker in BANK_TICKERS else builder_fn(db)
+                equity = float(fin_data.get("total_equity") or 0.0)
+                net_inc = float(fin_data.get("net_income") or 0.0)
+                shares = float(fin_data.get("shares_outstanding") or 0.0)
+                
+                if equity > 0:
+                    roe = net_inc / equity
+                if shares > 0:
+                    eps = net_inc / shares
+                    bvps = equity / shares
+                    if eps > 0:
+                        pe = curr_price / eps
+                    if bvps > 0:
+                        pb = curr_price / bvps
+            except Exception as e:
+                logger.warning(f"Error computing metrics for single {ticker}: {e}")
+                
+        # 3. Lấy Consensus target
+        consensus_target = None
+        consensus_dev = None
+        trade_date = datetime.date.today()
+        try:
+            c_stats = get_consensus_stats(ticker, trade_date, db)
+            if c_stats["median"] is not None:
+                consensus_target = float(c_stats["median"])
+                if blended_fv:
+                    consensus_dev = (blended_fv - consensus_target) / consensus_target
+        except Exception as e:
+            logger.warning(f"Error fetching consensus for single {ticker}: {e}")
+            
+        # 4. Tính toán Upside & MOS (Biên an toàn) & Khuyến nghị
+        upside = None
+        mos = None
+        if curr_price > 0:
+            upside = (blended_fv - curr_price) / curr_price
+            mos = 1.0 - (curr_price / blended_fv) if blended_fv > 0 else 0.0
+            
+        rating = "THEO DÕI"
+        if upside is not None and mos is not None:
+            if upside > mos:
+                rating = "MUA"
+            elif upside < 0:
+                rating = "BÁN"
+            else:
+                rating = "THEO DÕI"
+                
+        # 5. Gọi DeepSeek tạo nhận định AI (AI Insight)
+        ai_insight = generate_ai_insight(
+            ticker=ticker,
+            sector=display_sector,
+            close_price=curr_price,
+            fair_value=blended_fv,
+            upside=upside,
+            flags=qc_flags,
+            roe=roe,
+            pe=pe,
+            pb=pb,
+            consensus_target=consensus_target
+        )
+        
+        # 6. Chuẩn bị hàng dữ liệu để ghi vào Sheet
+        row_data = [
+            ticker,
+            display_sector,
+            trade_date.isoformat(),
+            curr_price,
+            blended_fv,
+            upside,
+            mos,
+            rating,
+            100.0, # Điểm Conviction (mặc định)
+            pe,
+            pb,
+            roe,
+            consensus_target,
+            consensus_dev,
+            ", ".join(qc_flags) if qc_flags else "OK",
+            ai_insight
+        ]
+        
+        # 7. Kết nối Google Sheets
+        gc = gspread.service_account(filename=settings.google_service_account_json)
+        sh = gc.open_by_key(settings.google_sheet_master_id)
+        
+        try:
+            worksheet = sh.worksheet("Daily_Screener")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title="Daily_Screener", rows="100", cols="20")
+            headers = [
+                "Mã CK", "Ngành", "Ngày GD", "Thị giá", "FV Nhịp Nhanh", "Upside", "Biên An Toàn", 
+                "Khuyến nghị", "Điểm Conviction", "P/E", "P/B", "ROE", "Định giá Consensus", 
+                "Độ lệch Consensus", "Cờ Cảnh Báo", "Nhận định AI"
+            ]
+            worksheet.append_row(headers)
+            
+        # Đọc toàn bộ ticker hiện có ở cột A
+        tickers_col = worksheet.col_values(1)
+        
+        # Tìm xem ticker đã tồn tại chưa
+        row_index = -1
+        for idx, val in enumerate(tickers_col):
+            if val.strip().upper() == ticker.upper():
+                row_index = idx + 1
+                break
+                
+        if row_index > -1:
+            cell_range = f"A{row_index}:P{row_index}"
+            worksheet.update(cell_range, [row_data])
+            logger.info(f"Updated ticker {ticker} at row {row_index} in Google Sheets.")
+        else:
+            worksheet.append_row(row_data)
+            row_index = len(tickers_col) + 1
+            logger.info(f"Appended ticker {ticker} as a new row in Google Sheets.")
+            
+        # 8. Định dạng lại dòng vừa được ghi/cập nhật
+        worksheet.format(f"A{row_index}:P{row_index}", {
+            'textFormat': {'fontSize': 10},
+            'verticalAlignment': 'MIDDLE'
+        })
+        worksheet.format(f"A{row_index}", {'horizontalAlignment': 'CENTER'})
+        worksheet.format(f"C{row_index}", {'horizontalAlignment': 'CENTER'})
+        
+        worksheet.format(f"D{row_index}:E{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '#,##0'}
+        })
+        
+        worksheet.format(f"F{row_index}:G{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'PERCENT', 'pattern': '0.0%'}
+        })
+        
+        worksheet.format(f"H{row_index}", {
+            'horizontalAlignment': 'CENTER',
+            'textFormat': {'bold': True}
+        })
+        
+        cell_range = f"H{row_index}"
+        if rating == "MUA":
+            worksheet.format(cell_range, {
+                'textFormat': {'bold': True, 'foregroundColor': {'red': 0.1, 'green': 0.5, 'blue': 0.1}}
+            })
+        elif rating == "BÁN":
+            worksheet.format(cell_range, {
+                'textFormat': {'bold': True, 'foregroundColor': {'red': 0.8, 'green': 0.1, 'blue': 0.1}}
+            })
+        else:
+            worksheet.format(cell_range, {
+                'textFormat': {'bold': True, 'foregroundColor': {'red': 0.5, 'green': 0.5, 'blue': 0.5}}
+            })
+            
+        worksheet.format(f"I{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '0.0'}
+        })
+        
+        worksheet.format(f"J{row_index}:K{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '0.00'}
+        })
+        
+        worksheet.format(f"L{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'PERCENT', 'pattern': '0.0%'}
+        })
+        
+        worksheet.format(f"M{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '#,##0'}
+        })
+        worksheet.format(f"N{row_index}", {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'PERCENT', 'pattern': '0.0%'}
+        })
+        
+        return {"status": "success", "row_updated": row_index}
+        
+    except Exception as e:
+        logger.error(f"Failed to update single ticker to Google Sheets: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+# Tên nhóm ngành (group Excel) → tên đầy đủ cho cột hiển thị
+_METHOD_LABEL = {
+    "RI_PB": "Thu nhập thặng dư + P/B",
+    "DCF": "DCF/FCFF",
+    "DCF_EVEBITDA": "DCF + EV/EBITDA",
+    "EV_EBITDA": "EV/EBITDA (chuẩn hóa)",
+    "PE": "P/E (EPS chuẩn hóa)",
+    "PB": "Justified P/B",
+    "RNAV": "RNAV (proxy)",
+    "SOTP": "SOTP (proxy)",
+}
+
+
+def build_vn100_dataframe(results: list) -> pd.DataFrame:
+    """Dựng DataFrame bảng định giá VN100 từ kết quả batch.value_all."""
+    rows = []
+    for r in results:
+        if r.get("error"):
+            rows.append({
+                "Mã": r["ticker"], "Ngành": r.get("group", ""),
+                "Phương pháp": _METHOD_LABEL.get(r.get("method", ""), r.get("method", "")),
+                "Giá": r.get("price"), "FV": None, "Upside %": None,
+                "Độ tin cậy": "Lỗi", "Cờ": r["error"],
+            })
+            continue
+        flags = r.get("flags", [])
+        proxy = "Proxy" if r.get("status") == "PARTIAL" else ("Đã kiểm chứng" if r.get("verified") else "Chuẩn ngành")
+        rows.append({
+            "Mã": r["ticker"], "Ngành": r.get("group", ""),
+            "Phương pháp": _METHOD_LABEL.get(r["method"], r["method"]),
+            "Giá": round(r["price"]) if r.get("price") else None,
+            "FV": round(r["fair_value"]) if r.get("fair_value") is not None else None,
+            "Upside %": round(r["upside"] * 100, 1) if r.get("upside") is not None else None,
+            "Độ tin cậy": proxy,
+            "Cờ": ", ".join(flags),
+        })
+    df = pd.DataFrame(rows)
+    if "Upside %" in df.columns:
+        df = df.sort_values("Upside %", ascending=False, na_position="last").reset_index(drop=True)
+    return df
+
+
+def export_vn100_valuations_to_gsheets(results: list, sheet_name: str = "VN100_Valuations"):
+    """Xuất bảng định giá VN100 (toàn bộ phương pháp) ra Google Sheets. Gated creds."""
+    df = build_vn100_dataframe(results)
+    if not settings.google_service_account_json or not settings.google_sheet_master_id:
+        logger.warning("Thiếu Google creds — bỏ qua export Sheets, chỉ trả DataFrame.")
+        return {"status": "skipped_no_creds", "rows": len(df), "dataframe": df}
+    try:
+        gc = gspread.service_account(filename=settings.google_service_account_json)
+        sh = gc.open_by_key(settings.google_sheet_master_id)
+        try:
+            ws = sh.worksheet(sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title=sheet_name, rows="120", cols="10")
+        ws.clear()
+        set_with_dataframe(ws, df)
+        return {"status": "success", "rows": len(df)}
+    except Exception as e:
+        logger.error(f"Export VN100 thất bại: {e}")
+        return {"status": "error", "error": str(e)}
