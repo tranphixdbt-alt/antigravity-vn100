@@ -35,27 +35,15 @@ def value_ticker(db: Session, ticker: str) -> Dict[str, Any]:
         "group": group, "verified": plan["verified"], "price": price,
     }
     try:
-        if method == "RI_PB":
-            from valuation.engine.ttm_helper import (
-                build_vcb_current_financials, build_vcb_assumptions_from_history,
-            )
-            from valuation.engine.models.bank_vcb import VCBValuationModel
-            cf = build_vcb_current_financials(db, ticker)
-            cf["current_price"] = price
-            model = VCBValuationModel(cf, build_vcb_assumptions_from_history(db, ticker))
-            res = model.blend_valuation()
-        else:
-            company = build_company_data(db, ticker, mode="TTM")
-            from valuation.models.financials_bank import CompanyBank
-            if isinstance(company, CompanyBank):
-                return {**base, "error": "BANK_NOT_IN_BANK_TICKERS"}
-            model, res = _dispatch_nonfin(company, method, group)
-            if model is None:
-                return {**base, "error": f"METHOD_NOT_IMPLEMENTED:{method}"}
+        # Engine DUY NHẤT: build_company_data → valuate (best-of-both theo ngành).
+        # Cùng lõi với Streamlit → CLI/batch/Sheets và UI ra cùng một số.
+        from valuation.engine.valuate import valuate
+        company = build_company_data(db, ticker, mode="TTM")
+        res = valuate(company)
 
         fv = float(res["blended_fair_value_per_share"])
         upside = (fv / price - 1.0) if price else None
-        return {**base, "fair_value": fv, "upside": upside, "flags": _collect_flags(model, res)}
+        return {**base, "fair_value": fv, "upside": upside, "flags": res.get("flags", [])}
     except Exception as e:  # 1 mã lỗi không phá batch
         return {**base, "error": f"{type(e).__name__}: {str(e)[:80]}"}
 
