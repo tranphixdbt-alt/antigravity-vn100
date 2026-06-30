@@ -110,28 +110,34 @@ try:
         else:
             scenario_projections = forecast_company_financials(scenario_company)
             
-        # Nếu kịch bản là Base, sử dụng projections lưu trong session state (có thể chứa chỉnh sửa của analyst)
-        if analyst_scenario == "Base":
-            int_fv, rel_fv = run_valuation_engine(scenario_company, projections=st.session_state.get("projections"))
+        # Engine DUY NHẤT: dùng cùng lõi valuate() với CLI/batch/Sheets & tab Kết quả.
+        # Base dùng projections trong session (có thể đã chỉnh tay); kịch bản khác forecast lại.
+        from valuation.engine.valuate import valuate
+        _proj = st.session_state.get("projections") if analyst_scenario == "Base" else scenario_projections
+        _res = valuate(scenario_company, projections=_proj)
+        int_fv = _res["intrinsic_fv"]
+        rel_fv = _res["relative_fv"]
+        weight_intrinsic = _res["weight_intrinsic"]
+
+        # Ghi đè chủ quan (chỉ khi analyst nhập > 0)
+        pb_override = st.session_state.get("analyst_pb_override", 0.0)
+        pe_override = st.session_state.get("analyst_pe_override", 0.0)
+        has_override = (is_bank and pb_override > 0.0) or ((not is_bank) and pe_override > 0.0)
+        if is_bank and pb_override > 0.0:
+            eq_yr1 = scenario_projections[0]["total_equity"] if analyst_scenario != "Base" else st.session_state["projections"][0]["total_equity"]
+            shares = scenario_company.shares_outstanding
+            rel_fv = (pb_override * eq_yr1 / shares) * 1000.0 if shares > 0 else rel_fv
+        elif (not is_bank) and pe_override > 0.0:
+            target_projections = st.session_state["projections"] if analyst_scenario == "Base" else scenario_projections
+            eps_yr1 = target_projections[0].get("net_income", 0.0) / scenario_company.shares_outstanding if scenario_company.shares_outstanding > 0 else 0.0
+            rel_fv = pe_override * eps_yr1 * 1000.0
+
+        # Bank: int/rel là 2 chân thực → blend (cho phép override). Phi tài chính: valuate
+        # đã blend sẵn → dùng thẳng; chỉ blend lại khi có P/E override.
+        if is_bank or has_override:
+            blended_fv, upside, rec = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
         else:
-            int_fv, rel_fv = run_valuation_engine(scenario_company, projections=scenario_projections)
-        
-        # Áp dụng ghi đè chủ quan
-        if is_bank:
-            pb_override = st.session_state.get("analyst_pb_override", 0.0)
-            if pb_override > 0.0:
-                eq_yr1 = scenario_projections[0]["total_equity"] if analyst_scenario != "Base" else st.session_state["projections"][0]["total_equity"]
-                shares = scenario_company.shares_outstanding
-                rel_fv = (pb_override * eq_yr1 / shares) * 1000.0 if shares > 0 else rel_fv
-        else:
-            pe_override = st.session_state.get("analyst_pe_override", 0.0)
-            if pe_override > 0.0:
-                target_projections = st.session_state["projections"] if analyst_scenario == "Base" else scenario_projections
-                eps_yr1 = target_projections[0].get("net_income", 0.0) / scenario_company.shares_outstanding if scenario_company.shares_outstanding > 0 else 0.0
-                rel_fv = pe_override * eps_yr1 * 1000.0
-            
-        weight_intrinsic = scenario_company.assumptions.weight_ri if is_bank else scenario_company.assumptions.weight_dcf
-        blended_fv, upside, rec = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
+            blended_fv, upside, rec = _res["blended_fair_value_per_share"], _res["upside"], _res["recommendation"]
         
         # Hiển thị các cảnh báo Model Integrity (nếu có)
         if scenario_company.warnings:

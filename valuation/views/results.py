@@ -194,30 +194,38 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             scenario_projections = forecast_company_financials(scenario_company)
             
     try:
-        int_fv, rel_fv = run_valuation_engine(scenario_company, projections=scenario_projections)
-        
-        # Áp dụng ghi đè chủ quan
-        if is_bank:
-            pb_override = st.session_state.get("analyst_pb_override", 0.0)
-            if pb_override > 0.0:
-                eq_yr1 = scenario_projections[0]["total_equity"]
-                shares = scenario_company.shares_outstanding
-                rel_fv = (pb_override * eq_yr1 / shares) * 1000.0 if shares > 0 else rel_fv
-        else:
-            pe_override = st.session_state.get("analyst_pe_override", 0.0)
-            if pe_override > 0.0:
-                # Đối với phi tài chính, EV/EBITDA là phương pháp so sánh. P/E ghi đè sẽ tính lại rel_fv.
-                # Fair Value = P/E * EPS của năm dự phóng gần nhất (năm 1)
-                eps_yr1 = scenario_projections[0].get("net_income", 0.0) / scenario_company.shares_outstanding if scenario_company.shares_outstanding > 0 else 0.0
-                rel_fv = pe_override * eps_yr1 * 1000.0  # EPS tính bằng nghìn đồng nếu shares_outstanding tính bằng triệu cổ phiếu
-                
+        # Engine DUY NHẤT: dùng cùng lõi valuate() với CLI/batch/Sheets → mọi nơi cùng số.
+        # valuate xử lý best-of-both: bank (RI+P/B) & phi tài chính (DCF/PE/PB/...) đều đúng.
+        from valuation.engine.valuate import valuate
+        _res = valuate(scenario_company, projections=scenario_projections)
+        int_fv = _res["intrinsic_fv"]
+        rel_fv = _res["relative_fv"]
+        weight_intrinsic = _res["weight_intrinsic"]
+
+        # Ghi đè chủ quan (chỉ khi analyst nhập > 0)
+        pb_override = st.session_state.get("analyst_pb_override", 0.0)
+        pe_override = st.session_state.get("analyst_pe_override", 0.0)
+        has_override = (is_bank and pb_override > 0.0) or ((not is_bank) and pe_override > 0.0)
+        if is_bank and pb_override > 0.0:
+            eq_yr1 = scenario_projections[0]["total_equity"]
+            shares = scenario_company.shares_outstanding
+            rel_fv = (pb_override * eq_yr1 / shares) * 1000.0 if shares > 0 else rel_fv
+        elif (not is_bank) and pe_override > 0.0:
+            # Fair Value so sánh = P/E * EPS năm dự phóng gần nhất (năm 1)
+            eps_yr1 = scenario_projections[0].get("net_income", 0.0) / scenario_company.shares_outstanding if scenario_company.shares_outstanding > 0 else 0.0
+            rel_fv = pe_override * eps_yr1 * 1000.0
+
         from valuation.engine.router import ValuationRouter
         route = ValuationRouter().get_routing(scenario_company.ticker)
         primary_method = route.get("primary", "FCFF" if not is_bank else "RI")
         secondary_method = route.get("secondary", "P/E" if not is_bank else "P/B")
-        weight_intrinsic = route.get("weight_primary", 1.0)
-        
-        blended_fv, upside, rec = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
+
+        # Bank: int/rel là 2 chân thực → blend (cho phép override chân relative).
+        # Phi tài chính: valuate đã blend sẵn → dùng thẳng; chỉ blend lại khi có P/E override.
+        if is_bank or has_override:
+            blended_fv, upside, rec = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
+        else:
+            blended_fv, upside, rec = _res["blended_fair_value_per_share"], _res["upside"], _res["recommendation"]
     except Exception as e:
         st.error(f"Lỗi khi chạy định giá: {e}")
         return

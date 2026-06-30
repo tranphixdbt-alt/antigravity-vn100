@@ -16,7 +16,7 @@ from valuation.models.financials import Company
 from valuation.models.financials_bank import CompanyBank
 
 
-def valuate(company: Union[Company, CompanyBank]) -> Dict[str, Any]:
+def valuate(company: Union[Company, CompanyBank], projections=None) -> Dict[str, Any]:
     """
     Định giá 1 doanh nghiệp bằng engine chuẩn (Base case), best-of-both theo ngành:
       - Ngân hàng  → forecast_bank + run_valuation_engine (RI + P/B) + blend  [đường Streamlit]
@@ -25,6 +25,9 @@ def valuate(company: Union[Company, CompanyBank]) -> Dict[str, Any]:
     Lý do: run_valuation_engine xử lý bank rất tốt nhưng KHÔNG bao phủ các phương pháp
     tương đối của phi tài chính (PE/PB) → FPT/SSI ra 0/âm. Ngược lại _dispatch_nonfin
     bao phủ đủ method phi tài chính. Hợp nhất = lấy nhánh tốt nhất cho mỗi ngành.
+
+    projections: dự phóng cho sẵn (vd analyst đã sửa trên UI). Chỉ dùng cho bank;
+    nếu None thì tự forecast. Phi tài chính bỏ qua tham số này.
     """
     from valuation.engine.sector_router import ValuationRouter
 
@@ -36,7 +39,8 @@ def valuate(company: Union[Company, CompanyBank]) -> Dict[str, Any]:
         from valuation.engine.sensitivity import run_valuation_engine
         from valuation.engine.blend import blend_intrinsic_relative
 
-        projections = forecast_bank_financials(company)
+        if projections is None:
+            projections = forecast_bank_financials(company)
         intrinsic_fv, relative_fv = run_valuation_engine(company, projections=projections)
         blended_fv, upside, recommendation = blend_intrinsic_relative(
             intrinsic_fv, relative_fv, weight_intrinsic, company.current_price
