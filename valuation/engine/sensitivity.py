@@ -60,88 +60,29 @@ def run_valuation_engine(company: Union[Company, CompanyBank], wacc_override: fl
     from valuation.engine.models.bank_general import BankGeneralValuationModel
     
     if isinstance(company, Company):
-        # Phi tài chính
-        from valuation.engine.models.dcf import DCFValuationModel
-        from valuation.engine.models.rnav import RNAVValuationModel
-        from valuation.engine.models.sotp import SOTPValuationModel
-        
-        # Tạo bản sao assumptions
+        # Phi tài chính — hợp nhất sâu: delegate sang _dispatch_nonfin (các model
+        # .from_pydantic chạy đúng & bao phủ đủ PE/PB/EV_EBITDA/RNAV/SOTP/DCF).
+        # Đường dựng cf/ass trực tiếp trước đây khiến SOTP=0 và thiếu PE/PB.
         assumptions = copy.deepcopy(company.assumptions)
+        # Assumptions KHÔNG có field 'wacc'; DCF suy WACC từ COE → ánh xạ cả
+        # wacc_override lẫn coe_override vào cost_of_equity (đủ cho sensitivity).
         if coe_override is not None:
             assumptions.cost_of_equity = coe_override
         if wacc_override is not None:
-            assumptions.wacc = wacc_override
+            assumptions.cost_of_equity = wacc_override
         if g_override is not None:
             assumptions.terminal_growth_rate = g_override
-            
-        base_bs_snap = company.historical_bs[-1]
-        base_is_snap = company.historical_is[-1]
-        depr_est = assumptions.depr_to_revenue[0] * base_is_snap.revenue
-        ebitda_est = base_is_snap.ebit + depr_est  # tỷ đồng
 
-        cf_dict = {
-            'total_equity': base_bs_snap.total_equity * 1e9,
-            'total_assets': base_bs_snap.total_assets * 1e9,
-            'cash_and_equivalents': base_bs_snap.cash_and_equivalents * 1e9,
-            'total_debt': (base_bs_snap.short_term_debt + base_bs_snap.long_term_debt) * 1e9,
-            'total_revenue': base_is_snap.revenue * 1e9,
-            'ebitda': ebitda_est * 1e9,
-            'inventory': base_bs_snap.inventory * 1e9,
-            'other_long_term_assets': base_bs_snap.other_long_term_assets * 1e9,
-            'shares_outstanding': company.shares_outstanding * 1e6,
-            'current_price': company.current_price
-        }
-
-        wacc_val = wacc_override
-        if wacc_val is None:
-            rf = assumptions.risk_free_rate
-            beta = assumptions.beta
-            erp = assumptions.erp
-            coe = assumptions.cost_of_equity or (rf + beta * erp)
-            D = float(cf_dict['total_debt'])
-            tax = assumptions.tax_rate
-            cod = rf + 0.03
-
-            market_cap = company.shares_outstanding * 1e6 * company.current_price
-            E = market_cap if market_cap > 0 else float(cf_dict['total_equity'])
-
-            from valuation.engine.wacc import compute_wacc, DEFAULT_DEBT_SPREAD
-            wacc_val = compute_wacc(coe, cod, E, D, tax, floor=rf + DEFAULT_DEBT_SPREAD)
-
-        ass_dict = {
-            'cost_of_equity': assumptions.cost_of_equity or (assumptions.risk_free_rate + assumptions.beta * assumptions.erp),
-            'wacc': wacc_val,
-            'revenue_growth_1_to_3': assumptions.revenue_growth[0],
-            'revenue_growth_4_to_5': assumptions.revenue_growth[3],
-            'ebit_margin': assumptions.ebit_margin[0],
-            'tax_rate': assumptions.tax_rate,
-            'capex_to_revenue': assumptions.capex_to_revenue[0],
-            'depr_to_revenue': assumptions.depr_to_revenue[0],
-            'dso': assumptions.dso[0],
-            'dio': assumptions.dio[0],
-            'dpo': assumptions.dpo[0],
-            'interest_rate': assumptions.interest_rate[0],
-            'target_ev_ebitda': assumptions.target_ev_ebitda,
-            'long_term_growth': g_override if g_override is not None else assumptions.terminal_growth_rate,
-            'weight_dcf': route.get("weight_primary", 1.0),
-            'rnav_revaluation_premium': getattr(assumptions, 'rnav_revaluation_premium', 0.2),
-            'sotp_discount': getattr(assumptions, 'sotp_discount', 0.1),
-            'target_pb': assumptions.target_ev_ebitda / 5.0, # proxy
-            'target_pe': assumptions.target_ev_ebitda
-        }
-        
-        if primary_method == "RNAV":
-            model = RNAVValuationModel(company.ticker, cf_dict, ass_dict)
-            res = model.perform_valuation()
-            return res.get("rnav_fvps", 0.0), res.get("multiples_fvps", 0.0)
-        elif primary_method == "SOTP":
-            model = SOTPValuationModel(company.ticker, cf_dict, ass_dict)
-            res = model.perform_valuation()
-            return res.get("sotp_fvps", 0.0), res.get("multiples_fvps", 0.0)
-        else:
-            model = DCFValuationModel(company.ticker, cf_dict, ass_dict)
-            res = model.perform_valuation()
-            return res["dcf_fvps"], res["multiples_fvps"]
+        comp = copy.deepcopy(company)
+        comp.assumptions = assumptions
+        from valuation.engine.batch import _dispatch_nonfin
+        from valuation.engine.sector_router import route as _route_fn
+        plan = _route_fn(company.ticker) or {}
+        model, res = _dispatch_nonfin(comp, plan.get("method"), plan.get("group"))
+        if model is None or res is None:
+            return 0.0, 0.0
+        fv = float(res.get("blended_fair_value_per_share", 0.0))
+        return fv, fv
         
     else:
         # Ngân hàng
