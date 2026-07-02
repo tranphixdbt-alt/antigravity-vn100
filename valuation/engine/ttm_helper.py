@@ -374,24 +374,24 @@ def build_vcb_assumptions_from_history(
     """
     Xây dựng assumptions cho VCB từ lịch sử thật, có declining schedule.
 
-    COE Convention (Chốt từ nguyên tắc):
+    COE Convention (Chốt từ nguyên tắc — chuẩn Damodaran):
       rf  = TPCP VN 10Y (lấy động từ DB)
-      erp = Mature market ERP (erp_mature) — KHÔNG cộng CRP (rf_VN đã chứa CRP)
+      erp = Mature market ERP + Country Risk Premium VN (mature + CRP ≈ 8.2%)
       beta = ước lượng từ giá VCB vs VNINDEX
       COE = rf + beta * erp
     """
     rf_dynamic = get_latest_tpcp_10y(db)
     beta_dynamic = estimate_vcb_beta(db, ticker)
-    
-    # VND-base convention: rf = TPCP_VN (đã chứa CRP) → erp = mature ERP, KHÔNG
-    # cộng CRP lần nữa. Nguồn sự thật: valuation.engine.coe.get_erp()
+
+    # VND-base convention: erp = mature + CRP (CRP là rủi ro vốn cổ phần TT mới
+    # nổi, tách biệt rủi ro vỡ nợ trong TPCP). Nguồn sự thật: coe.get_erp()
     from valuation.engine.coe import get_erp
-    erp_mature = get_erp()
+    erp_vn = get_erp()
 
     if coe_config is None:
         coe_config = {
             "risk_free_rate": rf_dynamic,
-            "erp": erp_mature,
+            "erp": erp_vn,
             "beta": beta_dynamic,
             "terminal_growth_rate": 0.02,
         }
@@ -401,9 +401,9 @@ def build_vcb_assumptions_from_history(
             coe_config["risk_free_rate"] = rf_dynamic
         if coe_config.get("beta") == 1.0:
             coe_config["beta"] = beta_dynamic
-        # Ghi đè ERP cũ (6.0% / 8.2% double-count) bằng mature ERP đúng convention
-        if coe_config.get("erp") in (0.060, 0.082) or coe_config.get("erp") is None:
-            coe_config["erp"] = erp_mature
+        # Ghi đè ERP cũ (mature-only 4.5% / fallback 6.0%) bằng erp đúng convention
+        if coe_config.get("erp") in (0.045, 0.060) or coe_config.get("erp") is None:
+            coe_config["erp"] = erp_vn
 
     # Lấy driver thật từ DB
     hist_nim = compute_historical_nim(db, ticker)

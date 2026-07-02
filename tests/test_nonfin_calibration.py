@@ -38,3 +38,36 @@ def test_revenue_growth_fades_to_gdp(db):
     assert abs(rg[4] - g_lt) < 0.03
     # Toàn bộ schedule bị chặn hợp lý (không có đỉnh chu kỳ extrapolate)
     assert all(0.0 <= g <= 0.25 for g in rg)
+
+
+def test_depr_derived_from_real_da_not_hardcoded(db):
+    """depr_to_revenue phải lấy từ D&A THẬT (median lịch sử), KHÔNG hardcode 4%.
+
+    PNJ là DN bán lẻ nhẹ tài sản: D&A thực ~0.2% doanh thu. Nếu dùng 4% hardcode
+    sẽ bơm ~3.8% doanh thu 'tiền ảo' vào FCFF mỗi năm → overvaluation.
+    """
+    c = build_company_data(db, "PNJ", mode="TTM")
+    # Extraction D&A hoạt động: có ít nhất 1 năm khấu hao > 0
+    assert any(cf.depreciation > 0 for cf in c.historical_cf)
+    # depr_to_revenue = median D&A/doanh thu lịch sử
+    deprs = [
+        cf.depreciation / is_.revenue
+        for cf, is_ in zip(c.historical_cf, c.historical_is)
+        if is_.revenue > 0 and cf.depreciation > 0
+    ]
+    assert deprs, "phải có dữ liệu D&A để derive depr_to_revenue"
+    assert c.assumptions.depr_to_revenue[0] == pytest.approx(statistics.median(deprs), abs=1e-6)
+    # PNJ nhẹ tài sản → depr thực << 4% hardcode cũ (regression guard)
+    assert c.assumptions.depr_to_revenue[0] < 0.02
+
+
+def test_opex_includes_selling_and_ga(db):
+    """OPEX = chi phí bán hàng + QLDN (phải cộng cả 2).
+
+    Trước đây _match_value chỉ trả 1 dòng đầu (selling), bỏ sót G&A → EBIT bị
+    thổi ~2pp margin. PNJ biên EBIT thực ~7-9%; nếu sót G&A sẽ ~11%.
+    """
+    c = build_company_data(db, "PNJ", mode="TTM")
+    ebit_m = c.assumptions.ebit_margin[0]
+    # Biên EBIT trong vùng thực tế của PNJ (regression guard chống sót G&A → >10%)
+    assert 0.04 <= ebit_m <= 0.10, f"EBIT margin PNJ={ebit_m:.2%} bất thường (nghi sót G&A)"

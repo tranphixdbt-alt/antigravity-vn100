@@ -48,6 +48,86 @@ def generate_football_field_chart(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fig.write_image(output_path, engine="kaleido")
 
+def generate_financial_history_chart(
+    years: List[int],
+    revenue: List[float],
+    net_income: List[float],
+    revenue_label: str,
+    output_path: str,
+    forecast_years: List[int] = None,
+    forecast_revenue: List[float] = None,
+    forecast_net_income: List[float] = None,
+):
+    """
+    Biểu đồ doanh thu (cột) & LNST (đường) lịch sử + dự phóng (SPEC M5 chart a).
+    Phần dự phóng vẽ nhạt màu hơn để phân biệt với số liệu thật.
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=years, y=revenue, name=f"{revenue_label} (lịch sử)",
+        marker=dict(color="#3B82F6", opacity=0.85),
+    ))
+    if forecast_years and forecast_revenue:
+        fig.add_trace(go.Bar(
+            x=forecast_years, y=forecast_revenue, name=f"{revenue_label} (dự phóng)",
+            marker=dict(color="#93C5FD", opacity=0.7),
+        ))
+    fig.add_trace(go.Scatter(
+        x=years, y=net_income, name="LNST (lịch sử)", mode="lines+markers",
+        line=dict(color="#10B981", width=3), yaxis="y2",
+    ))
+    if forecast_years and forecast_net_income:
+        fig.add_trace(go.Scatter(
+            x=forecast_years, y=forecast_net_income, name="LNST (dự phóng)",
+            mode="lines+markers", line=dict(color="#6EE7B7", width=3, dash="dot"),
+            yaxis="y2",
+        ))
+    fig.update_layout(
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#F8FAFC",
+        font=dict(color="#1E293B", size=12),
+        title="Doanh thu & Lợi nhuận: Lịch sử và Dự phóng (tỷ đồng)",
+        yaxis=dict(title=revenue_label),
+        yaxis2=dict(title="LNST", overlaying="y", side="right"),
+        barmode="group", height=350,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=60, r=60, t=80, b=40),
+    )
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.write_image(output_path, engine="kaleido")
+
+
+def generate_profitability_chart(
+    years: List[int],
+    roe: List[float],
+    margin: List[float],
+    margin_label: str,
+    output_path: str,
+):
+    """Biểu đồ ROE & biên lợi nhuận (CIR với bank) theo năm — SPEC PHẦN B mục 6."""
+    def _pct_series(vals):
+        return [v * 100 if v is not None else None for v in vals]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=years, y=_pct_series(roe), name="ROE (%)", mode="lines+markers",
+        line=dict(color="#8B5CF6", width=3),
+    ))
+    fig.add_trace(go.Scatter(
+        x=years, y=_pct_series(margin), name=f"{margin_label} (%)", mode="lines+markers",
+        line=dict(color="#F59E0B", width=3),
+    ))
+    fig.update_layout(
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#F8FAFC",
+        font=dict(color="#1E293B", size=12),
+        title="Hiệu quả sinh lời theo năm",
+        yaxis_title="%", height=320,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=60, r=40, t=80, b=40),
+    )
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.write_image(output_path, engine="kaleido")
+
+
 def generate_sensitivity_heatmap_chart(
     matrix: List[List[float]], 
     x_labels: List[str], 

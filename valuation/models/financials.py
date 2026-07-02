@@ -44,6 +44,7 @@ class CashFlow(BaseModel):
     year: int
     cfo: float = Field(..., description="Dòng tiền từ hoạt động kinh doanh (tỷ đồng)")
     capex: float = Field(..., description="Chi phí đầu tư tài sản cố định (tỷ đồng)")
+    depreciation: float = Field(0.0, description="Khấu hao & phân bổ (D&A) trong kỳ (tỷ đồng)")
     cf_other: float = Field(0.0, description="Dòng tiền đầu tư/tài chính khác (tỷ đồng)")
 
 class Assumptions(BaseModel):

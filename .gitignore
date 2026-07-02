@@ -7,6 +7,25 @@ secrets/
 __pycache__/
 *.pyc
 .venv/
+venv/
 .DS_Store
 n8n_data/
 vn100_valuations.csv
+
+# Caches công cụ
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+*.egg-info/
+
+# Log & output tạm
+*.log
+temp_reports/
+
+# Scratch: script debug/thăm dò một lần, không phải nguồn sự thật
+scratch/
+
+# File nội dung sinh tự động từ docx/xlsx (dùng để đọc, không version)
+*_content.txt

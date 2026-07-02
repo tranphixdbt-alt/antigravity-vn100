@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import insert
 from valuation.db.session import SessionLocalWrite
 from valuation.db.models import PricesDaily, FinancialsQuarterly, BackfillStatus, Ticker
 from valuation.ingest.vnstock_client import vnstock_client
+from valuation.ingest.market_client import market_client
 from valuation.ingest.normalizer import normalize_daily_prices, unpivot_financials
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,67 @@ def upsert_prices(df: pd.DataFrame, ticker: str):
         raise e
     finally:
         db.close()
+
+def upsert_market_flows(ticker: str, df_foreign: pd.DataFrame, df_prop: pd.DataFrame):
+    """Upsert dữ liệu dòng tiền ngoại và tự doanh vào bảng PricesDaily."""
+    if (df_foreign is None or df_foreign.empty) and (df_prop is None or df_prop.empty):
+        return
+
+    # Gộp 2 df theo ngày
+    records_dict = {}
+    
+    if df_foreign is not None and not df_foreign.empty:
+        for _, row in df_foreign.iterrows():
+            d = row['time'].date() if isinstance(row['time'], pd.Timestamp) else pd.to_datetime(row['time']).date()
+            records_dict[d] = {
+                'ticker': ticker,
+                'trade_date': d,
+                'foreign_buy_vol': row.get('buy_vol'),
+                'foreign_buy_val': row.get('buy_val'),
+                'foreign_sell_vol': row.get('sell_vol'),
+                'foreign_sell_val': row.get('sell_val'),
+                'foreign_net_vol': row.get('net_vol'),
+                'foreign_net_val': row.get('net_val'),
+            }
+            
+    if df_prop is not None and not df_prop.empty:
+        for _, row in df_prop.iterrows():
+            d = row['time'].date() if isinstance(row['time'], pd.Timestamp) else pd.to_datetime(row['time']).date()
+            if d not in records_dict:
+                records_dict[d] = {'ticker': ticker, 'trade_date': d}
+            records_dict[d].update({
+                'proprietary_buy_vol': row.get('buy_vol'),
+                'proprietary_buy_val': row.get('buy_val'),
+                'proprietary_sell_vol': row.get('sell_vol'),
+                'proprietary_sell_val': row.get('sell_val'),
+                'proprietary_net_vol': row.get('net_vol'),
+                'proprietary_net_val': row.get('net_val'),
+            })
+
+    records = list(records_dict.values())
+    if not records:
+        return
+
+    db = SessionLocalWrite()
+    try:
+        stmt = insert(PricesDaily).values(records)
+        update_dict = {
+            c.name: c for c in stmt.excluded 
+            if c.name not in ['ticker', 'trade_date']
+        }
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['ticker', 'trade_date'],
+            set_=update_dict
+        )
+        db.execute(stmt)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error upserting market flows for {ticker}: {e}")
+        raise e
+    finally:
+        db.close()
+
 
 def upsert_financials(df: pd.DataFrame, ticker: str):
     if df.empty:
@@ -159,6 +221,15 @@ def run_ingest(ticker: str, data_types: list):
             df_prices = vnstock_client.get_historical_prices(ticker, '2020-01-01')
             df_norm = normalize_daily_prices(df_prices)
             upsert_prices(df_norm, ticker)
+            
+            # Kéo thêm dòng tiền ngoại & tự doanh
+            try:
+                df_foreign = market_client.fetch_foreign_flow(ticker, start='2020-01-01')
+                df_prop = market_client.fetch_proprietary_flow(ticker, start='2020-01-01')
+                upsert_market_flows(ticker, df_foreign, df_prop)
+            except Exception as e:
+                logger.warning(f"Could not fetch market flows for {ticker}: {e}")
+                
             if not df_prices.empty:
                 last_price = pd.to_datetime(df_prices.iloc[-1]['time']).date()
 

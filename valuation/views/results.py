@@ -20,9 +20,16 @@ from valuation.engine.blend import blend_intrinsic_relative
 from valuation.engine.sensitivity import calculate_sensitivity_matrix, run_scenario_analysis, run_valuation_engine
 from valuation.db.models import ValuationRun
 
-from valuation.report.charts import generate_football_field_chart, generate_sensitivity_heatmap_chart
+from valuation.report.charts import (
+    generate_football_field_chart,
+    generate_sensitivity_heatmap_chart,
+    generate_financial_history_chart,
+    generate_profitability_chart,
+)
 from valuation.report.build_pdf import build_pdf_report
 from valuation.report.build_docx import build_docx_report
+from valuation.report.report_data import build_report_sections
+from valuation.report.ai_narrative import generate_report_narratives, _FALLBACK as NARRATIVE_FALLBACK
 
 def get_consensus_data_with_decay(db: Session, ticker: str) -> Dict[str, Any]:
     """
@@ -578,13 +585,18 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                     db_write.rollback()
                     st.error(f"Lỗi khi ghi DB: {e}")
 
-    # Xuất PDF / Word
+    # Xuất PDF / Word — báo cáo 11 phần chuẩn quỹ (SPEC PHẦN B)
     temp_dir = "temp_reports"
     os.makedirs(temp_dir, exist_ok=True)
     chart_football_path = os.path.join(temp_dir, f"football_{company.ticker}.png")
     chart_heatmap_path = os.path.join(temp_dir, f"heatmap_{company.ticker}.png")
+    chart_history_path = os.path.join(temp_dir, f"history_{company.ticker}.png")
+    chart_profit_path = os.path.join(temp_dir, f"profitability_{company.ticker}.png")
     pdf_path = os.path.join(temp_dir, f"Report_Valuation_{company.ticker}.pdf")
     docx_path = os.path.join(temp_dir, f"Report_Valuation_{company.ticker}.docx")
+
+    # Gom dữ liệu định lượng 11 phần (builder thuần, tách GUI)
+    report_sections = build_report_sections(company, blended_fv, db=db_write)
 
     # Tạo các ảnh biểu đồ tạm để chuẩn bị nhúng
     try:
@@ -627,6 +639,34 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             {"label": "Dòng tiền tự do FCFF", "values": [f"{p['fcff']:,.1f}" for p in non_bank_projs]},
         ]
 
+    # Biểu đồ tài chính lịch sử + dự phóng (phần 5 báo cáo)
+    _projs = bank_projs if is_bank else non_bank_projs
+    _cs = report_sections["historical"]["chart_series"]
+    try:
+        _f_rev_key = "total_operating_income" if is_bank else "revenue"
+        generate_financial_history_chart(
+            years=_cs["years"], revenue=_cs["revenue"], net_income=_cs["net_income"],
+            revenue_label=_cs["revenue_label"], output_path=chart_history_path,
+            forecast_years=[p["year"] for p in _projs],
+            forecast_revenue=[p[_f_rev_key] for p in _projs],
+            forecast_net_income=[p["net_income"] for p in _projs],
+        )
+        generate_profitability_chart(
+            years=_cs["years"], roe=_cs["roe"], margin=_cs["margin"],
+            margin_label=_cs["margin_label"], output_path=chart_profit_path,
+        )
+    except Exception as e:
+        st.warning(f"Không thể tạo biểu đồ tài chính lịch sử: {e}")
+
+    # Nháp văn bản AI (luận điểm/tổng quan/ngành/rủi ro) — sinh 1 lần/mã, cache session.
+    _narr_key = f"report_narrative_{company.ticker}"
+    if st.button("🪄 Sinh nháp văn bản AI cho báo cáo (DeepSeek)", use_container_width=True):
+        with st.spinner("Đang sinh nháp luận điểm/tổng quan/ngành/rủi ro..."):
+            st.session_state[_narr_key] = generate_report_narratives(report_sections)
+    narrative = st.session_state.get(_narr_key, {**NARRATIVE_FALLBACK, "ai_generated": False})
+    if narrative.get("ai_generated"):
+        st.caption("✍️ Văn bản AI đã sinh — sẽ được chèn vào báo cáo với dấu *Nháp cần review*.")
+
     import base64
     def get_b64(path):
         if os.path.exists(path):
@@ -634,18 +674,21 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                 return "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
         return ""
 
+    _cover = report_sections["cover"]
     report_data = {
         "ticker": company.ticker,
         "name": company.name,
         "sector": company.sector,
         "date": datetime.date.today().strftime("%Y-%m-%d"),
         "analyst": analyst_name,
-        "recommendation": rec,
+        # Khuyến nghị trong BÁO CÁO dùng band 5 mức chuẩn CTCK (SPEC 4.3)
+        "recommendation": _cover["recommendation"],
         "rec_color": rec_color,
         "upside": f"{upside:+.2f}",
         "target_price": f"{blended_fv:,.0f}",
         "current_price": f"{company.current_price:,.0f}",
         "shares": f"{company.shares_outstanding:,.2f}",
+        "market_cap": f"{_cover['market_cap']:,.0f}",
         "weight_intrinsic": int(weight_intrinsic * 100),
         "weight_relative": int((1 - weight_intrinsic) * 100),
         "intrinsic_method": primary_method,
@@ -655,9 +698,19 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         "notes": analyst_notes,
         "chart_football": get_b64(chart_football_path),
         "chart_heatmap": get_b64(chart_heatmap_path),
+        "chart_history": get_b64(chart_history_path),
+        "chart_profitability": get_b64(chart_profit_path),
         "proj_cols": proj_headers,
         "proj_rows": proj_rows,
-        "ai_narrative": st.session_state.get(f"ai_narrative_{company.ticker}", "")
+        # Các khối 11 phần từ builder
+        "narrative": narrative,
+        "hist": report_sections["historical"],
+        "assumptions": report_sections["assumptions"],
+        "wacc_rows": report_sections["wacc_breakdown"],
+        "consensus": report_sections["consensus"],
+        "scenarios": report_sections["scenarios"],
+        "appendix": report_sections["appendix"],
+        "flags": report_sections["flags"],
     }
 
     with col_pdf:
@@ -682,7 +735,13 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             st.error("Không tìm thấy tệp template.html!")
 
     with col_docx:
-        if build_docx_report(report_data, proj_headers, proj_rows, chart_football_path, chart_heatmap_path, docx_path):
+        _docx_charts = {
+            "football": chart_football_path,
+            "heatmap": chart_heatmap_path,
+            "history": chart_history_path,
+            "profitability": chart_profit_path,
+        }
+        if build_docx_report(report_data, proj_headers, proj_rows, _docx_charts, docx_path):
             with open(docx_path, "rb") as fdocx:
                 st.download_button(
                     label="📥 Tải xuống báo cáo Word",

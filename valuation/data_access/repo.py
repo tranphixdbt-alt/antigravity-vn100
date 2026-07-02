@@ -17,7 +17,10 @@ NON_FIN_KEYWORDS = {
     "revenue": ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần", "Doanh thu hoạt động"],
     "cogs": ["cost_of_goods_sold", "cogs", "Giá vốn hàng bán", "Chi phí hoạt động tự doanh"],
     "gross_profit": ["gross_profit", "Lợi nhuận gộp"],
-    "opex": ["selling_expenses", "general_and_admin_expenses", "operating_expenses", "operating_expense", "Chi phí hoạt động", "Chi phí quản lý"],
+    # OPEX tách 2 cấu phần để CỘNG (không dùng chung 1 key — xem build_company_data).
+    "selling_expenses": ["selling_expenses", "Chi phí bán hàng"],
+    "ga_expenses": ["general_and_admin_expenses", "Chi phí quản lý doanh nghiệp", "Chi phí quản lý"],
+    "opex_total": ["operating_expenses", "operating_expense", "Chi phí hoạt động"],
     "operating_profit": ["operating_profit_loss", "Lợi nhuận từ hoạt động kinh doanh", "Lợi nhuận thuần từ hoạt động kinh doanh"],
     "interest_expense": ["interest_expenses", "interest_expense", "Chi phí lãi vay"],
     "tax": ["corporate_income_tax", "tax_rate_value", "Chi phí thuế TNDN hiện hành", "Thuế thu nhập doanh nghiệp"],
@@ -38,6 +41,7 @@ NON_FIN_KEYWORDS = {
     
     "cfo": ["net_cash_inflows_outflows_from_operating_activities", "net_cash_flows_from_operating_activities", "cfo", "Lưu chuyển tiền thuần từ hoạt động kinh doanh"],
     "capex": ["purchases_of_fixed_assets_and_other_long_term_assets", "payments_for_purchase_of_fixed_assets", "capex", "Tiền chi để mua sắm, xây dựng TSCĐ"],
+    "depreciation": ["depreciation_and_amortization", "depreciation", "Khấu hao tài sản cố định", "Khấu hao TSCĐ và BĐSĐT"],
 }
 
 # Từ khóa matching cho Ngân hàng.
@@ -209,7 +213,14 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             rev = _match_value(annual_data, NON_FIN_KEYWORDS["revenue"])
             cogs = abs(_match_value(annual_data, NON_FIN_KEYWORDS["cogs"]))
             gp = _match_value(annual_data, NON_FIN_KEYWORDS["gross_profit"])
-            opex = abs(_match_value(annual_data, NON_FIN_KEYWORDS["opex"]))
+            # OPEX = chi phí bán hàng + QLDN (PHẢI cộng cả 2). _match_value chỉ trả
+            # 1 dòng khớp đầu → nếu dùng chung 1 key sẽ bắt mỗi selling_expenses,
+            # bỏ sót G&A → EBIT bị thổi phồng (~2pp margin) cho mọi mã phi TC.
+            sell_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["selling_expenses"]))
+            ga_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["ga_expenses"]))
+            opex = sell_exp + ga_exp
+            if opex == 0:  # fallback: dòng chi phí hoạt động gộp (nếu không tách được)
+                opex = abs(_match_value(annual_data, NON_FIN_KEYWORDS["opex_total"]))
             ebit_reported = _match_value(annual_data, NON_FIN_KEYWORDS["operating_profit"])
             int_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["interest_expense"]))
             tax = abs(_match_value(annual_data, NON_FIN_KEYWORDS["tax"]))
@@ -272,6 +283,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
 
             cfo = _match_value(annual_data, NON_FIN_KEYWORDS["cfo"])
             capex = abs(_match_value(annual_data, NON_FIN_KEYWORDS["capex"]))  # lấy trị tuyệt đối
+            dep_amort = abs(_match_value(annual_data, NON_FIN_KEYWORDS["depreciation"]))  # D&A thật từ CF
 
             # Quy đổi sang Tỷ đồng
             historical_is.append(IncomeStatement(
@@ -306,7 +318,8 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             historical_cf.append(CashFlow(
                 year=y,
                 cfo=to_billion_vnd(cfo),
-                capex=to_billion_vnd(capex)
+                capex=to_billion_vnd(capex),
+                depreciation=to_billion_vnd(dep_amort)
             ))
 
     # 3. Tính toán giả định base case động
@@ -326,9 +339,10 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
 
     from valuation.config import load_defaults
     config_defaults = load_defaults()
-    # VND-base: rf=TPCP_VN đã chứa CRP → erp = mature ERP (chống double-count).
+    # VND-base: erp = mature ERP + CRP VN (CRP là rủi ro vốn cổ phần TT mới nổi,
+    # tách biệt rủi ro vỡ nợ trong TPCP — chuẩn Damodaran).
     from valuation.engine.coe import get_erp
-    erp_mature = get_erp()
+    erp_vn = get_erp()
 
     if is_bank:
         # Tính toán NIM, CIR, Credit Cost trung bình lịch sử làm base case
@@ -362,7 +376,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         assumptions_bank = AssumptionsBank(
             risk_free_rate=rf_dynamic,
             beta=beta_dynamic,
-            erp=erp_mature,
+            erp=erp_vn,
             credit_growth=credit_growth,
             nim=nim,
             cir=cir,
@@ -400,16 +414,23 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         med_growth = min(max(med_growth, 0.0), 0.25)
         med_ebit_m = max(med_ebit_m, 0.0)
 
-        # Mức đầu tư CapEx, khấu hao và NWC
+        # Mức đầu tư CapEx, khấu hao và NWC.
+        # capex_to_rev, depr_to_rev lấy TỪ DỮ LIỆU THẬT (median, robust ngoại lệ).
+        # KHÔNG hardcode depr = 4%: mức đó bơm "tiền ảo" vào FCFF cho các DN nhẹ
+        # tài sản (vd PNJ D&A thực ~0.2%, PLX ~0.7%) → overvaluation hệ thống.
         capex_to_rev = 0.05
-        depr_to_rev = 0.04
+        depr_to_rev = 0.04   # fallback chỉ dùng khi thiếu dữ liệu D&A
         nwc_to_rev = 0.12
-        
+
         if historical_cf and historical_is:
             capexs = [cf.capex / is_rec.revenue for cf, is_rec in zip(historical_cf, historical_is) if is_rec.revenue > 0]
             if capexs:
-                capex_to_rev = sum(capexs) / len(capexs)
-            
+                capex_to_rev = statistics.median(capexs)
+
+            deprs = [cf.depreciation / is_rec.revenue for cf, is_rec in zip(historical_cf, historical_is) if is_rec.revenue > 0 and cf.depreciation > 0]
+            if deprs:
+                depr_to_rev = statistics.median(deprs)
+
             dsos, dios, dpos = [], [], []
             for bs, is_rec in zip(historical_bs, historical_is):
                 if is_rec.revenue > 0:
@@ -515,7 +536,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         assumptions = Assumptions(
             risk_free_rate=rf_dynamic,
             beta=beta_dynamic,
-            erp=erp_mature,
+            erp=erp_vn,
             cost_of_debt=rf_dynamic + 0.03,
             tax_rate=effective_tax,
             revenue_growth=revenue_growth,

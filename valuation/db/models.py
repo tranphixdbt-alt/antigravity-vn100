@@ -42,8 +42,25 @@ class PricesDaily(Base):
     adj_close = Column(Numeric, nullable=True)
     volume = Column(BigInteger)
     value = Column(Numeric, nullable=True)
+    
+    # Dòng tiền khối ngoại
     foreign_buy = Column(Numeric, nullable=True)
     foreign_sell = Column(Numeric, nullable=True)
+    foreign_buy_vol = Column(Numeric, nullable=True)
+    foreign_buy_val = Column(Numeric, nullable=True)
+    foreign_sell_vol = Column(Numeric, nullable=True)
+    foreign_sell_val = Column(Numeric, nullable=True)
+    foreign_net_vol = Column(Numeric, nullable=True)
+    foreign_net_val = Column(Numeric, nullable=True)
+    
+    # Dòng tiền tự doanh
+    proprietary_buy_vol = Column(Numeric, nullable=True)
+    proprietary_buy_val = Column(Numeric, nullable=True)
+    proprietary_sell_vol = Column(Numeric, nullable=True)
+    proprietary_sell_val = Column(Numeric, nullable=True)
+    proprietary_net_vol = Column(Numeric, nullable=True)
+    proprietary_net_val = Column(Numeric, nullable=True)
+    
     price_unit = Column(String, default="VND")
 
 class BackfillStatus(Base):

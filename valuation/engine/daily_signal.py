@@ -238,8 +238,35 @@ def calculate_daily_signal(ticker: str, trade_date: datetime.date = None, force_
         if "CONSENSUS_DEVIATION_HIGH" in flags:
             confidence -= 0.10
             
-        # Add floor to confidence
-        confidence = max(confidence, 0.5)
+        # 9.5 Dòng tiền khối ngoại và tự doanh (Market Flows)
+        # Query 5 phiên gần nhất
+        recent_prices = db.query(PricesDaily).filter(
+            PricesDaily.ticker == ticker,
+            PricesDaily.trade_date <= trade_date_used
+        ).order_by(desc(PricesDaily.trade_date)).limit(5).all()
+        
+        foreign_net_5d = sum([float(p.foreign_net_val) for p in recent_prices if p.foreign_net_val is not None])
+        prop_net_5d = sum([float(p.proprietary_net_val) for p in recent_prices if p.proprietary_net_val is not None])
+        
+        # Nếu tổng mua ròng ngoại > 50 tỷ trong 5 ngày
+        if foreign_net_5d > 50_000_000_000:
+            flags.append("FOREIGN_STRONG_INFLOW")
+            confidence += 0.10
+        elif foreign_net_5d < -50_000_000_000:
+            flags.append("FOREIGN_STRONG_OUTFLOW")
+            confidence -= 0.10
+            
+        # Nếu tự doanh mua ròng > 20 tỷ trong 5 ngày
+        if prop_net_5d > 20_000_000_000:
+            flags.append("PROP_STRONG_INFLOW")
+            confidence += 0.05
+        elif prop_net_5d < -20_000_000_000:
+            flags.append("PROP_STRONG_OUTFLOW")
+            confidence -= 0.05
+            
+        # Add floor/ceiling to confidence
+        confidence = max(0.5, min(1.2, confidence)) # Cho phép max 1.2 nếu dòng tiền cực mạnh
+        
         
         # 10. Conviction Score
         conviction_score = attractiveness * confidence

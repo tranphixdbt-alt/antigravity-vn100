@@ -11,12 +11,16 @@ engine_write = create_engine(
 )
 SessionLocalWrite = sessionmaker(autocommit=False, autoflush=False, bind=engine_write)
 
-# Engine dùng cho đọc dữ liệu (readonly)
+# Engine dùng cho đọc dữ liệu (readonly).
+# AUTOCOMMIT: luồng phân tích chỉ đọc, không cần transaction. Tránh trường hợp
+# một query lỗi để lại transaction "aborted" → connection trả về pool ở trạng
+# thái hỏng → poison query sau (gây flaky test ngẫu nhiên khi dùng pytest-randomly).
 engine_read = create_engine(
-    settings.database_url_readonly, 
-    pool_pre_ping=True, 
-    pool_size=5, 
-    max_overflow=10
+    settings.database_url_readonly,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    isolation_level="AUTOCOMMIT",
 )
 SessionLocalRead = sessionmaker(autocommit=False, autoflush=False, bind=engine_read)
 

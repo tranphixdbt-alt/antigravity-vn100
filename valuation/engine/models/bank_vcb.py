@@ -56,7 +56,7 @@ class VCBValuationModel:
         self.payout_ratio = assumptions.get('dividend_payout_ratio', 0.15)
         self.rf = assumptions.get('risk_free_rate', 0.043)
         self.beta = assumptions.get('beta', 1.0)
-        self.erp = assumptions.get('erp', 0.060)
+        self.erp = assumptions.get('erp', 0.082)  # mature + CRP VN (Damodaran)
         self.g = assumptions.get('terminal_growth_rate', 0.02)
 
         self.coe = self.rf + self.beta * self.erp
@@ -100,16 +100,14 @@ class VCBValuationModel:
         else:
             self.implied_pb = None
 
-        # --- Double-count detection ---
-        # Nếu rf > 2.5% (có vẻ là local rate) VÀ erp > 0.085 (có vẻ gồm CRP quá cao)
-        # → rất có thể đang double-count country risk
-        if self.rf > 0.025 and self.erp > 0.085:
+        # --- ERP sanity check ---
+        # Convention VND-base: erp = mature + CRP ≈ 8.2%. Nếu erp vượt xa mức
+        # này (> 11%) có thể đã cộng CRP hai lần hoặc nhập sai → cảnh báo.
+        if self.erp > 0.11:
             logger.warning(
-                f"DOUBLE-COUNT WARNING: rf={self.rf:.1%} (looks like local rate) "
-                f"+ erp={self.erp:.1%} (looks like it includes CRP). "
-                f"COE={self.coe:.1%} may be inflated. "
-                f"Rule: rf=TPCP VN → erp=mature only (~4.5%); "
-                f"rf=UST → erp=mature+CRP."
+                f"ERP_TOO_HIGH WARNING: erp={self.erp:.1%} vượt mức kỳ vọng "
+                f"(mature + CRP VN ≈ 8.2%). COE={self.coe:.1%} có thể bị thổi phồng. "
+                f"Kiểm tra lại: rf=TPCP VN → erp = mature + CRP (~8.2%)."
             )
 
         # --- Terminal growth validation ---

@@ -143,9 +143,11 @@ class TestVCBPrincipledValuation:
         print(f"    c) Số lượng cổ phiếu: Máy dùng số lượng thực tế tăng vốn {cf_máy['shares_outstanding']/1e9:.3f}B cp (so với 5.589B cp của Excel).")
         print("=" * 80)
         
-        # Assert kết quả định giá theo nguyên tắc nằm trong vùng kỳ vọng hợp lý (50k - 85k) với COE ~9.5%
-        assert 50_000 <= blend_máy['blended_fair_value_per_share'] <= 85_000, (
-            f"Blend FV={blend_máy['blended_fair_value_per_share']:,.0f} ngoài vùng kỳ vọng hợp lý theo nguyên tắc động (50k-85k)"
+        # Assert kết quả định giá theo nguyên tắc nằm trong vùng kỳ vọng hợp lý.
+        # Band 42k-80k tương ứng COE ~10.9% (VND-base: erp = mature + CRP = 8.2%,
+        # chuẩn Damodaran). COE cao hơn convention cũ (~9.5%) → FV thấp hơn tương ứng.
+        assert 42_000 <= blend_máy['blended_fair_value_per_share'] <= 80_000, (
+            f"Blend FV={blend_máy['blended_fair_value_per_share']:,.0f} ngoài vùng kỳ vọng hợp lý theo nguyên tắc động (42k-80k)"
         )
 
 class TestVCBSanityChecks:

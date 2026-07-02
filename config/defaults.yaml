@@ -1,29 +1,28 @@
 # ===================================================================
 # COE Convention: Damodaran Global (chống double-count country risk)
 # ===================================================================
-# rf  = UST 10Y (risk-free toàn cầu)            = 4.3%
-# erp = Mature Market ERP + Country Risk Premium = 4.5% + 1.5% = 6.0%
+# rf  = TPCP VN 10Y (risk-free danh nghĩa VND, lấy động)   ≈ 4.5%
+# erp = Mature Market ERP + Country Risk Premium VN = 4.5% + 3.7% = 8.2%
 # beta_default = 1.0
 # terminal_growth = 2.0%
 #
-# QUY TẮC VÀNG:
-#   Nếu rf = TPCP Việt Nam (≈3%) → erp PHẢI = mature ERP only (≈4.5%)
-#     vì TPCP VN đã chứa lạm phát + rủi ro quốc gia
-#   Nếu rf = UST 10Y (≈4.3%) → erp = mature ERP + CRP VN
-#     vì UST chưa chứa rủi ro VN
-#   KHÔNG BAO GIỜ dùng rf=TPCP VN + erp gồm CRP → DOUBLE-COUNT!
+# QUY TẮC VÀNG (chuẩn Damodaran cho thị trường mới nổi):
+#   CRP (Country Risk Premium) là phần bù RỦI RO VỐN CỔ PHẦN của TT mới nổi,
+#   TÁCH BIỆT với rủi ro vỡ nợ nằm trong lợi suất trái phiếu chính phủ.
+#   → ERP dùng cho COE PHẢI gồm CRP, dù rf là TPCP VN hay UST:
+#       rf = TPCP VN 10Y  → erp = mature + CRP  (COE bằng VND)
+#       rf = UST 10Y      → erp = mature + CRP  (COE bằng USD)
+#   Bỏ CRP sẽ under-price rủi ro cổ phiếu VN → WACC quá thấp → định giá ảo.
 # ===================================================================
 # CONVENTION ĐANG DÙNG (chốt): VND-base.
 #   rf  = TPCP VN 10Y (lấy động từ macro_series, KHÔNG dùng giá trị tĩnh dưới đây)
-#   erp = erp_mature (KHÔNG cộng crp_vn — rf_VN đã chứa rủi ro quốc gia)
-#   COE = rf_VN + beta * erp_mature   → code: valuation/engine/coe.py
-# erp_total chỉ giữ để THAM CHIẾU cho cách USD-base (rf=UST + erp_total); KHÔNG
-# dùng trong code định giá hiện tại (sẽ double-count nếu ghép với rf_VN).
+#   erp = erp_mature + crp_vn  (= erp_total ≈ 8.2%)
+#   COE = rf_VN + beta * (erp_mature + crp_vn)   → code: valuation/engine/coe.py
 coe_convention:
   rf: 0.043           # UST 10Y — chỉ tham chiếu (code lấy rf động = TPCP VN)
   erp_mature: 0.045   # Mature market ERP (Damodaran US ERP) — ERP đang dùng
   crp_vn: 0.037       # Country Risk Premium VN (Damodaran 2024-2025 ≈ 3.7%)
-  erp_total: 0.082    # erp_mature + crp_vn — CHỈ cho USD-base, KHÔNG dùng với rf_VN
+  erp_total: 0.082    # erp_mature + crp_vn — ERP ĐANG DÙNG cho COE (get_erp)
   beta_default: 1.0
   terminal_growth: 0.02
 
@@ -36,6 +35,17 @@ rating_thresholds:
   hold_min: 0.0
   hold_max: 0.20
   sell: 0.0
+
+# ===================================================================
+# Band khuyến nghị 5 mức chuẩn CTCK/quỹ (SPEC MODULE 4.3) — dùng cho
+# báo cáo định giá. Ngưỡng upside (decimal), đọc từ trên xuống.
+# ===================================================================
+rating_bands:
+  - {min_upside: 0.20, label: "MUA"}
+  - {min_upside: 0.08, label: "KHẢ QUAN"}
+  - {min_upside: -0.08, label: "NẮM GIỮ"}
+  - {min_upside: -0.20, label: "KÉM KHẢ QUAN"}
+  - {min_upside: -99.0, label: "BÁN"}
 
 # Margin of Safety mặc định theo ngành
 margin_of_safety:

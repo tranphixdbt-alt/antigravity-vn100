@@ -43,6 +43,17 @@ class BankGeneralValuationModel:
         # Dự phóng
         self.projections = projections if projections is not None else forecast_bank_financials(self.company)
 
+        # B3: Fade ROE dài hạn (terminal_roe) về mức bền vững, cap tối đa 15%
+        hist_equity = self.base_bs.total_equity
+        hist_ni = self.base_is.net_income
+        roe_ttm = hist_ni / hist_equity if hist_equity > 0 else 0.18
+        
+        sustainable_roe = getattr(self.assumptions, "sustainable_roe", None)
+        if sustainable_roe and sustainable_roe > 0:
+            self.terminal_roe = min(sustainable_roe, 0.15)
+        else:
+            self.terminal_roe = min(0.15, roe_ttm if roe_ttm > 0 else 0.15)
+
     def calculate_residual_income(self) -> Dict[str, float]:
         """Tính giá trị hợp lý theo phương pháp Residual Income (Excess Return)."""
         pv_ri = 0.0
@@ -58,8 +69,10 @@ class BankGeneralValuationModel:
             pv_ri += ri / ((1 + self.coe) ** (i + 1))
             beg_equity = proj["total_equity"]
             
-        # Terminal Value cho RI (tăng trưởng vĩnh viễn g)
-        terminal_ri = (ri_list[-1] * (1 + self.g)) / (self.coe - self.g)
+        # Terminal Value cho RI (fade về terminal_roe bền vững)
+        eq_terminal_begin = self.projections[-1]["total_equity"]
+        sustainable_ri = (self.terminal_roe - self.coe) * eq_terminal_begin
+        terminal_ri = sustainable_ri / (self.coe - self.g)
         pv_terminal_ri = terminal_ri / ((1 + self.coe) ** len(self.projections))
         
         total_ri_equity_value = self.base_bs.total_equity + pv_ri + pv_terminal_ri
@@ -75,11 +88,15 @@ class BankGeneralValuationModel:
         }
 
     def calculate_pb_valuation(self) -> Dict[str, float]:
-        """Tính giá trị hợp lý theo phương pháp Justified P/B."""
-        # Lấy ROE dài hạn = LNST năm 5 / VCSH đầu năm 5 (tức là VCSH cuối năm 4)
-        ni_yr5 = self.projections[-1]["net_income"]
-        eq_yr4 = self.projections[-2]["total_equity"]  # VCSH cuối năm 4
-        long_term_roe = ni_yr5 / eq_yr4 if eq_yr4 > 0 else 0.15
+        """Tính giá trị hợp lý theo phương pháp Justified P/B.
+
+        B3: ưu tiên sustainable ROE (ROE bền vững dài hạn) cho Gordon Growth.
+        ROE dự phóng năm 5 có thể còn phản ánh trạng thái siêu lợi nhuận nhất
+        thời (ngân hàng VN ROE ~20% hiện tại, cạnh tranh + tích lũy vốn nén dần).
+        Chỉ fallback về ROE năm 5 khi assumptions không cung cấp sustainable_roe.
+        """
+        # Sử dụng terminal_roe đã được cap ở mức bền vững (tối đa 15%)
+        long_term_roe = self.terminal_roe
         
         # Target P/B = (ROE - g) / (Re - g)
         if self.coe <= self.g:

@@ -34,6 +34,11 @@ dev = [
     "mypy"
 ]
 
+[tool.pytest.ini_options]
+# Chỉ thu thập test trong tests/ — tránh xung đột với các script debug test_*.py
+# ở gốc repo (vd test_db.py trùng tên tests/test_db.py gây lỗi collection).
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
 

@@ -18,7 +18,7 @@ from valuation.models.financials_bank import (
     IncomeStatementBank, BalanceSheetBank, AssumptionsBank, CompanyBank
 )
 from valuation.engine.models.dcf import DCFValuationModel
-from valuation.engine.bank import calculate_bank_parameters, calculate_justified_pb, value_bank
+from valuation.engine.models.bank_general import BankGeneralValuationModel
 from valuation.engine.forecast_bank import forecast_bank_financials
 
 
@@ -246,45 +246,30 @@ class TestB2WaccMarketCap:
 class TestB3SustainableRoe:
     def test_justified_pb_uses_sustainable_roe(self):
         """
-        B3: Khi assumptions.sustainable_roe = 0.20, calculate_bank_parameters()
-        phai tra ve roe = 0.20, khong phai ROE nam du phong dau tien.
-        bank.py dung legacy dict-based Company API.
+        B3: Justified P/B của model ACTIVE (bank_general) phải ưu tiên
+        assumptions.sustainable_roe, KHÔNG dùng ROE dự phóng năm 5.
+
+        (Trước đây B3 chỉ nằm ở engine/bank.py legacy — đã xoá. Nay hợp nhất về
+        một model duy nhất: BankGeneralValuationModel.)
         """
-        from valuation.engine.bank import calculate_bank_parameters
-        from unittest.mock import MagicMock
+        company = _make_vcb_company()
+        company.assumptions.sustainable_roe = 0.11  # khác rõ ROE dự phóng năm 5
 
-        forecast_years = [2024, 2025, 2026, 2027, 2028]
+        model = BankGeneralValuationModel(company)
+        pb_res = model.calculate_pb_valuation()
 
-        assumptions = MagicMock()
-        assumptions.risk_free_rate = 0.03
-        assumptions.equity_risk_premium = 0.082
-        assumptions.beta = 0.90
-        assumptions.terminal_growth = 0.02
-        assumptions.sustainable_roe = 0.20  # phai duoc uu tien dung
-        assumptions.forecast_years = forecast_years
-
-        # Legacy API: income.revenue la dict {year: float}
-        income = MagicMock()
-        income.revenue = {2023: 100.0}  # 1 nam lich su, base_year=2023
-        income.npatmi  = {2023: 15.0, 2024: 18.0}  # ROE=18/80=0.225, khac 0.20
-
-        balance = MagicMock()
-        balance.equity = {2023: 80.0, 2024: 90.0}
-        balance.shares_outstanding = 1000.0
-
-        company = MagicMock()
-        company.assumptions = assumptions
-        company.income = income
-        company.balance = balance
-
-        re, roe, g = calculate_bank_parameters(company)
-
-        assert abs(re - (0.03 + 0.90 * 0.082)) < 1e-6, "Re = rf + beta x erp"
-        assert abs(roe - 0.20) < 1e-6, (
-            f"B3 FAIL: roe={roe:.4f}, phai = sustainable_roe=0.20 "
-            f"(khong phai ROE nam 1 = 18/80 = 0.225)"
+        # ROE dùng cho Gordon Growth phải = sustainable_roe (B3)
+        assert abs(pb_res["long_term_roe"] - 0.11) < 1e-9, (
+            f"B3 FAIL: long_term_roe={pb_res['long_term_roe']:.4f}, phải = 0.11"
         )
-        assert abs(g - 0.02) < 1e-6, "g = terminal_growth"
+
+        # Bằng chứng B3 áp dụng: sustainable_roe KHÁC ROE dự phóng năm 5
+        roe_yr5 = model.projections[-1]["net_income"] / model.projections[-2]["total_equity"]
+        assert abs(roe_yr5 - 0.11) > 0.02, "test cần sustainable_roe khác ROE năm 5 mới có ý nghĩa"
+
+        # Target P/B khớp công thức Gordon với sustainable_roe
+        expected_pb = max(0.3, (0.11 - model.g) / (model.coe - model.g))
+        assert abs(pb_res["target_pb"] - expected_pb) < 1e-6
 
 
 
