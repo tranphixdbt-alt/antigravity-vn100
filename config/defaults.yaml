@@ -150,6 +150,8 @@ macro_sources:
     - worldgovernmentbonds.com      # Đường cong lợi suất TPCP VN đầy đủ (1Y-30Y), dễ bóc tách (JS-render → cào qua Chrome)
     - www.worldgovernmentbonds.com
     - tradingeconomics.com          # CPI, lãi suất điều hành, GDP, bán lẻ VN (JS-render → cào qua Chrome)
+    - 24hmoney.vn                   # Tổng hợp khuyến nghị đa CTCK (SSI/KBSV/BSC/MIRAE/ACBS...) — HTML SSR, lấy bằng httpx
+    - api-finance-t19.24hmoney.vn
   request_timeout_sec: 15
   user_agent: "antigravity-vn100-macro/1.0"
   # Nguồn TPCP_10Y đang dùng: worldgovernmentbonds.com (đường cong đầy đủ, dữ

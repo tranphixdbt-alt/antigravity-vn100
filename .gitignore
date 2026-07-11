@@ -40,3 +40,10 @@ test_output.txt
 VN100_Valuation_Results.csv
 compare_table.md
 .streamlit/secrets.toml
+
+# Build artifacts (PyInstaller) & DB backups
+build/
+dist/
+*.spec
+*.sql
+vn100_backup.sql

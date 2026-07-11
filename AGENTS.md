@@ -46,7 +46,14 @@ Bạn là kỹ sư phần mềm tài chính (quant/data engineer) xây hệ th�
   - Google API: chỉ cấp scope Sheets/Drive cần thiết, dùng service account riêng cho dự án.
   - Discord webhook chỉ để gửi, không nhúng token bot nếu không cần.
 - **Không log dữ liệu nhạy cảm** (key, token) ra Discord/Drive/console. Log có thể ra Drive thì phải sạch secret.
-- Không gọi domain/endpoint lạ. Mọi nguồn dữ liệu ngoài phải nằm trong danh sách cho phép ở config.
+- Nguồn dữ liệu ngoài: DỰ ÁN CÁ NHÂN — được phép truy cập rộng rãi các trang dữ
+  liệu tài chính công khai (worldgovernmentbonds, tradingeconomics, vietstock,
+  cafef, fireant, và web/ứng dụng nghiên cứu của CTCK: SSI, Vietcap, FPTS,
+  VPBankS, MBS...). Ưu tiên cào qua Chrome MCP dùng chính phiên trình duyệt của
+  người dùng (đã đăng nhập sẵn nếu cần). Vẫn giữ 2 rào chắn: (a) ghi macro qua
+  upsert_macro_series/allowlist để truy vết; (b) GIỚI HẠN CỨNG bất khả xâm phạm
+  (không tự gõ mật khẩu, không giải CAPTCHA, không tạo tài khoản, không phát tán
+  lại báo cáo có bản quyền — chỉ lưu nội bộ tham khảo).
 - Input từ ngoài (mã do tôi nhập, payload webhook) phải validate (whitelist mã thuộc VN100 / regex mã hợp lệ) trước khi dùng — chống injection.
 
 ## 6. Định nghĩa "Hoàn thành" (Definition of Done)
