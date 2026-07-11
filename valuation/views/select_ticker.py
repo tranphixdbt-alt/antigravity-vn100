@@ -6,6 +6,13 @@ from sqlalchemy.orm import Session
 from valuation.db.models import Ticker
 from valuation.data_access.repo import build_company_data
 
+
+def load_macro_bulletin(force: bool = False):
+    # Cache ra FILE với TTL 7 giờ (tồn tại qua các lần restart app) → không tốn token
+    # gọi lại AI nếu trong 7 giờ đã có báo cáo.
+    from valuation.data_access.macro_news import get_macro_bulletin_cached
+    return get_macro_bulletin_cached(force=force)
+
 def render_select_ticker(db_read: Session, db_write: Session = None):
     """
     Render giao diện chọn Ticker và chế độ định giá.
@@ -34,6 +41,38 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
         index=0
     )
     mode = "TTM" if "TTM" in base_year_mode else "FY"
+
+    st.sidebar.markdown("---")
+    
+    # --- Bảng tin Vĩ mô (Macro News) ---
+    with st.sidebar.expander("📰 Bản tin Vĩ mô & Nhận định", expanded=True):
+        # Nút này BUỘC tạo mới (bỏ qua mốc 7 giờ) — chỉ khi user chủ động bấm.
+        if st.button("🔄 Làm mới tin tức", use_container_width=True):
+            with st.spinner("AI đang tổng hợp tin..."):
+                load_macro_bulletin(force=True)
+            st.rerun()
+
+        # Render bình thường: đọc bản lưu (không tốn token nếu còn trong 7 giờ).
+        from valuation.data_access.macro_news import get_macro_cache_age_hours
+        _age = get_macro_cache_age_hours()
+        if _age is None:
+            # Chưa có bản tin nào → tạo lần đầu
+            with st.spinner("AI đang tổng hợp tin..."):
+                macro_text = load_macro_bulletin()
+        else:
+            macro_text = load_macro_bulletin()
+            st.caption(f"🕒 Cập nhật {_age:.1f} giờ trước (tự làm mới sau 7 giờ)")
+        st.markdown(macro_text)
+
+    # --- Nâng cấp Vĩ mô ---
+    st.sidebar.markdown("---")
+    st.sidebar.header("🌍 Môi trường Vĩ mô")
+    macro_inflation = st.sidebar.number_input("Lạm phát mục tiêu (%)", min_value=0.0, max_value=20.0, value=3.0, step=0.5) / 100.0
+    macro_sbv = st.sidebar.selectbox("Chính sách SBV", ["Neutral", "Accommodative", "Tightening"])
+    
+    # Update MacroEnvironment in session state
+    from valuation.models.macro_env import MacroEnvironment
+    st.session_state["macro_env"] = MacroEnvironment(inflation_rate=macro_inflation, sbv_stance=macro_sbv)
     
     # Nút bấm để load dữ liệu
     if st.sidebar.button("Tải dữ liệu mặc định", use_container_width=True) or "company" not in st.session_state or st.session_state.get("current_ticker") != ticker or st.session_state.get("current_mode") != mode:

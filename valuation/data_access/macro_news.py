@@ -1,0 +1,142 @@
+import os
+import time
+import requests
+from bs4 import BeautifulSoup
+from openai import OpenAI
+import json
+import logging
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Bản tin vĩ mô được lưu ra file kèm timestamp để tồn tại QUA CÁC LẦN RESTART app
+# (st.cache_data chỉ nằm trong RAM, mất khi restart → tốn token gọi lại AI mỗi lần).
+_MACRO_CACHE_FILE = Path(__file__).resolve().parents[2] / ".macro_bulletin_cache.json"
+_MACRO_CACHE_TTL_SECONDS = 7 * 3600  # 7 giờ
+
+
+def get_macro_bulletin_cached(force: bool = False) -> str:
+    """Trả bản tin vĩ mô. CHỈ gọi AI (tốn token) khi bản lưu cũ hơn 7 giờ hoặc force=True.
+
+    Nếu trong 7 giờ đã có báo cáo → dùng lại bản lưu, không tạo mới.
+    """
+    now = time.time()
+    if not force and _MACRO_CACHE_FILE.exists():
+        try:
+            data = json.loads(_MACRO_CACHE_FILE.read_text(encoding="utf-8"))
+            age = now - float(data.get("ts", 0))
+            if age < _MACRO_CACHE_TTL_SECONDS and data.get("text"):
+                return data["text"]
+        except Exception as e:
+            logger.warning(f"Không đọc được cache bản tin vĩ mô: {e}")
+
+    # Hết hạn hoặc chưa có → tạo mới (gọi AI)
+    text = generate_macro_bulletin()
+
+    # Chỉ lưu khi tạo thành công (không lưu thông báo lỗi để lần sau còn thử lại)
+    if text and not text.startswith("⚠️"):
+        try:
+            _MACRO_CACHE_FILE.write_text(
+                json.dumps({"ts": now, "text": text}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning(f"Không ghi được cache bản tin vĩ mô: {e}")
+    return text
+
+
+def get_macro_cache_age_hours() -> float | None:
+    """Tuổi (giờ) của bản tin đang lưu; None nếu chưa có."""
+    if not _MACRO_CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(_MACRO_CACHE_FILE.read_text(encoding="utf-8"))
+        return (time.time() - float(data.get("ts", 0))) / 3600.0
+    except Exception:
+        return None
+
+def fetch_rss_news():
+    urls = [
+        "https://cafef.vn/vi-mo-dau-tu.rss",
+        "https://cafef.vn/tai-chinh-quoc-te.rss"
+    ]
+    news_items = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for url in urls:
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.content, "xml")
+                items = soup.find_all("item")
+                # Lấy 10 tin mới nhất mỗi nguồn
+                for item in items[:10]:
+                    title = item.find("title").text if item.find("title") else ""
+                    description = item.find("description").text if item.find("description") else ""
+                    
+                    # Clean CDATA and HTML from description if any
+                    desc_soup = BeautifulSoup(description, "html.parser")
+                    clean_desc = desc_soup.get_text(separator=" ").strip()
+                    
+                    if title:
+                        news_items.append(f"Tiêu đề: {title}\nNội dung tóm tắt: {clean_desc}")
+        except Exception as e:
+            logger.error(f"Error fetching RSS {url}: {e}")
+            
+    return "\n\n".join(news_items)
+
+def get_openai_client() -> OpenAI:
+    from valuation.config import settings
+    api_key = settings.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY") # fallback
+    if api_key and api_key.startswith("sk-"):
+        # if using deepseek
+        return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    return OpenAI(api_key=api_key)
+
+def generate_macro_bulletin() -> str:
+    news_text = fetch_rss_news()
+    if not news_text:
+        return "⚠️ Không thể lấy được bản tin Vĩ mô lúc này. Vui lòng thử lại sau."
+        
+    client = get_openai_client()
+    prompt = f"""Bạn là một chuyên gia kinh tế vĩ mô và chiến lược gia thị trường chứng khoán.
+Dưới đây là các tin tức vĩ mô mới nhất được tổng hợp từ báo chí trong 24h qua:
+
+{news_text}
+
+Nhiệm vụ của bạn:
+Viết 1 BẢNG TIN VĨ MÔ & NHẬN ĐỊNH THỊ TRƯỜNG siêu ngắn gọn, súc tích (đọc lướt trong 30 giây), format bằng Markdown.
+Bắt buộc gồm đúng 4 phần sau (KHÔNG dùng Markdown cho thẻ H3, chỉ dùng in đậm cho tiêu đề):
+
+**🇻🇳 VĨ MÔ VIỆT NAM**
+- (2-3 gạch đầu dòng về các sự kiện/chỉ số quan trọng nhất trong nước)
+
+**🌍 VĨ MÔ THẾ GIỚI**
+- (1-2 gạch đầu dòng về chính sách FED, tỷ giá, hàng hóa hoặc sự kiện quốc tế quan trọng)
+
+**💡 NHẬN ĐỊNH THỊ TRƯỜNG**
+- (1-2 câu chốt: Dòng tiền có thể phản ứng thế nào? Tốt hay xấu cho VN-Index hoặc nhóm ngành nào?)
+
+**🎲 PHÂN TÍCH DÒNG TIỀN VN-INDEX (LÝ THUYẾT TRÒ CHƠI & NHÀ CÁI)**
+- (Đúng 5 dòng phân tích trực diện, súc tích về hành vi dòng tiền, ý đồ của nhà cái (market maker) và sự giằng co tâm lý đám đông theo lý thuyết trò chơi).
+
+LƯU Ý: Không được bịa đặt thông tin, chỉ lấy từ nội dung được cung cấp ở trên và suy luận logic. Viết thẳng vào vấn đề, không nói dài dòng.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You are a top-tier macroeconomic analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Lỗi AI macro_news: {e}")
+        return f"⚠️ Lỗi khi gọi AI tổng hợp tin tức: {e}"

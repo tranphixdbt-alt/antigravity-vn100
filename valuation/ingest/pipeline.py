@@ -1,4 +1,5 @@
 import logging
+from typing import Any, Dict
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import insert
@@ -48,34 +49,55 @@ def upsert_prices(df: pd.DataFrame, ticker: str):
     finally:
         db.close()
 
+# Cột market-flow duy nhất được phép ghi bởi upsert_market_flows. KHÔNG được
+# đụng open/high/low/close/volume — đây từng là bug nghiêm trọng: update_dict
+# lấy TOÀN BỘ cột bảng PricesDaily, khiến ON CONFLICT DO UPDATE set OHLCV về
+# NULL (record market-flow không có các cột đó → SQLAlchemy coi là NULL) và
+# GHI ĐÈ giá lịch sử đã có (vi phạm luật vàng #6 — không phá dữ liệu lịch sử).
+_MARKET_FLOW_COLUMNS = [
+    'foreign_buy_vol', 'foreign_buy_val', 'foreign_sell_vol',
+    'foreign_sell_val', 'foreign_net_vol', 'foreign_net_val',
+    'proprietary_buy_vol', 'proprietary_buy_val', 'proprietary_sell_vol',
+    'proprietary_sell_val', 'proprietary_net_vol', 'proprietary_net_val',
+]
+
+
 def upsert_market_flows(ticker: str, df_foreign: pd.DataFrame, df_prop: pd.DataFrame):
-    """Upsert dữ liệu dòng tiền ngoại và tự doanh vào bảng PricesDaily."""
+    """Upsert dữ liệu dòng tiền ngoại và tự doanh vào bảng PricesDaily.
+
+    CHỈ ghi các cột market-flow (_MARKET_FLOW_COLUMNS) — không đụng OHLCV.
+    """
     if (df_foreign is None or df_foreign.empty) and (df_prop is None or df_prop.empty):
         return
 
-    # Gộp 2 df theo ngày
-    records_dict = {}
-    
+    # Gộp 2 df theo ngày. Mỗi record LUÔN đủ toàn bộ _MARKET_FLOW_COLUMNS
+    # (None nếu thiếu nguồn) để mọi dict trong batch insert có cùng shape.
+    records_dict: Dict[Any, Dict[str, Any]] = {}
+
+    def _get_or_init(d):
+        if d not in records_dict:
+            records_dict[d] = {'ticker': ticker, 'trade_date': d,
+                                **{col: None for col in _MARKET_FLOW_COLUMNS}}
+        return records_dict[d]
+
     if df_foreign is not None and not df_foreign.empty:
         for _, row in df_foreign.iterrows():
             d = row['time'].date() if isinstance(row['time'], pd.Timestamp) else pd.to_datetime(row['time']).date()
-            records_dict[d] = {
-                'ticker': ticker,
-                'trade_date': d,
+            rec = _get_or_init(d)
+            rec.update({
                 'foreign_buy_vol': row.get('buy_vol'),
                 'foreign_buy_val': row.get('buy_val'),
                 'foreign_sell_vol': row.get('sell_vol'),
                 'foreign_sell_val': row.get('sell_val'),
                 'foreign_net_vol': row.get('net_vol'),
                 'foreign_net_val': row.get('net_val'),
-            }
-            
+            })
+
     if df_prop is not None and not df_prop.empty:
         for _, row in df_prop.iterrows():
             d = row['time'].date() if isinstance(row['time'], pd.Timestamp) else pd.to_datetime(row['time']).date()
-            if d not in records_dict:
-                records_dict[d] = {'ticker': ticker, 'trade_date': d}
-            records_dict[d].update({
+            rec = _get_or_init(d)
+            rec.update({
                 'proprietary_buy_vol': row.get('buy_vol'),
                 'proprietary_buy_val': row.get('buy_val'),
                 'proprietary_sell_vol': row.get('sell_vol'),
@@ -91,10 +113,8 @@ def upsert_market_flows(ticker: str, df_foreign: pd.DataFrame, df_prop: pd.DataF
     db = SessionLocalWrite()
     try:
         stmt = insert(PricesDaily).values(records)
-        update_dict = {
-            c.name: c for c in stmt.excluded 
-            if c.name not in ['ticker', 'trade_date']
-        }
+        # CHỈ update các cột market-flow — giữ nguyên OHLCV đã có.
+        update_dict = {col: getattr(stmt.excluded, col) for col in _MARKET_FLOW_COLUMNS}
         stmt = stmt.on_conflict_do_update(
             index_elements=['ticker', 'trade_date'],
             set_=update_dict
@@ -188,10 +208,41 @@ def update_backfill_status(ticker: str, status: str, last_price_date=None, last_
     finally:
         db.close()
 
-def run_ingest(ticker: str, data_types: list):
+_FULL_BACKFILL_START = "2020-01-01"
+
+
+def _incremental_price_start(ticker: str) -> str:
+    """Ngày bắt đầu kéo giá THEO KIỂU INCREMENTAL (tiết kiệm API/dữ liệu).
+
+    Lấy max(trade_date) có close hợp lệ trong DB rồi lùi 5 ngày (đệm để vá các
+    phiên bị NULL/điều chỉnh; upsert idempotent nên chồng lấn vô hại). Mã chưa
+    có dữ liệu → full backfill từ 2020. Trước đây MỌI lần ingest kéo full từ
+    2020 (~1,700 dòng/mã) dù chỉ thiếu vài ngày — lãng phí và chậm.
+    """
+    import datetime
+    db = SessionLocalWrite()
+    try:
+        row = (
+            db.query(PricesDaily.trade_date)
+            .filter(PricesDaily.ticker == ticker, PricesDaily.close.isnot(None))
+            .order_by(PricesDaily.trade_date.desc())
+            .first()
+        )
+        if row and row[0]:
+            return (row[0] - datetime.timedelta(days=5)).strftime("%Y-%m-%d")
+        return _FULL_BACKFILL_START
+    except Exception:
+        return _FULL_BACKFILL_START
+    finally:
+        db.close()
+
+
+def run_ingest(ticker: str, data_types: list, incremental: bool = True):
     """
     Orchestrator hàm lấy dữ liệu, chuẩn hóa và lưu DB.
     data_types: ['prices', 'financials']
+    incremental: True (mặc định) → giá chỉ kéo từ ngày cuối có dữ liệu −5 ngày;
+                 False → full backfill từ 2020 (dùng khi nghi dữ liệu lịch sử hỏng).
     """
     # 1. Đảm bảo ticker tồn tại (để foreign key ko báo lỗi)
     db = SessionLocalWrite()
@@ -218,14 +269,15 @@ def run_ingest(ticker: str, data_types: list):
 
     try:
         if 'prices' in data_types:
-            df_prices = vnstock_client.get_historical_prices(ticker, '2020-01-01')
+            price_start = _incremental_price_start(ticker) if incremental else _FULL_BACKFILL_START
+            df_prices = vnstock_client.get_historical_prices(ticker, price_start)
             df_norm = normalize_daily_prices(df_prices)
             upsert_prices(df_norm, ticker)
-            
-            # Kéo thêm dòng tiền ngoại & tự doanh
+
+            # Kéo thêm dòng tiền ngoại & tự doanh (cùng cửa sổ incremental)
             try:
-                df_foreign = market_client.fetch_foreign_flow(ticker, start='2020-01-01')
-                df_prop = market_client.fetch_proprietary_flow(ticker, start='2020-01-01')
+                df_foreign = market_client.fetch_foreign_flow(ticker, start=price_start)
+                df_prop = market_client.fetch_proprietary_flow(ticker, start=price_start)
                 upsert_market_flows(ticker, df_foreign, df_prop)
             except Exception as e:
                 logger.warning(f"Could not fetch market flows for {ticker}: {e}")

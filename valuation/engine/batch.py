@@ -22,7 +22,7 @@ def _collect_flags(model, result: Dict[str, Any]) -> List[str]:
     return flags
 
 
-def value_ticker(db: Session, ticker: str) -> Dict[str, Any]:
+def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
     """Định giá 1 mã theo đúng phương pháp router. Trả dict chuẩn hoặc {error}."""
     plan = route(ticker)
     if not plan:
@@ -39,7 +39,7 @@ def value_ticker(db: Session, ticker: str) -> Dict[str, Any]:
         # Cùng lõi với Streamlit → CLI/batch/Sheets và UI ra cùng một số.
         from valuation.engine.valuate import valuate
         company = build_company_data(db, ticker, mode="TTM")
-        res = valuate(company)
+        res = valuate(company, macro_env=macro_env)
 
         fv = float(res["blended_fair_value_per_share"])
         upside = (fv / price - 1.0) if price else None
@@ -48,8 +48,32 @@ def value_ticker(db: Session, ticker: str) -> Dict[str, Any]:
         return {**base, "error": f"{type(e).__name__}: {str(e)[:80]}"}
 
 
-def _dispatch_nonfin(company, method: str, group: Optional[str]):
+def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None):
     """Chọn model phi tài chính theo method. Trả (model, result) hoặc (None, None)."""
+    
+    # NẾU LÀ NGÀNH CHU KỲ (Thép, Hóa chất, Dầu khí, Phân bón, etc.)
+    # Theo kế hoạch: Ép dùng Mid-cycle (trung bình 5 năm) thay vì Trailing TTM
+    _CYCLICAL_KW = ("Thép", "Hóa chất", "Dầu khí", "Cao su", "Phân bón", "Vận tải", "Khai khoáng")
+    is_cyclical = any(k in (group or "") for k in _CYCLICAL_KW)
+    
+    if is_cyclical and method in ("EV_EBITDA", "PE") and len(company.historical_is) > 0:
+        # Tính giá trị trung bình 5 năm từ lịch sử
+        hist_ni = [x.net_income for x in company.historical_is if x.net_income > 0]
+        if method == "PE" and hist_ni:
+            mid_ni = sum(hist_ni) / len(hist_ni)
+            company.historical_is[-1].net_income = mid_ni
+            
+        if method == "EV_EBITDA" and len(company.historical_cf) > 0:
+            hist_ebitda = []
+            for _is, _cf in zip(company.historical_is, company.historical_cf):
+                if _is.ebit > 0:
+                    hist_ebitda.append(_is.ebit + _cf.depreciation)
+            if hist_ebitda:
+                mid_ebitda = sum(hist_ebitda) / len(hist_ebitda)
+                # Ghi đè vào quý cuối để mô hình EV_EBITDA lấy ra
+                company.historical_is[-1].ebit = mid_ebitda
+                company.historical_cf[-1].depreciation = 0.0
+
     from valuation.engine.models.dcf import DCFValuationModel
     if method == "RNAV":
         from valuation.engine.models.rnav import RNAVValuationModel
@@ -83,9 +107,9 @@ def _dispatch_nonfin(company, method: str, group: Optional[str]):
     return m, m.perform_valuation()
 
 
-def value_all(db: Session, tickers: List[str] = None) -> List[Dict[str, Any]]:
+def value_all(db: Session, tickers: List[str] = None, macro_env=None) -> List[Dict[str, Any]]:
     """Định giá hàng loạt. Mặc định toàn bộ mã có trong bảng routing (VN100)."""
     if tickers is None:
         from valuation.engine.sector_router import _router
         tickers = sorted(_router().routing_data.keys())
-    return [value_ticker(db, t) for t in tickers]
+    return [value_ticker(db, t, macro_env=macro_env) for t in tickers]

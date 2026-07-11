@@ -35,6 +35,21 @@ class VnstockClient:
         """Lấy giá lịch sử từ ngày start_date (YYYY-MM-DD)"""
         quote = Quote(source=self.source, symbol=symbol)
         return quote.history(start=start_date)
+        
+    def get_live_price(self, symbol: str) -> float:
+        """Lấy giá thị trường hiện tại (real-time/intraday)"""
+        try:
+            import datetime
+            from vnstock.api.quote import Quote
+            # Lấy 7 ngày gần nhất để đảm bảo có dữ liệu
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
+            df = Quote(source=self.source, symbol=symbol).history(start=start_date)
+            if not df.empty and 'close' in df.columns:
+                close_val = df.iloc[-1]['close']
+                return float(close_val) * 1000.0
+        except Exception as e:
+            pass
+        return 0.0
     
     def get_vn100_symbols(self) -> pd.Series:
         """Lấy danh sách mã VN100"""

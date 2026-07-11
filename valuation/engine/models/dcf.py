@@ -36,7 +36,9 @@ class DCFValuationModel(BaseValuationModel):
             'cogs': base_is.cogs * 1e9,
             'ebitda': ebitda_est * 1e9,          # B1 Fix: EBIT + D&A
             'shares_outstanding': company.shares_outstanding * 1e6,
-            'current_price': company.current_price
+            'current_price': company.current_price,
+            # Lịch sử LNST (đồng) để tính nhánh so sánh P/E khi cần.
+            'net_income_history': [is_.net_income * 1e9 for is_ in company.historical_is],
         }
 
         # --- B2 FIX: WACC dùng market cap weights (không dùng book equity) ---
@@ -65,7 +67,21 @@ class DCFValuationModel(BaseValuationModel):
         from valuation.engine.wacc import compute_wacc, DEFAULT_DEBT_SPREAD
         wacc_val = compute_wacc(coe, cod, E, D, tax, floor=rf + DEFAULT_DEBT_SPREAD)
 
+        # Phương pháp so sánh phụ để blend với DCF (theo tài liệu lõi định giá):
+        #   Compounder/Retail → P/E (bán lẻ/tăng trưởng định giá theo lợi nhuận)
+        #   còn lại (Cyclical/Utility/Developer...) → EV/EBITDA (loại nhiễu D&A + nợ)
+        # Trước đây MỌI mã DCF đều blend EV/EBITDA → méo cho retail biên mỏng (FRT).
+        from valuation.engine.sector_router import route as _route_fn
+        _plan = _route_fn(company.ticker) or {}
+        _nature = _plan.get("business_nature", "Unknown")
+        _secondary = "PE" if _nature in ("Compounder", "Retail") else "EV_EBITDA"
+        from valuation.engine.models.pe_relative import PERelativeValuationModel
+        _target_pe = PERelativeValuationModel._target_pe(_plan.get("group") or company.sector)
+
         ass_dict = {
+            'secondary_multiple': _secondary,
+            'target_pe': _target_pe,
+            'norm_years': 3,
             'cost_of_equity': coe,
             'wacc': wacc_val,
             'revenue_growth_1_to_3': company.assumptions.revenue_growth[0],
@@ -224,24 +240,52 @@ class DCFValuationModel(BaseValuationModel):
         shares_out = self.current_financials.get('shares_outstanding', 1000.0)
         dcf_fvps = equity_value_dcf / shares_out if shares_out > 0 else 0.0
         
-        # 2. Multiples Valuation (EV/EBITDA)
-        target_ev_ebitda = self.assumptions.get('target_ev_ebitda', 8.0)
-        base_ebitda = self.current_financials.get('ebitda', term_nopat) # Fallback
-        ev_multiples = base_ebitda * target_ev_ebitda
-        equity_value_multi = ev_multiples - net_debt
-        multi_fvps = equity_value_multi / shares_out if shares_out > 0 else 0.0
-        
+        # 2. Định giá so sánh phụ — chọn bội số theo bản chất kinh doanh:
+        #    P/E cho Compounder/Retail; EV/EBITDA cho phần còn lại (mặc định).
+        secondary = self.assumptions.get('secondary_multiple', 'EV_EBITDA')
+        if secondary == "PE":
+            import statistics as _stats
+            ni_hist = [x for x in self.current_financials.get('net_income_history', []) if x is not None]
+            n = int(self.assumptions.get('norm_years', 3))
+            window = ni_hist[-n:] if len(ni_hist) >= n else ni_hist
+            norm_ni = _stats.median(window) if window else 0.0
+            target_pe = self.assumptions.get('target_pe', 12.0) or 12.0
+            if norm_ni > 0 and shares_out > 0:
+                # P/E dựa trên EPS chuẩn hóa (median LNST lịch sử) — chống nhiễu 1 năm.
+                multi_fvps = (norm_ni * target_pe) / shares_out
+            else:
+                # LNST âm/0 → P/E vô nghĩa; fallback về DCF thuần (không kéo blend về 0).
+                multi_fvps = dcf_fvps
+            multi_label = "PE"
+        else:
+            target_ev_ebitda = self.assumptions.get('target_ev_ebitda', 8.0)
+            base_ebitda = self.current_financials.get('ebitda', term_nopat)  # Fallback
+            ev_multiples = base_ebitda * target_ev_ebitda
+            equity_value_multi = ev_multiples - net_debt
+            multi_fvps = equity_value_multi / shares_out if shares_out > 0 else 0.0
+            multi_label = "EV_EBITDA"
+
         # 3. Blend 50/50
         weight_dcf = self.assumptions.get('weight_dcf', 0.5)
         weight_multi = 1.0 - weight_dcf
-        
+
         blended_fvps = (dcf_fvps * weight_dcf) + (multi_fvps * weight_multi)
-        
+
+        # Cờ minh bạch + chặn về 0 khi vốn cổ phần ÂM (nợ ròng > giá trị doanh
+        # nghiệp). Giá cổ phiếu không thể âm; trả số âm là vô lý (vd NKG thép
+        # biên mỏng + nợ lớn). KHÔNG có nghĩa DN vô giá trị — cần đối chiếu
+        # thêm phương pháp & rủi ro tài chính. (Nhất quán với EV/EBITDA — C9.)
+        if blended_fvps < 0:
+            self.valuation_warnings.append("NEGATIVE_EQUITY_VALUE_DCF")
+        blended_fvps = max(0.0, blended_fvps)
+
         return {
             "blended_fair_value_per_share": blended_fvps,
             "dcf_fvps": dcf_fvps,
             "multiples_fvps": multi_fvps,
+            "secondary_multiple": multi_label,
             "weight_dcf": weight_dcf,
             "enterprise_value_dcf": enterprise_value_dcf,
-            "equity_value_dcf": equity_value_dcf
+            "equity_value_dcf": equity_value_dcf,
+            "forecasts": forecasts
         }

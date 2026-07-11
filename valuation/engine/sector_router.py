@@ -10,6 +10,15 @@ Hai tầng API trên cùng một nguồn:
     (giữ nguyên cho sensitivity.py, views — consumer cũ).
   - route(ticker) / is_supported(ticker)   → API canonical {method, engine, status...}
     (cho route gate + báo cáo trạng thái phủ phương pháp).
+
+HAI TRỤC ĐỘC LẬP (đọc kỹ để tránh lẫn):
+  1. `method` (PHƯƠNG PHÁP định giá) — quyết định bởi `primary` trong routing.json.
+     Đây là NGUỒN DUY NHẤT chọn mô hình chạy (RI_PB/DCF/PE/PB/EV_EBITDA/RNAV/SOTP).
+  2. `business_nature` (BẢN CHẤT kinh doanh) — suy từ sector, CHỈ dùng để đặt
+     Margin of Safety trong decision_engine (và chọn nhánh blend phụ của DCF:
+     P/E cho Compounder/Retail vs EV/EBITDA cho phần còn lại).
+  → business_nature KHÔNG tự chọn method. Khi đổi ngành 1 mã trong routing.json,
+    nhớ kiểm tra CẢ `primary` (method) cho khớp bản chất mới.
 """
 from __future__ import annotations
 import json
@@ -93,15 +102,75 @@ def route(ticker: str) -> Optional[Dict[str, Any]]:
     if not data:
         return None
     method = _PRIMARY_TO_METHOD.get(data.get("primary", "FCFF"), "DCF")
+    
+    # Suy luận Business Nature từ sector code trong routing.json
+    group = data.get("sector", "")
+    _SECTOR_TO_NATURE = {
+        # Tài chính
+        "NH": "Bank",
+        "Ngân hàng": "Bank",
+        # Chứng khoán: lợi nhuận biến động mạnh theo thị trường → nhóm riêng,
+        # MOS cao hơn ngân hàng (xem decision_engine.get_target_mos).
+        "CK": "Securities",
+        "Chứng khoán": "Securities",
+        "BH": "Bank",           # Bảo hiểm → ổn định hơn CK, giữ MOS như ngân hàng
+        "Bảo hiểm": "Bank",
+        # Compounder (tăng trưởng ổn định, biên cao)
+        "Công nghệ": "Compounder",
+        "CNTT & viễn thông": "Compounder",
+        "Tiêu dùng": "Compounder",
+        "Dược": "Compounder",
+        "Đa ngành": "Compounder",
+        # Cyclical (chu kỳ kinh tế)
+        "Thép": "Cyclical",
+        "Vật liệu xây dựng": "Cyclical",
+        "Dầu khí": "Cyclical",
+        "Phân bón": "Cyclical",
+        "Hóa chất": "Cyclical",
+        "Hàng không": "Cyclical",
+        "Xây dựng": "Cyclical",
+        "Vận tải": "Cyclical",
+        "Hàng hải": "Cyclical",
+        "Dệt may/TS": "Cyclical",
+        "Cao su/NN": "Cyclical",
+        "Cảng": "Cyclical",
+        # Bán lẻ
+        "Bán lẻ": "Retail",
+        # Utility (tiện ích / hạ tầng ổn định)
+        "Điện": "Utility",
+        "Nước": "Utility",
+        "Tiện ích": "Utility",
+        # Developer (BĐS phát triển)
+        "BĐS": "Developer",
+        "BĐS phát triển": "Developer",
+        "Bất động sản": "Developer",
+        "KCN": "Developer",     # Khu CN → BĐS hạ tầng
+    }
+    business_nature = _SECTOR_TO_NATURE.get(group, "Unknown")
+    
+    # Overrides cứng cho mã đặc thù (business nature khác sector chung)
+    _TICKER_OVERRIDES = {
+        "FPT": "Compounder",
+        "HPG": "Cyclical",
+        "MWG": "Retail",
+        "NT2": "Utility",
+        "KDH": "Developer",
+    }
+    business_nature = _TICKER_OVERRIDES.get(ticker.upper(), business_nature)
+        
     return {
         "ticker": ticker.upper(),
         "method": method,
         "engine": METHOD_ENGINE.get(method, "dcf"),
         "status": METHOD_STATUS.get(method, "NOT_IMPLEMENTED"),
-        "group": data.get("sector"),
+        "group": group,
         "weight": data.get("weight_primary", 1.0),
         "verified": bool(data.get("verified")),
         "raw_main": data.get("raw_primary"),
+        "business_nature": business_nature,
+        "primary_method": data.get("primary"),
+        "secondary_method_1": data.get("secondary"),
+        "secondary_method_2": None
     }
 
 

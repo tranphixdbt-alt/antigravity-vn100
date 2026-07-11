@@ -309,7 +309,7 @@
   },
   "VRE": {
     "sector": "BĐS",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
@@ -463,7 +463,7 @@
   },
   "VGC": {
     "sector": "KCN",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "EV/EBITDA",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -584,7 +584,7 @@
   },
   "MWG": {
     "sector": "Bán lẻ",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/E",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -606,7 +606,7 @@
   },
   "FRT": {
     "sector": "Bán lẻ",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/E",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -628,7 +628,7 @@
   },
   "FPT": {
     "sector": "Công nghệ",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/E",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -705,7 +705,7 @@
   },
   "PC1": {
     "sector": "Điện",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "EV/EBITDA",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -716,7 +716,7 @@
   },
   "HDG": {
     "sector": "Điện",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "RNAV",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -727,7 +727,7 @@
   },
   "GEX": {
     "sector": "Điện",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
@@ -826,7 +826,7 @@
   },
   "GMD": {
     "sector": "Cảng",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "EV/EBITDA",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -892,7 +892,7 @@
   },
   "VCG": {
     "sector": "Xây dựng",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
@@ -1013,7 +1013,7 @@
   },
   "GVR": {
     "sector": "Cao su/NN",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -1024,7 +1024,7 @@
   },
   "PHR": {
     "sector": "Cao su/NN",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
@@ -1035,7 +1035,7 @@
   },
   "DPR": {
     "sector": "Cao su/NN",
-    "primary": "SOTP",
+    "primary": "FCFF",
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,

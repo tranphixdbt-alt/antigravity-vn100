@@ -1,0 +1,18 @@
+# Cấu hình Streamlit cho dự án chạy trên thư mục Google Drive (đồng bộ mạng).
+#
+# LÝ DO QUAN TRỌNG:
+# venv KHÔNG cài watchdog → Streamlit dùng file-watcher kiểu polling, liên tục
+# quét/stat toàn bộ cây thư mục (gồm cả venv/ hàng nghìn file trên Google Drive)
+# → ghim ~100% CPU liên tục, khiến app chớp tắt và cả máy quá tải.
+#
+# Tắt hẳn watcher: app vốn đã không hot-reload được ở môi trường này (phải restart
+# thủ công) nên tắt watcher KHÔNG mất tính năng nào, mà loại bỏ hoàn toàn việc ngốn CPU.
+[server]
+fileWatcherType = "none"
+runOnSave = false
+# Cổng mặc định cho app này (khớp URL localhost:8502 đang dùng)
+port = 8502
+headless = true
+
+[browser]
+gatherUsageStats = false

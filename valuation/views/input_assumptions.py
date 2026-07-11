@@ -17,14 +17,21 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
     assumptions = company.assumptions
     
     st.subheader("Quản lý kịch bản (Scenario Manager)")
+    # QUAN TRỌNG: đọc từ state CHUNG "analyst_scenario" và CHỈ ghi khi user thực sự đổi.
+    # Trước đây ô này luôn index=0 và ghi đè "Base" vô điều kiện mỗi lần rerun, đánh nhau với
+    # ô chọn kịch bản ở tab "Kết quả" (results.py) → gây VÒNG LẶP RERUN VÔ HẠN (ghim 100% CPU).
+    _scen_opts = ["Base", "Bull", "Bear"]
+    _scen_cur = st.session_state.get("analyst_scenario", "Base")
     scenario = st.selectbox(
         "Chọn Kịch bản (Scenario):",
-        ["Base", "Bull", "Bear"],
-        index=0,
+        _scen_opts,
+        index=_scen_opts.index(_scen_cur) if _scen_cur in _scen_opts else 0,
+        key="scenario_select_assumptions",
         help="Base: Cơ sở | Bull: Tích cực | Bear: Tiêu cực"
     )
-    # Lưu vào session state
-    st.session_state["analyst_scenario"] = scenario
+    # Chỉ cập nhật state chung khi giá trị thực sự thay đổi (tránh ghi đè gây loop).
+    if scenario != _scen_cur:
+        st.session_state["analyst_scenario"] = scenario
     
     st.subheader("1. Chi phí sử dụng vốn (COE / WACC)")
     col1, col2, col3 = st.columns(3)
@@ -220,3 +227,33 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
                 df_seg = pd.DataFrame(current_segments)
                 edited_seg = st.data_editor(df_seg, num_rows="dynamic", use_container_width=True)
                 assumptions.sotp_segments = edited_seg.to_dict('records')
+
+    if not is_bank:
+        st.subheader("5. Quỹ đất chưa phản ánh trong BCTC (Land Bank Add-on)")
+        st.info(
+            "Áp dụng cho DN nông nghiệp/cao su/KCN có quỹ đất ghi nhận theo giá gốc "
+            "(thấp hơn nhiều giá đền bù/chuyển đổi thực tế). Giá trị quỹ đất được "
+            "**cộng thêm** vào giá mục tiêu, không thay đổi phương pháp định giá chính. "
+            "⚠️ Vui lòng tự nhập diện tích/giá đền bù từ báo cáo thật — hệ thống KHÔNG tự đoán số liệu."
+        )
+        land_projects = getattr(assumptions, 'land_bank_projects', []) or []
+        df_land = pd.DataFrame(
+            land_projects,
+            columns=["ten", "dien_tich_ha", "gia_boi_thuong_vnd_m2", "ty_le_so_huu", "nam_thu_tien"],
+        ) if land_projects else pd.DataFrame(
+            columns=["ten", "dien_tich_ha", "gia_boi_thuong_vnd_m2", "ty_le_so_huu", "nam_thu_tien"]
+        )
+        edited_land = st.data_editor(
+            df_land,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "ten": "Tên khu đất/dự án",
+                "dien_tich_ha": st.column_config.NumberColumn("Diện tích (ha)", min_value=0.0),
+                "gia_boi_thuong_vnd_m2": st.column_config.NumberColumn("Giá đền bù dự kiến (VND/m2)", min_value=0.0),
+                "ty_le_so_huu": st.column_config.NumberColumn("Tỷ lệ sở hữu (%)", min_value=0.0, max_value=100.0),
+                "nam_thu_tien": st.column_config.NumberColumn("Năm dự kiến thu tiền", min_value=2024, max_value=2050, step=1),
+            },
+            key=f"land_bank_editor_{company.ticker}",
+        )
+        assumptions.land_bank_projects = edited_land.dropna(how="all").to_dict('records')

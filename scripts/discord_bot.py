@@ -1,10 +1,14 @@
 import os
 import re
+import asyncio
+import datetime
 import certifi
 import discord
 import httpx
 import logging
 from valuation.config import settings
+from valuation.output.ai_insight import call_deepseek_sync
+from valuation.engine.flag_descriptions import describe_flags
 
 # Đảm bảo chứng chỉ SSL sử dụng Certifi bundle để tránh lỗi trên macOS
 os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -20,58 +24,87 @@ client = discord.Client(intents=intents)
 # Đọc token và cấu hình từ Settings
 DISCORD_TOKEN = settings.discord_bot_token or os.getenv("DISCORD_BOT_TOKEN")
 FASTAPI_URL = "http://localhost:8000"
-DEEPSEEK_API_KEY = settings.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
 
 # Chỉ định Channel ID kiểm thử
 TARGET_CHANNEL_ID = 1504370094787133533
 
-async def get_deepseek_insight(ticker: str, price: float, fv: float, upside: float, flags: list, greeks: dict) -> str:
-    """Gọi DeepSeek API để lấy nhận định AI insight"""
-    if not DEEPSEEK_API_KEY:
-        return "⚠️ Không tìm thấy DEEPSEEK_API_KEY trong cấu hình. Không thể tạo AI Insight."
-    
-    prompt = (
-        f"Bạn là chuyên gia phân tích tài chính cao cấp tại một quỹ đầu tư Việt Nam. "
-        f"Hãy đưa ra nhận định chuyên sâu bằng Tiếng Việt (khoảng 3-4 câu, chuyên nghiệp, súc tích) "
-        f"về cổ phiếu {ticker} dựa trên các thông số sau:\n"
-        f"- Thị giá hiện tại: {price:,.0f} VND\n"
-        f"- Giá trị hợp lý ước tính (Blended Fair Value): {fv:,.0f} VND\n"
-        f"- Upside tiềm năng: {upside:.1f}%\n"
-        f"- Cờ cảnh báo chất lượng dữ liệu/kiểm thử (QC Flags): {', '.join(flags) if flags else 'Không có'}\n"
-        f"- Độ nhạy định giá (Greeks): {greeks}\n"
-        f"Hãy chỉ rõ cơ hội đầu tư, biên an toàn và các rủi ro đáng chú ý."
-    )
-    
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 500
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client_http:
-            response = await client_http.post(
-                "https://api.deepseek.com/chat/completions",
-                headers=headers,
-                json=payload
+_FLAG_ICON = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
+
+
+def build_ticker_report_prompt(ticker, price, fv, upside, method_label, flag_infos,
+                               recommendation=None, business_nature=None, target_mos=None,
+                               intrinsic_fv=None, relative_fv=None) -> str:
+    flags_text = "Không có cảnh báo đáng chú ý."
+    if flag_infos:
+        flags_text = " ".join(f"[{f['level'].upper()}] {f['message']}" for f in flag_infos)
+
+    # So sánh 2 phương pháp: nội tại (DCF) vs so sánh (multiples). Chênh lệch lớn => rủi ro phương pháp.
+    method_divergence = ""
+    if intrinsic_fv and relative_fv and relative_fv > 0:
+        gap = abs(intrinsic_fv - relative_fv) / relative_fv
+        if gap > 0.20:
+            method_divergence = (
+                f"- Lưu ý: hai phương pháp cho kết quả lệch nhau khá lớn "
+                f"(giá trị nội tại {intrinsic_fv:,.0f} VND vs giá trị so sánh {relative_fv:,.0f} VND) "
+                f"→ độ chắc chắn của định giá thấp hơn, phụ thuộc nhiều vào giả định.\n"
             )
-            if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"].strip()
-            else:
-                logger.error(f"DeepSeek API error {response.status_code}: {response.text}")
-                return f"⚠️ Lỗi khi gọi DeepSeek API (Mã lỗi: {response.status_code})."
-    except Exception as e:
-        logger.error(f"DeepSeek exception: {e}")
-        return f"⚠️ Lỗi kết nối tới DeepSeek: {str(e)}"
+        else:
+            method_divergence = (
+                f"- Hai phương pháp (nội tại {intrinsic_fv:,.0f} VND và so sánh {relative_fv:,.0f} VND) "
+                f"cho kết quả khá đồng thuận → củng cố độ tin cậy của định giá.\n"
+            )
+
+    nature_line = ""
+    if business_nature:
+        nature_map = {
+            "Cyclical": "doanh nghiệp CHU KỲ (lợi nhuận biến động mạnh theo chu kỳ ngành/giá hàng hóa)",
+            "Stable": "doanh nghiệp ỔN ĐỊNH (dòng tiền/lợi nhuận tương đối đều)",
+            "Growth": "doanh nghiệp TĂNG TRƯỞNG (kỳ vọng mở rộng nhanh)",
+        }
+        nature_line = f"- Bản chất kinh doanh: {nature_map.get(business_nature, business_nature)}\n"
+
+    mos_line = ""
+    if target_mos is not None:
+        mos_line = f"- Biên an toàn mục tiêu hệ thống áp cho nhóm này: {target_mos*100:.0f}%\n"
+
+    rec_line = f"- Khuyến nghị của hệ thống định giá: {recommendation}\n" if recommendation else ""
+
+    # Chỉ viết mục cảnh báo khi THỰC SỰ có cờ (warning/error). Không có cờ => bỏ hẳn, không viết dòng "không có cảnh báo".
+    meaningful_flags = [f for f in (flag_infos or []) if f.get("level") in ("warning", "error")]
+    if meaningful_flags:
+        flags_text = " ".join(f"[{f['level'].upper()}] {f['message']}" for f in meaningful_flags)
+        flags_section_instruction = (
+            "\n**🔎 Điểm cần soi kỹ** — Nêu ngắn gọn (2-3 câu) đúng ý nghĩa các cảnh báo đã cung cấp và "
+            "ảnh hưởng tới độ tin cậy định giá. Dùng đúng mô tả, KHÔNG tự suy thành 'lỗi dữ liệu'/'lỗi mô hình' nếu mô tả không nói vậy.\n"
+        )
+        flags_data_line = f"- Cảnh báo chất lượng (đã diễn giải sẵn): {flags_text}\n"
+    else:
+        flags_section_instruction = ""  # KHÔNG viết mục chất lượng khi sạch cờ
+        flags_data_line = ""
+
+    return (
+        "Bạn là Giám đốc phân tích của một quỹ đầu tư Việt Nam, viết nhận định cho nhà đầu tư bận rộn. "
+        "Văn phong TRỰC DIỆN, sắc bén, đi thẳng vào kết luận — cắt bỏ mọi câu đệm sáo rỗng kiểu "
+        "'nhà đầu tư cần hiểu rằng', 'điều này có nghĩa là', 'tuy nhiên cần lưu ý', 'không đồng nghĩa với việc'. "
+        "Mỗi câu phải mang một thông tin mới, không diễn giải vòng vo.\n\n"
+        "ĐỘ DÀI: 340-440 từ (không dưới 320 từ), đủ sâu để có sức thuyết phục nhưng không lan man. "
+        "Tiếng Việt. Được phép dùng KIẾN THỨC NGÀNH định tính (sản phẩm chính, động lực cung–cầu) để tăng chiều sâu, "
+        "NHƯNG TUYỆT ĐỐI KHÔNG nêu con số cụ thể (giá hàng hóa, ngưỡng USD/tấn, %, mốc giá) mà dữ liệu không cung cấp — "
+        "chỉ nói định tính (ví dụ 'giá phốt pho giảm sâu' thay vì 'dưới 2,300 USD/tấn'). "
+        "Chỉ được dùng đúng các con số có trong phần DỮ LIỆU bên dưới.\n"
+        "KHÔNG lặp lại các con số giá/FV/upside ở đầu (đã hiển thị riêng cho người đọc).\n"
+        "Mỗi mục phải có LẬP LUẬN cụ thể (vì sao), không chỉ nêu kết luận suông.\n\n"
+        "Định dạng BẮT BUỘC — dùng đúng các tiêu đề in đậm sau (mỗi mục 1 đoạn 3-5 câu có lý lẽ, KHÔNG đánh số):\n"
+        "**💎 Cơ hội & Biên an toàn** — Upside đang cho biên an toàn thế nào so với ngưỡng mục tiêu của hệ thống? Định giá này hấp dẫn ở mức nào?\n"
+        f"{flags_section_instruction}"
+        "**⚠️ Rủi ro chính** — Điểm yếu lớn nhất: bản chất kinh doanh (chu kỳ?), độ lệch giữa 2 phương pháp định giá, đặc thù ngành. Nói thẳng cái gì có thể phá vỡ luận điểm.\n"
+        "**📌 Khuyến nghị** — Hành động cụ thể (bám khuyến nghị hệ thống nếu hợp lý), và ĐIỀU KIỆN cụ thể nào khiến phải đổi quan điểm.\n\n"
+        f"DỮ LIỆU (từ engine định giá thống nhất):\n"
+        f"- Mã: {ticker}\n"
+        f"- Phương pháp: {method_label}\n"
+        f"- Upside so với thị giá: {upside:+.1f}%\n"
+        f"{rec_line}{nature_line}{mos_line}{method_divergence}{flags_data_line}"
+    )
 
 @client.event
 async def on_ready():
@@ -132,10 +165,71 @@ def parse_ticker_from_message(content: str, bot_id: int) -> str:
 
     return None
 
+async def handle_ingest_command(message, content_strip: str):
+    """Xử lý lệnh !ingest <TICKER> [data_types phân tách bằng dấu phẩy]"""
+    parts = content_strip.split()
+    if len(parts) < 2:
+        await message.channel.send("⚠️ Cú pháp: `!ingest <TICKER> [prices,financials]`")
+        return
+    ticker = parts[1].upper().strip()
+    data_types = parts[2].split(",") if len(parts) >= 3 else ["prices", "financials"]
+
+    temp_msg = await message.channel.send(f"⏳ Đang kích hoạt ingest dữ liệu cho **{ticker}** ({', '.join(data_types)})...")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            response = await client_http.post(
+                f"{FASTAPI_URL}/ingest/ingest/",
+                json={"ticker": ticker, "data_types": data_types, "channel_id": message.channel.id}
+            )
+        await temp_msg.delete()
+        if response.status_code == 200:
+            await message.channel.send(f"✅ Đã kích hoạt ingest cho **{ticker}** (chạy nền, sẽ báo cáo tại đây khi hoàn tất).")
+        else:
+            await message.channel.send(f"❌ Lỗi kích hoạt ingest cho {ticker} (Mã lỗi API: {response.status_code})")
+    except Exception as e:
+        logger.error(f"Error triggering ingest for {ticker}: {e}")
+        await temp_msg.delete()
+        await message.channel.send(f"❌ Có lỗi xảy ra khi kích hoạt ingest: {str(e)}")
+
+
+async def handle_batch_command(message):
+    """Xử lý lệnh !batch — chạy định giá batch toàn bộ rổ VN100"""
+    temp_msg = await message.channel.send("⏳ Đang kích hoạt batch định giá toàn bộ VN100 (chạy nền, sẽ báo kết quả khi xong)...")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            response = await client_http.post(
+                f"{FASTAPI_URL}/orchestration/run-batch-vn100",
+                json={"channel_id": message.channel.id}
+            )
+        await temp_msg.delete()
+        if response.status_code == 200:
+            await message.channel.send("✅ Batch VN100 đã bắt đầu chạy nền. Kết quả sẽ được báo cáo tại đây khi hoàn tất (vài phút).")
+        elif response.status_code == 409:
+            await message.channel.send("⚠️ Batch VN100 đang chạy rồi, vui lòng đợi hoàn tất trước khi chạy lại.")
+        else:
+            await message.channel.send(f"❌ Lỗi kích hoạt batch VN100 (Mã lỗi API: {response.status_code})")
+    except Exception as e:
+        logger.error(f"Error triggering VN100 batch: {e}")
+        await temp_msg.delete()
+        await message.channel.send(f"❌ Có lỗi xảy ra khi kích hoạt batch: {str(e)}")
+
+
 @client.event
 async def on_message(message):
     # Tránh trường hợp bot tự trả lời chính mình
     if message.author == client.user:
+        return
+
+    content_strip = message.content.strip()
+
+    # Lệnh điều khiển tác vụ nền: ingest dữ liệu 1 mã
+    if content_strip.startswith("!ingest"):
+        await handle_ingest_command(message, content_strip)
+        return
+
+    # Lệnh điều khiển tác vụ nền: chạy batch định giá toàn VN100
+    if content_strip.startswith("!batch"):
+        await handle_batch_command(message)
         return
 
     # Phân tích xem tin nhắn có chứa mã cổ phiếu yêu cầu định giá không
@@ -146,62 +240,78 @@ async def on_message(message):
     temp_msg = await message.channel.send(f"⏳ Đang thực hiện định giá và phân tích AI cho cổ phiếu **{ticker}**...")
     
     try:
-        # Gọi FastAPI Endpoint để định giá
-        api_endpoint = f"{FASTAPI_URL}/revalue/valuation/revalue/{ticker}"
+        # Gọi endpoint THỐNG NHẤT (cùng engine với Streamlit + batch → cùng số liệu, cùng giá live)
+        api_endpoint = f"{FASTAPI_URL}/revalue/valuation/report/{ticker}"
         async with httpx.AsyncClient(timeout=30.0) as client_http:
-            response = await client_http.post(api_endpoint)
-            
+            response = await client_http.get(api_endpoint)
+
         if response.status_code != 200:
             await temp_msg.delete()
-            await message.channel.send(f"❌ Lỗi khi định giá {ticker} từ hệ thống (Mã lỗi API: {response.status_code})")
+            detail = ""
+            try:
+                detail = f" — {response.json().get('detail','')}"
+            except Exception:
+                pass
+            await message.channel.send(f"❌ Lỗi khi định giá {ticker} (Mã lỗi API: {response.status_code}){detail}")
             return
-            
+
         res = response.json()
-        curr_price = res.get("current_price", 0.0)
-        valuation_data = res.get("valuation", {})
-        blended_fv = valuation_data.get("blended_fair_value_per_share", 0.0)
-        greeks = res.get("greeks", {})
-        qc_data = res.get("qc", {})
-        qc_flags = qc_data.get("flags", [])
-        
-        # Tính upside
-        upside = 0.0
-        if curr_price > 0:
-            upside = ((blended_fv - curr_price) / curr_price) * 100
-            
-        # Gọi DeepSeek lấy insight
-        ai_insight = await get_deepseek_insight(ticker, curr_price, blended_fv, upside, qc_flags, greeks)
-        
-        # Tạo Discord Embed
+        curr_price = res.get("current_price", 0.0) or 0.0
+        blended_fv = res.get("fair_value", 0.0) or 0.0
+        intrinsic_fv = res.get("intrinsic_fv")
+        relative_fv = res.get("relative_fv")
+        method_label = res.get("method", "N/A")
+        recommendation = res.get("recommendation")
+        business_nature = res.get("business_nature")
+        target_mos = res.get("target_mos")
+        qc_flags = res.get("flags", [])
+        upside = (res.get("upside") or 0.0) * 100
+
+        flag_infos = describe_flags(qc_flags)
+
+        # Gọi DeepSeek lấy nhận định (chạy trong thread riêng vì call_deepseek_sync là hàm đồng bộ)
+        prompt = build_ticker_report_prompt(
+            ticker, curr_price, blended_fv, upside, method_label, flag_infos,
+            recommendation=recommendation, business_nature=business_nature,
+            target_mos=target_mos, intrinsic_fv=intrinsic_fv, relative_fv=relative_fv,
+        )
+        ai_report = await asyncio.to_thread(call_deepseek_sync, prompt, 1300, 0.4)
+
+        # Số liệu chuẩn — hiển thị trước, súc tích
+        fv_line = f"**🎯 Giá trị hợp lý:** {blended_fv:,.0f} VND"
+        if intrinsic_fv and relative_fv:
+            fv_line += f"\n   ↳ Nội tại (DCF) {intrinsic_fv:,.0f} · So sánh (bội số) {relative_fv:,.0f}"
+
+        rec_line = f"\n**🏁 Khuyến nghị hệ thống:** {recommendation}" if recommendation else ""
+
+        if flag_infos:
+            flags_lines = [f"{_FLAG_ICON.get(f['level'], '•')} {f['message']}" for f in flag_infos[:4]]
+            if len(flag_infos) > 4:
+                flags_lines.append(f"... và {len(flag_infos) - 4} cảnh báo khác")
+            flags_block = "\n".join(flags_lines)
+        else:
+            flags_block = "✅ Không có cảnh báo — dữ liệu đạt chuẩn kiểm tra."
+
+        header = (
+            f"**💵 Giá thị trường:** {curr_price:,.0f} VND\n"
+            f"{fv_line}\n"
+            f"**📈 Upside:** {upside:+.1f}%\n"
+            f"**🧮 Phương pháp:** {method_label}{rec_line}\n\n"
+            f"**🚦 Cảnh báo chất lượng:**\n{flags_block}\n\n"
+            f"**💡 Nhận định:**\n{ai_report}"
+        )
+        # Giới hạn description embed 4096 ký tự
+        if len(header) > 4000:
+            header = header[:3990] + "…"
+
         color = 0x00FF00 if upside > 0 else 0xFF0000
         embed = discord.Embed(
-            title=f"📊 Báo cáo định giá chi tiết: {ticker}",
-            description=f"Thời gian định giá: {os.popen('date').read().strip()}",
+            title=f"📊 Báo cáo định giá: {ticker}",
+            description=header,
             color=color
         )
-        
-        embed.add_field(name="💵 Thị giá hiện tại", value=f"{curr_price:,.0f} VND", inline=True)
-        embed.add_field(name="🎯 Định giá Hợp lý (Blended FV)", value=f"{blended_fv:,.0f} VND", inline=True)
-        embed.add_field(name="📈 Upside tiềm năng", value=f"{upside:+.1f}%", inline=True)
-        
-        # QC Flags
-        flags_str = ", ".join([f"`{f}`" for f in qc_flags]) if qc_flags else "✅ Sạch (Không có cảnh báo)"
-        embed.add_field(name="🚨 Cảnh báo chất lượng (QC Flags)", value=flags_str, inline=False)
-        
-        # Sensitivities (Greeks)
-        greeks_str = ""
-        for k, v in greeks.items():
-            if v is not None:
-                greeks_str += f"- **dFV/d({k})**: `{v:+.4f}`\n"
-        if not greeks_str:
-            greeks_str = "Không có độ nhạy"
-        embed.add_field(name="📊 Độ nhạy Định giá (Greeks)", value=greeks_str, inline=False)
-        
-        # AI Insight
-        embed.add_field(name="💡 AI Insight (DeepSeek-Chat)", value=ai_insight, inline=False)
-        
-        embed.set_footer(text="Hệ thống định giá tự động VN100 | Quỹ đầu tư AI")
-        
+        embed.set_footer(text=f"Hệ thống định giá tự động VN100 | {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
         await temp_msg.delete()
         await message.channel.send(embed=embed)
         

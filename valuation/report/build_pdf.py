@@ -53,9 +53,9 @@ def build_pdf_report(
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
         c = canvas.Canvas(output_path, pagesize=letter)
-        c.drawString(100, 750, f"BÁO CÁO ĐỊNH GIÁ - ĐÃ LƯU BẢN HTML DỰ PHÒNG")
-        c.drawString(100, 730, f"Đường dẫn HTML: {html_backup_path}")
-        c.drawString(100, 710, "Vui lòng mở file HTML bằng trình duyệt và chọn In -> Lưu thành PDF.")
+        c.drawString(100, 750, f"VALUATION REPORT - HTML BACKUP SAVED")
+        c.drawString(100, 730, f"HTML file path: {html_backup_path}")
+        c.drawString(100, 710, "Please open the HTML file in your browser (e.g. Chrome) and choose Print -> Save as PDF.")
         c.save()
         print(f"Created fallback index PDF at: {output_path}")
         return True

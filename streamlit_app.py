@@ -46,15 +46,34 @@ def get_db_engines():
     db_url_read = os.getenv("DATABASE_URL_READONLY") or "postgresql://readonly_user:readonly_pass@localhost:5432/vn100"
     db_url_write = os.getenv("DATABASE_URL_WRITE") or "postgresql://write_user:write_pass@localhost:5432/vn100"
     
-    # pool_pre_ping giúp tự động reconnect nếu connection bị đứt
-    engine_read = create_engine(db_url_read, pool_pre_ping=True)
-    engine_write = create_engine(db_url_write, pool_pre_ping=True)
-    
+    # pool_pre_ping: tự reconnect nếu connection đứt (vd sau khi máy ngủ / Google Drive gián đoạn).
+    # pool_recycle: chủ động thay connection cũ hơn 30 phút (tránh connection "chết" bị poll liên tục).
+    # pool_size/max_overflow: giới hạn số kết nối để không làm ngập DB khi rerun nhiều.
+    # pool_timeout: fail nhanh thay vì treo nếu pool cạn.
+    _pool_kwargs = dict(
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        pool_size=5,
+        max_overflow=5,
+        pool_timeout=30,
+    )
+    engine_read = create_engine(db_url_read, **_pool_kwargs)
+    engine_write = create_engine(db_url_write, **_pool_kwargs)
+
     return engine_read, engine_write
 
 engine_read, engine_write = get_db_engines()
 SessionRead = sessionmaker(bind=engine_read)
 SessionWrite = sessionmaker(bind=engine_write)
+
+@st.cache_data(ttl=300)
+def fetch_live_price_cached(ticker: str) -> float:
+    """Lấy giá live từ vnstock với cache 5 phút để không bị lag UI"""
+    from valuation.ingest.vnstock_client import vnstock_client
+    try:
+        return vnstock_client.get_live_price(ticker)
+    except Exception:
+        return 0.0
 
 # 2. Main app flow
 st.title("📈 Hệ Thống Định Giá Cổ Phiếu Tự Động VN100")
@@ -77,6 +96,17 @@ try:
     # Render các tab chính
     if "company" in st.session_state:
         company = st.session_state["company"]
+        
+        # Cập nhật giá live liên tục mỗi lần rerun để tránh kẹt cache giá cũ
+        # Gọi qua cache 5 phút để tránh bị lag UI (do call API vnstock quá nhiều)
+        live_p = fetch_live_price_cached(company.ticker)
+        if live_p == 0:
+            from valuation.data_access.repo import get_latest_price
+            live_p = get_latest_price(db_read, company.ticker, fetch_live=False)
+            
+        if live_p > 0:
+            company.current_price = live_p
+            st.session_state["company"] = company
         
         # Đảm bảo projections được khởi tạo và đồng bộ
         from valuation.models.financials_bank import CompanyBank
@@ -114,7 +144,13 @@ try:
         # Base dùng projections trong session (có thể đã chỉnh tay); kịch bản khác forecast lại.
         from valuation.engine.valuate import valuate
         _proj = st.session_state.get("projections") if analyst_scenario == "Base" else scenario_projections
-        _res = valuate(scenario_company, projections=_proj)
+        # Vĩ mô cập nhật MỖI LẦN QUÉT: ưu tiên analyst chỉnh tay (session_state),
+        # mặc định tự dựng từ macro_series trong DB (CPI/TPCP_10Y/POLICY_RATE).
+        macro_env = st.session_state.get("macro_env")
+        if macro_env is None:
+            from valuation.models.macro_env import MacroEnvironment
+            macro_env = MacroEnvironment.from_db(db_read)
+        _res = valuate(scenario_company, projections=_proj, macro_env=macro_env)
         int_fv = _res["intrinsic_fv"]
         rel_fv = _res["relative_fv"]
         weight_intrinsic = _res["weight_intrinsic"]
@@ -134,10 +170,25 @@ try:
 
         # Bank: int/rel là 2 chân thực → blend (cho phép override). Phi tài chính: valuate
         # đã blend sẵn → dùng thẳng; chỉ blend lại khi có P/E override.
+        # Tính toán Fair Value
         if is_bank or has_override:
-            blended_fv, upside, rec = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
+            blended_fv, upside, _ = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, scenario_company.current_price)
+            # Re-run Decision Engine if there are overrides
+            from valuation.engine.decision_engine import InvestmentDecisionMaker
+            from valuation.engine.sector_router import route as _route_fn
+            plan = _route_fn(company.ticker) or {}
+            decision_engine = InvestmentDecisionMaker(
+                business_nature=plan.get("business_nature", "Unknown"),
+                current_price=scenario_company.current_price,
+                fair_value=blended_fv,
+                governance=scenario_company.governance
+            )
+            decision = decision_engine.make_decision()
+            rec = decision["recommendation"]
         else:
             blended_fv, upside, rec = _res["blended_fair_value_per_share"], _res["upside"], _res["recommendation"]
+            decision = _res.get("decision", {})
+        
         
         # Hiển thị các cảnh báo Model Integrity (nếu có)
         if scenario_company.warnings:
@@ -146,9 +197,9 @@ try:
                 st.error(f"- {warn}")
                 
         # 3. Hiển thị Summary Banner (Premium Styling)
-        rec_color = "#10B981" if rec == "MUA" else ("#F59E0B" if rec == "HOLD" else "#EF4444")
-        bg_color = "#F0FDF4" if rec == "MUA" else ("#FFFBEB" if rec == "HOLD" else "#FEF2F2")
-        text_color = "#166534" if rec == "MUA" else ("#92400E" if rec == "HOLD" else "#991B1B")
+        rec_color = "#10B981" if rec == "BUY" else ("#F59E0B" if rec in ["HOLD", "TRIM"] else "#EF4444")
+        bg_color = "#F0FDF4" if rec == "BUY" else ("#FFFBEB" if rec in ["HOLD", "TRIM"] else "#FEF2F2")
+        text_color = "#166534" if rec == "BUY" else ("#92400E" if rec in ["HOLD", "TRIM"] else "#991B1B")
         
         st.markdown(
             f"""
@@ -174,6 +225,33 @@ try:
             unsafe_allow_html=True
         )
         
+        # Hard Gates & Governance Section
+        violations = decision.get("hard_gates_violations", [])
+        if violations:
+            st.error("🚨 **HARD GATES BỊ VI PHẠM (Chỉ định: HARD REJECT)**")
+            for v in violations:
+                st.markdown(f"- {v}")
+        else:
+            st.success("✅ **Governance Check Passed** (Không phát hiện cờ rủi ro Hard Gates)")
+            
+        st.markdown(f"**Margin of Safety (MOS) Mục tiêu cho {decision.get('business_nature', 'Unknown')}:** {decision.get('target_mos', 0)*100:.0f}%")
+
+        # Cờ định giá (giải thích TẠI SAO kết quả bất thường — vd Giá MT = 0,
+        # upside -100% — thay vì để người dùng tưởng nhầm là lỗi hệ thống).
+        from valuation.engine.flag_descriptions import describe_flags
+        valuation_flags = describe_flags(_res.get("flags", []))
+        if valuation_flags:
+            st.markdown("**Cờ định giá (Valuation Flags):**")
+            for vf in valuation_flags:
+                text = f"`{vf['code']}` — {vf['message']}"
+                if vf["level"] == "error":
+                    st.error(text, icon="🚨")
+                elif vf["level"] == "warning":
+                    st.warning(text, icon="⚠️")
+                else:
+                    st.info(text, icon="ℹ️")
+
+
         tab1, tab2, tab3 = st.tabs([
             "📊 Báo cáo Tài chính Lịch sử & Dự phóng", 
             "⚙️ Giả định & Tham số Dự phóng", 
@@ -195,6 +273,8 @@ except Exception as e:
     st.error(f"Đã xảy ra lỗi hệ thống: {e}")
     import traceback
     st.code(traceback.format_exc())
+    with open("streamlit_crash.log", "w") as f:
+        f.write(traceback.format_exc())
 
 finally:
     # Luôn đóng session DB đúng cách

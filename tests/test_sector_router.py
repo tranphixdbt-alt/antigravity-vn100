@@ -12,8 +12,8 @@ from valuation.engine.router import ValuationRouter as ReexportedRouter
     ("VCB", "RI_PB", "IMPLEMENTED"),   # ngân hàng
     ("HPG", "DCF", "IMPLEMENTED"),     # thép (FCFF)
     ("VHM", "RNAV", "PARTIAL"),        # bất động sản — proxy
-    ("VIC", "SOTP", "PARTIAL"),        # holding đa ngành — proxy
-    ("FPT", "SOTP", "PARTIAL"),        # công nghệ holding (KHÔNG phải DCF thuần)
+    ("VIC", "SOTP", "PARTIAL"),        # holding đa ngành thực thụ — vẫn proxy SOTP
+    ("FPT", "DCF", "IMPLEMENTED"),     # Compounder — chuyển SOTP→DCF+P/E (routing 2026-07)
     ("BVH", "PB", "IMPLEMENTED"),      # bảo hiểm — justified P/B
     ("SSI", "PB", "IMPLEMENTED"),      # chứng khoán — justified P/B
 ])

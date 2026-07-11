@@ -3,6 +3,13 @@ Financial bank models — Các mô hình Pydantic v2 validate dữ liệu tài c
 """
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field, model_validator
+from valuation.models.financials import GovernanceData
+
+class BankQualityMetrics(BaseModel):
+    roe: float = Field(0.0, description="Return on Equity")
+    roa: float = Field(0.0, description="Return on Assets")
+    npl_ratio: float = Field(0.0, description="Tỷ lệ nợ xấu (NPL)")
+    llrc: float = Field(0.0, description="Tỷ lệ bao phủ nợ xấu (LLRC)")
 
 class IncomeStatementBank(BaseModel):
     year: int
@@ -70,7 +77,12 @@ class CompanyBank(BaseModel):
     historical_bs: List[BalanceSheetBank]
     assumptions: AssumptionsBank
     
+    governance: Optional[GovernanceData] = Field(default_factory=GovernanceData)
+    quality_metrics: Optional[BankQualityMetrics] = Field(default_factory=BankQualityMetrics)
+
     warnings: List[str] = Field(default_factory=list)
+    # Cờ độ tươi dữ liệu (STALE_PRICE/STALE_MACRO_RF...) do freshness gate gắn.
+    data_flags: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_bank_balance_sheet(self) -> 'CompanyBank':

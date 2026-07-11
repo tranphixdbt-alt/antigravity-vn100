@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from valuation.output.gsheets_exporter import update_single_ticker_to_gsheets
+from valuation.output.gsheets_exporter import update_single_ticker_to_gsheets, _METHOD_LABEL
 from sqlalchemy.orm import Session
 import datetime
 from valuation.db.session import get_read_db, get_write_db
@@ -15,6 +15,56 @@ import pandas as pd
 from valuation.quality.scores import run_qc_checks
 
 router = APIRouter(prefix="/valuation", tags=["valuation"])
+
+
+@router.get("/report/{ticker}", summary="Báo cáo định giá dùng engine thống nhất (khớp Streamlit + batch)")
+def unified_report(ticker: str, db_read: Session = Depends(get_read_db)):
+    """Trả kết quả định giá từ ĐÚNG engine thống nhất (build_company_data → valuate),
+    giống hệt Streamlit và batch VN100 — giá live, cùng phương pháp, cùng cờ.
+
+    Đây là nguồn chuẩn cho báo cáo Discord mã đơn (thay cho /revalue cũ vốn dùng
+    giá DB cũ + giả định hardcode → lệch số).
+    """
+    ticker = ticker.upper().strip()
+    from valuation.data_access.repo import build_company_data, get_latest_price
+    from valuation.engine.valuate import valuate
+    from valuation.engine.sector_router import route
+
+    if not db_read.query(Ticker).filter(Ticker.ticker == ticker).first():
+        raise HTTPException(status_code=404, detail="Ticker not found")
+
+    price = get_latest_price(db_read, ticker)
+    try:
+        company = build_company_data(db_read, ticker, mode="TTM")
+        res = valuate(company)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"{type(e).__name__}: {str(e)}")
+
+    plan = route(ticker)
+    method = plan["method"] if plan else "DCF"
+    group = plan["group"] if plan else None
+
+    fv = float(res["blended_fair_value_per_share"])
+    upside = (fv / price - 1.0) if price else None
+    decision = res.get("decision", {}) or {}
+
+    return {
+        "ticker": ticker,
+        "current_price": price,
+        "fair_value": fv,
+        "intrinsic_fv": res.get("intrinsic_fv"),
+        "relative_fv": res.get("relative_fv"),
+        "weight_intrinsic": res.get("weight_intrinsic"),
+        "upside": upside,
+        "method": _METHOD_LABEL.get(method, method),
+        "group": group,
+        "recommendation": res.get("recommendation") or decision.get("recommendation"),
+        "business_nature": decision.get("business_nature"),
+        "target_mos": decision.get("target_mos"),
+        "hard_gates_violations": decision.get("hard_gates_violations", []),
+        "flags": res.get("flags", []),
+    }
+
 
 @router.post("/revalue/{ticker}")
 def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Session = Depends(get_read_db), db_write: Session = Depends(get_write_db)):
@@ -137,7 +187,14 @@ def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Sess
             db=db_read
         )
         
-        return {"ticker": ticker, "current_price": curr_price, "valuation": full_valuation, "greeks": greeks, "qc": qc_result}
+        return {
+            "ticker": ticker,
+            "current_price": curr_price,
+            "valuation": full_valuation,
+            "greeks": greeks,
+            "qc": qc_result,
+            "method": "Ngân hàng (Excess Return + DDM)",
+        }
     
     # Generic assumptions / special flows for FPT, HPG, SSI, DGC
     if ticker in ["FPT", "HPG", "SSI", "DGC"]:
@@ -450,7 +507,8 @@ def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Sess
             "qc": {
                 **qc_result,
                 "flags": qc_flags
-            }
+            },
+            "method": "DCF/FCFF" if ticker in ("FPT", "HPG", "DGC") else "Chứng khoán (P/B + Thu nhập thặng dư)",
         }
         
     # Generic assumptions for others
@@ -469,14 +527,17 @@ def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Sess
 
     if ticker in ["VHM", "DIG"]:
         model = RNAVValuationModel(ticker, current_financials, assumptions)
+        _method_label = _METHOD_LABEL.get("RNAV", "RNAV (proxy)")
     elif ticker == "SSI":
         assumptions['brokerage_market_share'] = 0.10
         assumptions['net_margin_rate'] = 0.05
         assumptions['drivers'] = {'brokerage_market_share': {'bump': 0.01}, 'net_margin_rate': {'bump': 0.005}}
         model = SecuritiesValuationModel(ticker, current_financials, assumptions)
+        _method_label = "Chứng khoán (P/B + Thu nhập thặng dư)"
     elif ticker == "MSN":
         assumptions['drivers'] = {'wcm_target_ev_sales': {'bump': 0.1}, 'mch_target_ev_ebitda': {'bump': 1.0}}
         model = SOTPValuationModel(ticker, current_financials, assumptions)
+        _method_label = _METHOD_LABEL.get("SOTP", "SOTP (proxy)")
     else:
         # ROUTER: bảng CTCK (sector_router, nguồn routing.json) chọn phương pháp đúng.
         # build_company_data đọc đúng line_item tiếng Anh + assumptions động + overlay.
@@ -485,6 +546,7 @@ def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Sess
         from valuation.models.financials_bank import CompanyBank as _CompanyBank
         _plan = _route(ticker)
         _method = _plan["method"] if _plan else "DCF"
+        _method_label = _METHOD_LABEL.get(_method, _method)
 
         company = build_company_data(db_read, ticker, mode="TTM")
         if isinstance(company, _CompanyBank):
@@ -614,5 +676,6 @@ def revalue_ticker(ticker: str, background_tasks: BackgroundTasks, db_read: Sess
         "current_price": curr_price,
         "valuation": full_valuation,
         "greeks": greeks,
-        "qc": qc_result
+        "qc": qc_result,
+        "method": _method_label,
     }

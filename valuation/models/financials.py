@@ -4,6 +4,20 @@ Financial models — Các mô hình Pydantic v2 để validate dữ liệu tài 
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field, model_validator
 
+class GovernanceData(BaseModel):
+    audit_issue: bool = Field(False, description="Có vấn đề ngoại trừ từ kiểm toán không")
+    legal_issue: bool = Field(False, description="Có rủi ro pháp lý nghiêm trọng không")
+    liquidity_issue: bool = Field(False, description="Có rủi ro thanh khoản không")
+    analyst_owner: str = Field("System", description="Người phân tích")
+    reviewer: str = Field("System", description="Người phê duyệt")
+    version_tag: str = Field("v1.0", description="Phiên bản định giá")
+
+class QualityMetrics(BaseModel):
+    roe: float = Field(0.0, description="Return on Equity")
+    roic: float = Field(0.0, description="Return on Invested Capital")
+    debt_to_equity: float = Field(0.0, description="Tỷ lệ nợ trên vốn chủ sở hữu")
+    net_debt_to_ebitda: float = Field(0.0, description="Tỷ lệ nợ ròng trên EBITDA")
+
 class IncomeStatement(BaseModel):
     year: int
     revenue: float = Field(..., description="Doanh thu thuần (tỷ đồng)")
@@ -98,6 +112,17 @@ class Assumptions(BaseModel):
     rnav_projects: Optional[List[Dict]] = Field(default_factory=list, description="Danh sách dự án BĐS do AI bóc tách")
     sotp_segments: Optional[List[Dict]] = Field(default_factory=list, description="Danh sách mảng kinh doanh SOTP do AI bóc tách")
 
+    # Land Bank Add-on — giá trị quỹ đất (cao su, KCN, nông nghiệp...) CHƯA phản
+    # ánh trong BCTC (đất ghi nhận theo giá gốc, không phải giá thị trường/đền
+    # bù). Cộng thêm vào fair value CHÍNH (bất kể phương pháp DCF/EV_EBITDA/PE)
+    # — KHÔNG thay method. Mặc định RỖNG: analyst phải tự nhập diện tích/giá
+    # đền bù từ báo cáo thật (AGENTS.md — không bịa số liệu).
+    # Mỗi dict: {ten, dien_tich_ha, gia_boi_thuong_vnd_m2, ty_le_so_huu, nam_thu_tien}
+    land_bank_projects: Optional[List[Dict]] = Field(
+        default_factory=list,
+        description="Quỹ đất chưa phản ánh trong BCTC (ha, giá đền bù/m2, tỷ lệ sở hữu, năm dự kiến thu tiền)"
+    )
+
 class Company(BaseModel):
     ticker: str
     name: str
@@ -110,7 +135,13 @@ class Company(BaseModel):
     historical_cf: List[CashFlow]
     assumptions: Assumptions
     
+    governance: Optional[GovernanceData] = Field(default_factory=GovernanceData)
+    quality_metrics: Optional[QualityMetrics] = Field(default_factory=QualityMetrics)
+
     warnings: List[str] = Field(default_factory=list)
+    # Cờ độ tươi dữ liệu (STALE_PRICE/STALE_MACRO_RF...) do freshness gate gắn
+    # khi build từ DB — valuate() sẽ trộn vào flags kết quả.
+    data_flags: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_model_integrity(self) -> 'Company':

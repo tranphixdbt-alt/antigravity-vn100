@@ -28,6 +28,12 @@ class EVEBITDAValuationModel(BaseValuationModel):
             if is_.revenue and is_.revenue > 0
         ]
 
+        from valuation.engine.sector_router import route as _route_fn
+        plan = _route_fn(company.ticker) or {}
+        business_nature = plan.get("business_nature", "Unknown")
+        # Chỉ lấy trung bình chu kỳ (3-5 năm) cho các ngành chu kỳ (Cyclical/Developer)
+        is_mid_cycle = business_nature in ["Cyclical", "Developer"]
+
         cf_dict = {
             'ebitda_history': ebitda_hist,            # tỷ đồng
             'total_debt': (bs.short_term_debt + bs.long_term_debt) * 1e9,
@@ -37,7 +43,7 @@ class EVEBITDAValuationModel(BaseValuationModel):
         }
         assumptions = {
             'target_ev_ebitda': company.assumptions.target_ev_ebitda,
-            'norm_years': 3,
+            'norm_years': 5 if is_mid_cycle else 3,
         }
         return cls(company.ticker, cf_dict, assumptions)
 
@@ -58,10 +64,18 @@ class EVEBITDAValuationModel(BaseValuationModel):
         equity_value = ev - net_debt
         shares = self.current_financials.get('shares_outstanding', 1.0)
         fvps = equity_value / shares if shares > 0 else 0.0
+
+        flags = []
+        # Cờ minh bạch: nếu net debt > EV, equity value âm bị clip về 0 — đây
+        # KHÔNG có nghĩa công ty vô giá trị. Thường gặp ở DN đòn bẩy cao (hàng
+        # không: nợ thuê tài chính máy bay vốn hóa rất lớn theo chuẩn kế toán,
+        # không được EV/EBITDA thường — không phải EBITDAR — bù đắp tương ứng).
+        # Không tự đổi method/multiple ở đây (quyết định tài chính cần duyệt).
+        if fvps < 0:
+            flags.append("NEGATIVE_EQUITY_VALUE_EV_EBITDA")
         fvps = max(0.0, fvps)
 
         # Cảnh báo nếu EBITDA năm gần nhất lệch mạnh khỏi mức chuẩn hóa (chu kỳ/nhiễu).
-        flags = []
         latest = window[-1] * 1e9
         if norm_ebitda > 0 and abs(latest - norm_ebitda) / norm_ebitda > 0.30:
             flags.append("EBITDA_NORMALIZED_CYCLICAL")

@@ -95,7 +95,8 @@ sector_ev_ebitda:
   utilities: 10.0        # GAS, POW, REE
   oil_gas: 6.0           # PLX, BSR — phân phối/lọc dầu, biên mỏng commodity
   aviation: 6.0          # HVN, VJC — hàng không, lợi nhuận biến động mạnh
-  industrial_zone: 12.0  # BCM, KBC, IDC
+  transport: 6.5         # PVT, HAH, GMD, VSC — vận tải/cảng biển, thâm dụng vốn, chu kỳ
+  industrial_zone: 12.0  # BCM, KBC, IDC — KCN cho thuê, dòng tiền thuê dài hạn
   agriculture: 7.0
   banks: null            # Không dùng — P/B / Residual Income
   securities: null       # Không dùng — P/B
@@ -142,8 +143,19 @@ macro_sources:
     - www.sbv.gov.vn
     - gso.gov.vn          # Tổng cục Thống kê — GDP, CPI, IIP, bán lẻ, FDI
     - www.gso.gov.vn
+    - hnx.vn              # Sở GDCK Hà Nội — lợi suất TPCP (đường cong yield), chính thống
+    - www.hnx.vn
+    - vbma.org.vn         # Hiệp hội Thị trường Trái phiếu VN — lợi suất TPCP
+    - www.vbma.org.vn
+    - worldgovernmentbonds.com      # Đường cong lợi suất TPCP VN đầy đủ (1Y-30Y), dễ bóc tách (JS-render → cào qua Chrome)
+    - www.worldgovernmentbonds.com
+    - tradingeconomics.com          # CPI, lãi suất điều hành, GDP, bán lẻ VN (JS-render → cào qua Chrome)
   request_timeout_sec: 15
   user_agent: "antigravity-vn100-macro/1.0"
+  # Nguồn TPCP_10Y đang dùng: worldgovernmentbonds.com (đường cong đầy đủ, dữ
+  # liệu render bằng JS nên cào qua Chrome MCP — xem scripts/refresh_macro_chrome.md).
+  # HNX/VBMA giữ trong allowlist để dùng khi có endpoint API xác nhận.
+  tpcp_10y_endpoint: ""
 
 # ===================================================================
 # Registry chuỗi vĩ mô chuẩn hóa (Luật vàng #5 — truy vết).

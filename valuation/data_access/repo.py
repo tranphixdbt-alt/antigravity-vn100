@@ -87,15 +87,24 @@ def get_historical_years(db: Session, ticker: str) -> List[int]:
     )
     return [r[0] for r in rows if r[0] > 0]
 
-def get_latest_price(db: Session, ticker: str) -> float:
-    """Lấy giá đóng cửa gần nhất của ticker (VND)."""
+def get_latest_price(db: Session, ticker: str, fetch_live: bool = True) -> float:
+    """Lấy giá đóng cửa gần nhất của ticker (VND). Ưu tiên lấy giá live từ vnstock."""
+    if fetch_live:
+        try:
+            from valuation.ingest.vnstock_client import vnstock_client
+            live_price = vnstock_client.get_live_price(ticker)
+            if live_price > 0:
+                return live_price
+        except Exception:
+            pass
+
     row = (
         db.query(PricesDaily)
         .filter(PricesDaily.ticker == ticker)
         .order_by(PricesDaily.trade_date.desc())
         .first()
     )
-    return float(row.close) if row else 0.0
+    return float(row.close) if row and row.close is not None else 0.0
 
 def load_ticker_metadata(db: Session, ticker: str) -> Ticker:
     """Tải thông tin ngành và sàn giao dịch của ticker."""
@@ -386,6 +395,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             sustainable_roe=avg_roe
         )
 
+        from valuation.data_access.freshness import data_freshness_flags
         return CompanyBank(
             ticker=ticker,
             name=meta.company_name,
@@ -393,7 +403,8 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             shares_outstanding=shares,
             historical_is=historical_is,
             historical_bs=historical_bs,
-            assumptions=assumptions_bank
+            assumptions=assumptions_bank,
+            data_flags=data_freshness_flags(db, ticker)
         )
     else:
         # Phi tài chính: dùng MEDIAN (không phải mean) cho growth & margin.
@@ -472,9 +483,32 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             else:
                 effective_tax = _sector_tax_map.get('default', 0.20)
 
-        # 2. EV/EBITDA target: đọc từ config theo sector
+        # 2. EV/EBITDA target: ƯU TIÊN nhóm từ routing.json (nguồn sự thật ngành
+        # — D14), fallback keyword trên DB sector. Tránh lỗi ngành DB rộng
+        # "Industrial Goods & Services" (gồm vận tải/cảng như PVT/HAH) bị khớp
+        # nhầm 'industrial' → industrial_zone (12x) → định giá phóng đại.
         _ev_map = config_defaults.get('sector_ev_ebitda', {})
-        if any(k in sector_str for k in ['tech', 'information', 'software']):
+        _GROUP_EV_KEY = {
+            "Thép": "steel", "Dầu khí": "oil_gas", "Hàng không": "aviation",
+            "Cảng": "transport", "Vận tải": "transport", "Hàng hải": "transport",
+            "Điện": "utilities", "Nước": "utilities", "Tiện ích": "utilities",
+            "Công nghệ": "technology", "Bán lẻ": "retail", "Tiêu dùng": "consumer",
+            "Dược": "consumer", "KCN": "industrial_zone", "BĐS": "real_estate",
+            "Cao su/NN": "agriculture",
+        }
+        _ev_ebitda_from_group = None
+        try:
+            from valuation.engine.sector_router import route as _route_lookup
+            _grp = (_route_lookup(ticker) or {}).get("group")
+            _key = _GROUP_EV_KEY.get(_grp)
+            if _key and _ev_map.get(_key) is not None:
+                _ev_ebitda_from_group = _ev_map.get(_key)
+        except Exception:
+            _ev_ebitda_from_group = None
+
+        if _ev_ebitda_from_group is not None:
+            ev_ebitda_target = _ev_ebitda_from_group
+        elif any(k in sector_str for k in ['tech', 'information', 'software']):
             ev_ebitda_target = _ev_map.get('technology', 7.0)
         elif any(k in sector_str for k in ['real', 'estate', 'property']):
             ev_ebitda_target = _ev_map.get('real_estate', 7.0)
@@ -555,6 +589,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             weight_dcf=0.5
         )
 
+        from valuation.data_access.freshness import data_freshness_flags
         return Company(
             ticker=ticker,
             name=meta.company_name,
@@ -564,7 +599,8 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
             historical_is=historical_is,
             historical_bs=historical_bs,
             historical_cf=historical_cf,
-            assumptions=assumptions
+            assumptions=assumptions,
+            data_flags=data_freshness_flags(db, ticker)
         )
 
 

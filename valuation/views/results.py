@@ -126,9 +126,10 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             index=idx_scen,
             key="analyst_scenario_select"
         )
+        # Widget đổi giá trị đã tự trigger rerun — KHÔNG gọi st.rerun() thủ công (gây vòng lặp
+        # vô hạn khi ô này dùng cả index= lẫn key=). Chỉ đồng bộ state, dùng ngay trong run này.
         if analyst_scenario != curr_scen:
             st.session_state["analyst_scenario"] = analyst_scenario
-            st.rerun()
             
     with col_pb:
         # P/B mục tiêu ghi đè (cho Ngân hàng) hoặc P/E mục tiêu ghi đè (cho phi tài chính)
@@ -144,7 +145,6 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             )
             if pb_override != curr_pb:
                 st.session_state["analyst_pb_override"] = pb_override
-                st.rerun()
         else:
             curr_pe = st.session_state.get("analyst_pe_override", 0.0)
             pe_override = st.number_input(
@@ -157,7 +157,6 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             )
             if pe_override != curr_pe:
                 st.session_state["analyst_pe_override"] = pe_override
-                st.rerun()
                 
     with col_conf:
         # Mức độ tin tưởng
@@ -238,7 +237,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         return
 
     # 2. Render Kênh Khuyến Nghị (Premium Card Layout)
-    rec_color = "#10B981" if rec == "MUA" else ("#F59E0B" if rec == "HOLD" else "#EF4444")
+    rec_color = "#10B981" if rec == "BUY" else ("#F59E0B" if rec in ["HOLD", "TRIM"] else "#EF4444")
     
     st.markdown(
         f"""
@@ -259,7 +258,19 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         """,
         unsafe_allow_html=True
     )
-    
+
+    # Cờ định giá (giải thích TẠI SAO kết quả bất thường thay vì để người
+    # dùng tưởng nhầm là lỗi hệ thống — vd Giá MT = 0 do equity value âm).
+    from valuation.engine.flag_descriptions import describe_flags
+    for vf in describe_flags(_res.get("flags", [])):
+        text = f"`{vf['code']}` — {vf['message']}"
+        if vf["level"] == "error":
+            st.error(text, icon="🚨")
+        elif vf["level"] == "warning":
+            st.warning(text, icon="⚠️")
+        else:
+            st.info(text, icon="ℹ️")
+
     # Hiển thị bảng so sánh 2 phương pháp
     st.subheader("Pha Trộn Các Phương Pháp Định Giá")
     col1, col2 = st.columns(2)
@@ -315,31 +326,35 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
     if not is_bank:
         st.subheader("💧 Biểu đồ Waterfall: Dòng tiền tự do (FCFF)")
         
-        years_wf = [str(proj["year"]) for proj in scenario_projections]
-        fcff_vals = [proj.get("fcff", 0) for proj in scenario_projections]
-        
-        fig_wf = go.Figure(go.Waterfall(
-            name="FCFF",
-            orientation="v",
-            measure=["relative"] * len(fcff_vals) + ["total"],
-            x=years_wf + ["Tổng FCFF 5 năm"],
-            y=fcff_vals + [0], # The total is calculated automatically by plotly if y=0 for 'total' or we can just pass sum. Actually plotly calculates total.
-            textposition="outside",
-            text=[f"{v:.0f}" for v in fcff_vals] + [f"{sum(fcff_vals):.0f}"],
-            decreasing={"marker": {"color": "#EF4444"}},
-            increasing={"marker": {"color": "#10B981"}},
-            totals={"marker": {"color": "#3B82F6"}}
-        ))
-        
-        fig_wf.update_layout(
-            paper_bgcolor="#0F172A",
-            plot_bgcolor="#1E293B",
-            font=dict(color="#F8FAFC", family="Inter"),
-            title="Dòng tiền tự do cho hãng (FCFF) dự phóng 5 năm",
-            height=400,
-            margin=dict(l=40, r=40, t=60, b=40)
-        )
-        st.plotly_chart(fig_wf, use_container_width=True, theme=None)
+        dcf_projections = _res.get("projections")
+        if dcf_projections:
+            years_wf = [str(proj["year"]) for proj in dcf_projections]
+            fcff_vals = [proj.get("fcff", 0) for proj in dcf_projections]
+            
+            fig_wf = go.Figure(go.Waterfall(
+                name="FCFF",
+                orientation="v",
+                measure=["relative"] * len(fcff_vals) + ["total"],
+                x=years_wf + ["Tổng FCFF 5 năm"],
+                y=fcff_vals + [0],
+                textposition="outside",
+                text=[f"{v:.0f}" for v in fcff_vals] + [f"{sum(fcff_vals):.0f}"],
+                decreasing={"marker": {"color": "#EF4444"}},
+                increasing={"marker": {"color": "#10B981"}},
+                totals={"marker": {"color": "#3B82F6"}}
+            ))
+            
+            fig_wf.update_layout(
+                paper_bgcolor="#0F172A",
+                plot_bgcolor="#1E293B",
+                font=dict(color="#F8FAFC", family="Inter"),
+                title="Dòng tiền tự do cho hãng (FCFF) dự phóng 5 năm",
+                height=400,
+                margin=dict(l=40, r=40, t=60, b=40)
+            )
+            st.plotly_chart(fig_wf, use_container_width=True, theme=None)
+        else:
+            st.info("💡 Biểu đồ Waterfall không khả dụng cho phương pháp định giá hiện tại (không có dòng tiền chi tiết).")
 
     # 4. Sensitivity Analysis (Heatmap 2 chiều)
     st.subheader("🔥 Heatmap Phân Tích Độ Nhạy 2 Chiều (Định giá thay đổi thế nào khi kịch bản thay đổi?)")

@@ -29,3 +29,14 @@ scratch/
 
 # File nội dung sinh tự động từ docx/xlsx (dùng để đọc, không version)
 *_content.txt
+
+# Scratch/debug ở GỐC repo (test thật nằm trong tests/). Không version.
+/test_*.py
+/fix_*.py
+/fix_*.sh
+*.pdf
+test_output.txt
+.macro_bulletin_cache.json
+VN100_Valuation_Results.csv
+compare_table.md
+.streamlit/secrets.toml

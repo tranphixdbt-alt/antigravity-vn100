@@ -598,6 +598,36 @@ def export_vn100_valuations_to_gsheets(results: list, sheet_name: str = "VN100_V
             ws = sh.add_worksheet(title=sheet_name, rows="120", cols="10")
         ws.clear()
         set_with_dataframe(ws, df)
+        
+        # --- Format đẹp và chuyên nghiệp ---
+        num_rows = len(df) + 1
+        
+        # Format Header
+        ws.format('A1:G1', {
+            'backgroundColor': {'red': 0.12, 'green': 0.23, 'blue': 0.35},
+            'horizontalAlignment': 'CENTER',
+            'verticalAlignment': 'MIDDLE',
+            'textFormat': {'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}, 'fontSize': 11, 'bold': True}
+        })
+        
+        # Định dạng toàn bộ bảng
+        ws.format(f'A2:G{num_rows}', {
+            'textFormat': {'fontSize': 10},
+            'verticalAlignment': 'MIDDLE'
+        })
+        
+        # Định dạng cột Giá và FV (số)
+        ws.format(f'D2:E{num_rows}', {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '#,##0'}
+        })
+        
+        # Định dạng Upside
+        ws.format(f'F2:F{num_rows}', {
+            'horizontalAlignment': 'RIGHT',
+            'numberFormat': {'type': 'NUMBER', 'pattern': '0.0"%"'}
+        })
+        
         return {"status": "success", "rows": len(df)}
     except Exception as e:
         logger.error(f"Export VN100 thất bại: {e}")

@@ -40,6 +40,11 @@ class PERelativeValuationModel(BaseValuationModel):
         # sector (vnstock) lệch nhóm phân tích (vd VHC DB='Food & Beverage' nhưng Excel
         # ='Dệt may/TS' thủy sản). Fallback DB sector nếu không truyền.
         ni_hist = [is_.net_income for is_ in company.historical_is]  # tỷ đồng
+        from valuation.engine.sector_router import route as _route_fn
+        plan = _route_fn(company.ticker) or {}
+        business_nature = plan.get("business_nature", "Unknown")
+        is_mid_cycle = business_nature in ["Cyclical", "Developer"]
+
         cf_dict = {
             "net_income_history": ni_hist,
             "shares_outstanding": company.shares_outstanding * 1e6,
@@ -47,7 +52,7 @@ class PERelativeValuationModel(BaseValuationModel):
         }
         assumptions = {
             "target_pe": cls._target_pe(sector or company.sector),
-            "norm_years": 3,
+            "norm_years": 5 if is_mid_cycle else 3,
         }
         return cls(company.ticker, cf_dict, assumptions)
 

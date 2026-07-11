@@ -116,6 +116,46 @@ def get_ttm_value(
     )
 
 
+def get_mid_cycle_average(
+    db: Session, ticker: str, keywords: List[str], years: int = 5
+) -> float:
+    """
+    Tính trung bình của một chỉ tiêu (như LNST, EBITDA) trong chu kỳ 'years' năm (mặc định 5 năm).
+    Nếu chưa đủ 5 năm thì tính trung bình số năm có sẵn.
+    """
+    rows = (
+        db.query(
+            FinancialsQuarterly.fiscal_year,
+            FinancialsQuarterly.fiscal_quarter,
+        )
+        .filter(
+            FinancialsQuarterly.ticker == ticker,
+            FinancialsQuarterly.fiscal_quarter > 0,
+        )
+        .distinct()
+        .order_by(
+            desc(FinancialsQuarterly.fiscal_year),
+            desc(FinancialsQuarterly.fiscal_quarter),
+        )
+        .limit(years * 4)
+        .all()
+    )
+    if not rows:
+        return 0.0
+        
+    # Tính tổng tất cả giá trị
+    total_val = sum(
+        _query_value(db, ticker, keywords, yr, q) for yr, q in rows
+    )
+    
+    # Số năm thực tế có dữ liệu
+    actual_years = len(rows) / 4.0
+    if actual_years < 1.0:
+        actual_years = 1.0
+        
+    return total_val / actual_years
+
+
 def get_shares_outstanding(db: Session, ticker: str) -> float:
     """
     Tính shares outstanding từ:
@@ -289,11 +329,23 @@ def _beta_from_db(db: Session, ticker: str) -> Optional[float]:
     return max(0.5, min(float(np.cov(rt, ri)[0, 1] / var), 1.5))
 
 
+def _blume_adjust(raw_beta: float) -> float:
+    """Điều chỉnh Blume: beta_dùng = 0.67·beta_thô + 0.33·1.0.
+
+    Chuẩn ngành (Bloomberg, Value Line) để SỬA SAI SỐ ƯỚC LƯỢNG beta — beta hồi
+    quy có xu hướng hồi về 1.0 và bị thiên lệch xuống cho mã thanh khoản mỏng/
+    mới niêm yết (vd NAB beta thô 0.59 phi thực tế cho bank nhỏ). Kéo các beta
+    cực đoan về gần 1, ít đổi các beta vốn đã gần 1. Chặn dải hợp lý [0.6, 1.5].
+    """
+    adj = 0.67 * raw_beta + 0.33 * 1.0
+    return max(0.6, min(adj, 1.5))
+
+
 def estimate_vcb_beta(db: Session, ticker: str = "VCB") -> float:
     """
-    Ước lượng beta vs VNINDEX từ giá 2 năm. ƯU TIÊN giá DB (PricesDaily, không gọi
-    live — an toàn cho batch); chỉ fallback live vnstock nếu DB thiếu VNINDEX.
-    Fallback cuối 0.7674.
+    Ước lượng beta vs VNINDEX từ giá 2 năm, có ĐIỀU CHỈNH BLUME (chống thiên
+    lệch ước lượng). ƯU TIÊN giá DB (PricesDaily, không gọi live — an toàn cho
+    batch); chỉ fallback live vnstock nếu DB thiếu VNINDEX. Fallback cuối 0.7674.
     """
     import numpy as np
     import pandas as pd
@@ -302,7 +354,7 @@ def estimate_vcb_beta(db: Session, ticker: str = "VCB") -> float:
 
     db_beta = _beta_from_db(db, ticker)
     if db_beta is not None:
-        return db_beta
+        return _blume_adjust(db_beta)
 
     try:
         # Lấy dữ liệu 2 năm trước đến nay
@@ -330,8 +382,8 @@ def estimate_vcb_beta(db: Session, ticker: str = "VCB") -> float:
         var = np.var(df['ret_i'], ddof=1)
         if var > 0:
             beta = float(cov / var)
-            # Giới hạn beta trong khoảng hợp lý cho ngân hàng
-            return max(0.5, min(beta, 1.5))
+            # Điều chỉnh Blume (chống thiên lệch ước lượng) + chặn dải hợp lý.
+            return _blume_adjust(max(0.5, min(beta, 1.5)))
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"Error estimating beta for {ticker}: {e}. Fallback to 0.7674")
