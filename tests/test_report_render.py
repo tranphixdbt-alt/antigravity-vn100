@@ -136,3 +136,52 @@ def test_docx_builds_with_11_sections(db, tmp_path):
     text = "\n".join(p.text for p in docx.Document(out).paragraphs)
     for section in EXPECTED_SECTIONS[1:]:  # cover trong Word nằm ở bảng, kiểm riêng
         assert section in text, f"Word thiếu section '{section}'"
+
+
+def test_report_consensus_comparison_section(db):
+    """Phần 7.3 mở rộng: bảng CTCK + AI tổng hợp điểm chung/riêng hiển thị trong HTML.
+
+    FPT có sẵn consensus_history (Simplize/24hmoney) + consensus_synthesis
+    trong DB — golden data của pipeline GĐ2.
+    """
+    html, data, blended_fv = _render_html("FPT", db)
+    consensus = data["consensus"]
+    assert consensus is not None, "FPT phải có dữ liệu consensus trong DB"
+
+    # Tiêu đề section mới
+    assert "So sánh với định giá các công ty chứng khoán" in html
+    # Bảng CTCK: có ít nhất vài CTCK và giá mục tiêu của từng CTCK xuất hiện
+    assert consensus["n_brokers"] >= 3
+    for b in consensus["broker_rows"][:3]:
+        assert b["broker"] in html
+        assert f"{b['target_price']:,.0f}" in html
+    # Chênh lệch mô hình vs CTCK
+    assert "Chênh lệch mô hình vs trung vị CTCK" in html
+    # AI tổng hợp: 4 khối điểm chung/riêng/mấu chốt/đối chiếu
+    if consensus.get("synthesis"):
+        assert "Điểm CHUNG các CTCK đồng thuận" in html
+        assert "Điểm RIÊNG / khác biệt giữa các CTCK" in html
+        assert "Điểm MẤU CHỐT" in html
+        assert "AI tổng hợp từ báo cáo CTCK" in html  # dấu review riêng của synthesis
+
+
+def test_docx_consensus_comparison_section(db, tmp_path):
+    """Word: phần 7.3 mở rộng chứa bảng CTCK + khối AI tổng hợp."""
+    docx = pytest.importorskip("docx")
+    _, data, _ = _render_html("FPT", db)
+    out = str(tmp_path / "report_fpt.docx")
+    ok = build_docx_report(data, data["proj_cols"], data["proj_rows"], {}, out)
+    assert ok and os.path.exists(out)
+
+    d = docx.Document(out)
+    text = "\n".join(p.text for p in d.paragraphs)
+    tables_text = "\n".join(
+        cell.text for t in d.tables for row in t.rows for cell in row.cells
+    )
+    assert "So sánh với định giá các công ty chứng khoán" in text
+    consensus = data["consensus"]
+    for b in consensus["broker_rows"][:3]:
+        assert b["broker"] in tables_text, f"Word thiếu CTCK {b['broker']} trong bảng"
+    if consensus.get("synthesis"):
+        assert "Điểm CHUNG các CTCK đồng thuận:" in text
+        assert "AI tổng hợp từ báo cáo CTCK" in text

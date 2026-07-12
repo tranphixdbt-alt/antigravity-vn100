@@ -182,14 +182,65 @@ def build_docx_report(
         add_kv_table(data.get("wacc_rows", []))
         consensus = data.get("consensus")
         if consensus:
-            doc.add_paragraph("7.3. Đối chiếu consensus CTCK").runs[0].font.bold = True
+            doc.add_paragraph("7.3. So sánh với định giá các công ty chứng khoán").runs[0].font.bold = True
             dev_note = " ⚠ lệch lớn — cần rà soát giả định" if consensus.get("flag_high") else ""
-            add_kv_table([
-                {"label": "Giá mục tiêu của hệ thống", "value": f"{consensus['our_target']:,.0f} VND"},
-                {"label": f"Trung vị consensus ({consensus['n_reports']} báo cáo)",
+            kv = [
+                {"label": "Giá mục tiêu của mô hình VN100", "value": f"{consensus['our_target']:,.0f} VND"},
+                {"label": f"Trung vị consensus ({consensus['n_reports']} báo cáo, 180 ngày)",
                  "value": f"{consensus['consensus_median']:,.0f} VND"},
-                {"label": "Chênh lệch", "value": f"{consensus['deviation']:+.1%}{dev_note}"},
-            ])
+            ]
+            if consensus.get("range_min") and consensus.get("range_max"):
+                kv.append({"label": f"Dải giá mục tiêu CTCK ({consensus.get('n_brokers', 0)} CTCK)",
+                           "value": f"{consensus['range_min']:,.0f} – {consensus['range_max']:,.0f} VND"})
+            if consensus.get("current_price"):
+                kv.append({"label": "Thị giá hiện tại",
+                           "value": f"{consensus['current_price']:,.0f} VND"})
+            kv.append({"label": "Chênh lệch mô hình vs trung vị CTCK",
+                       "value": f"{consensus['deviation']:+.1%}{dev_note}"})
+            add_kv_table(kv)
+
+            # Bảng chi tiết từng CTCK
+            broker_rows = consensus.get("broker_rows") or []
+            if broker_rows:
+                p = doc.add_paragraph("Chi tiết khuyến nghị từng CTCK (mới nhất/CTCK, 180 ngày):")
+                p.runs[0].font.bold = True
+                add_table(
+                    ["Ngày BC", "Giá mục tiêu (VND)", "Khuyến nghị", "Mô hình so với CTCK"],
+                    [
+                        {"label": b["broker"],
+                         "values": [b["report_date"], f"{b['target_price']:,.0f}",
+                                    b["rating"], f"{b['vs_model']:+.1%}"]}
+                        for b in broker_rows
+                    ],
+                    "CTCK",
+                )
+
+            # AI tổng hợp điểm chung/riêng/mấu chốt
+            synth = consensus.get("synthesis")
+            if synth:
+                p = doc.add_paragraph("Tổng hợp luận điểm các CTCK ")
+                p.runs[0].font.bold = True
+                note = p.add_run(f"(AI tổng hợp từ báo cáo CTCK — cần analyst review · nguồn: {synth.get('brokers', '')})")
+                note.font.size = Pt(9)
+                note.font.color.rgb = RGBColor(0xB4, 0x53, 0x09)
+
+                def _bullet_block(title, items, rgb):
+                    if not items:
+                        return
+                    if isinstance(items, str):
+                        items = [items]
+                    h = doc.add_paragraph(title)
+                    h.runs[0].font.bold = True
+                    h.runs[0].font.color.rgb = RGBColor(*rgb)
+                    for it in items:
+                        doc.add_paragraph(str(it), style="List Bullet")
+
+                _bullet_block("Điểm CHUNG các CTCK đồng thuận:", synth.get("diem_chung"), (0x16, 0x65, 0x34))
+                _bullet_block("Điểm RIÊNG / khác biệt giữa các CTCK:", synth.get("diem_rieng"), (0x92, 0x40, 0x0E))
+                _bullet_block("Điểm MẤU CHỐT — thị trường có thể bỏ sót:", synth.get("diem_mau_chot"), (0x1E, 0x40, 0xAF))
+                if synth.get("doi_chieu_noi_bo"):
+                    _bullet_block("Đối chiếu mô hình nội bộ vs đồng thuận:",
+                                  [synth["doi_chieu_noi_bo"]], (0x5B, 0x21, 0xB6))
 
         # ==== 9. ĐỘ NHẠY & KỊCH BẢN ====
         add_section("8. Phân tích độ nhạy & kịch bản")

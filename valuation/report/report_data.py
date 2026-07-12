@@ -238,25 +238,74 @@ def build_wacc_breakdown(company: Union[Company, CompanyBank]) -> List[Dict[str,
 # Phần 8b — Đối chiếu consensus CTCK
 # ---------------------------------------------------------------------------
 
-def build_consensus_comparison(ticker: str, blended_fv: float, db=None) -> Optional[Dict[str, Any]]:
-    """So giá mục tiêu của hệ thống với consensus CTCK (nếu có dữ liệu)."""
+def build_consensus_comparison(ticker: str, blended_fv: float, db=None,
+                               current_price: float = None) -> Optional[Dict[str, Any]]:
+    """So sánh định giá hệ thống với các CTCK: bảng từng CTCK + AI tổng hợp
+    điểm chung/riêng (consensus_synthesis) + chênh lệch so với mô hình.
+
+    Giữ nguyên các khóa cũ (our_target/consensus_median/n_reports/deviation/
+    flag_high) để template/docx cũ vẫn chạy; các khóa mới là phần mở rộng.
+    """
     if db is None:
         return None
     try:
         import datetime
-        from valuation.engine.consensus_helper import get_consensus_stats
-        stats = get_consensus_stats(ticker, datetime.date.today(), db)
+        from valuation.engine.consensus_helper import get_consensus_stats, get_synthesis
+        from valuation.db.models import Consensus
+
+        today = datetime.date.today()
+        stats = get_consensus_stats(ticker, today, db)
         median = stats.get("median")
         if not median:
             return None
         deviation = (blended_fv - median) / median
-        return {
+
+        # Bảng từng CTCK: báo cáo MỚI NHẤT của mỗi CTCK trong 180 ngày,
+        # sắp xếp giá mục tiêu giảm dần để đọc như football field.
+        start = today - datetime.timedelta(days=180)
+        records = (db.query(Consensus)
+                   .filter(Consensus.ticker == ticker,
+                           Consensus.report_date >= start,
+                           Consensus.report_date <= today,
+                           Consensus.target_price.isnot(None))
+                   .order_by(Consensus.report_date.desc())
+                   .all())
+        latest_by_broker: Dict[str, Any] = {}
+        for r in records:  # records đã sort mới→cũ nên lần gặp đầu là mới nhất
+            if r.broker not in latest_by_broker:
+                latest_by_broker[r.broker] = r
+        broker_rows = []
+        for r in latest_by_broker.values():
+            tp = float(r.target_price)
+            if tp <= 0:
+                continue
+            broker_rows.append({
+                "broker": r.broker,
+                "report_date": r.report_date.strftime("%d/%m/%Y"),
+                "target_price": tp,
+                "rating": r.rating or "—",
+                # Chênh lệch của MÔ HÌNH so với CTCK này (dương = mô hình cao hơn)
+                "vs_model": (blended_fv - tp) / tp,
+                "age_days": (today - r.report_date).days,
+            })
+        broker_rows.sort(key=lambda x: x["target_price"], reverse=True)
+
+        tps = [b["target_price"] for b in broker_rows]
+        out = {
             "consensus_median": median,
             "n_reports": stats.get("count", 0),
             "our_target": blended_fv,
             "deviation": deviation,
             "flag_high": abs(deviation) > 0.25,
+            # --- mở rộng ---
+            "current_price": current_price,
+            "broker_rows": broker_rows,
+            "n_brokers": len(broker_rows),
+            "range_min": min(tps) if tps else None,
+            "range_max": max(tps) if tps else None,
+            "synthesis": get_synthesis(ticker, db),  # None nếu chưa chạy AI tổng hợp
         }
+        return out
     except Exception:
         return None  # thiếu bảng/không có dữ liệu → bỏ qua phần này
 
@@ -371,7 +420,8 @@ def build_report_sections(
         "historical": build_historical_analysis(company),
         "assumptions": build_assumptions_table(company),
         "wacc_breakdown": build_wacc_breakdown(company),
-        "consensus": build_consensus_comparison(company.ticker, blended_fv, db),
+        "consensus": build_consensus_comparison(company.ticker, blended_fv, db,
+                                                current_price=company.current_price),
         "scenarios": build_scenarios(company),
         "appendix": build_appendix_financials(company),
         "flags": list(flags or []) + list(getattr(company, "warnings", []) or []),

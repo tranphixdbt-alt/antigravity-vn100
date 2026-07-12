@@ -13,7 +13,13 @@ from sqlalchemy.orm import sessionmaker
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Load biến môi trường từ .env
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+# Ưu tiên .env ở thư mục chạy exe (cwd) trước, sau đó mới dùng .env đóng gói kèm
+env_cwd = os.path.join(os.getcwd(), ".env")
+env_bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(env_cwd):
+    load_dotenv(env_cwd)
+else:
+    load_dotenv(env_bundled)
 
 # Cấu hình giao diện Streamlit (Premium Styling)
 st.set_page_config(
@@ -252,20 +258,25 @@ try:
                     st.info(text, icon="ℹ️")
 
 
-        tab1, tab2, tab3 = st.tabs([
-            "📊 Báo cáo Tài chính Lịch sử & Dự phóng", 
-            "⚙️ Giả định & Tham số Dự phóng", 
-            "🏆 Kết quả Định giá & Quan điểm"
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📊 Báo cáo Tài chính Lịch sử & Dự phóng",
+            "⚙️ Giả định & Tham số Dự phóng",
+            "🏆 Kết quả Định giá & Quan điểm",
+            "🏦 So sánh CTCK"
         ])
-        
+
         with tab1:
             render_input_financials(company, blended_fv=blended_fv, upside=upside, rec=rec)
-            
+
         with tab2:
             render_input_assumptions(company)
-            
+
         with tab3:
             render_valuation_results(company, db_write)
+
+        with tab4:
+            from valuation.views.consensus_compare import render_consensus_compare
+            render_consensus_compare(company, blended_fv, db_write)
     else:
         st.info("👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.", icon="ℹ️")
 

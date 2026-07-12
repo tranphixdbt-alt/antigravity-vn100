@@ -271,14 +271,72 @@
     </table>
 
     {% if consensus %}
-    <p style="font-size:13px;"><b>7.3. Đối chiếu consensus công ty chứng khoán</b></p>
-    <table style="width: 70%;">
+    <p style="font-size:13px;"><b>7.3. So sánh với định giá các công ty chứng khoán</b></p>
+    <table style="width: 80%;">
         <tbody>
-            <tr><td>Giá mục tiêu của hệ thống</td><td class="text-right"><b>{{ "{:,.0f}".format(consensus.our_target) }} VND</b></td></tr>
-            <tr><td>Trung vị consensus CTCK ({{ consensus.n_reports }} báo cáo)</td><td class="text-right">{{ "{:,.0f}".format(consensus.consensus_median) }} VND</td></tr>
-            <tr><td>Chênh lệch</td><td class="text-right"><b>{{ "{:+.1%}".format(consensus.deviation) }}</b>{% if consensus.flag_high %} ⚠ lệch lớn — cần rà soát giả định{% endif %}</td></tr>
+            <tr><td>Giá mục tiêu của mô hình VN100</td><td class="text-right"><b>{{ "{:,.0f}".format(consensus.our_target) }} VND</b></td></tr>
+            <tr><td>Trung vị consensus CTCK ({{ consensus.n_reports }} báo cáo, 180 ngày)</td><td class="text-right">{{ "{:,.0f}".format(consensus.consensus_median) }} VND</td></tr>
+            {% if consensus.range_min and consensus.range_max %}
+            <tr><td>Dải giá mục tiêu CTCK ({{ consensus.n_brokers }} CTCK)</td><td class="text-right">{{ "{:,.0f}".format(consensus.range_min) }} – {{ "{:,.0f}".format(consensus.range_max) }} VND</td></tr>
+            {% endif %}
+            {% if consensus.current_price %}
+            <tr><td>Thị giá hiện tại</td><td class="text-right">{{ "{:,.0f}".format(consensus.current_price) }} VND</td></tr>
+            {% endif %}
+            <tr><td>Chênh lệch mô hình vs trung vị CTCK</td><td class="text-right"><b>{{ "{:+.1%}".format(consensus.deviation) }}</b>{% if consensus.flag_high %} ⚠ lệch lớn — cần rà soát giả định{% endif %}</td></tr>
         </tbody>
     </table>
+
+    {% if consensus.broker_rows %}
+    <p style="font-size:12.5px; margin-top:10px;"><b>Chi tiết khuyến nghị từng CTCK</b> (báo cáo mới nhất của mỗi CTCK trong 180 ngày):</p>
+    <table>
+        <thead>
+            <tr><th>CTCK</th><th>Ngày BC</th><th class="text-right">Giá mục tiêu (VND)</th><th>Khuyến nghị</th><th class="text-right">Mô hình so với CTCK</th></tr>
+        </thead>
+        <tbody>
+            {% for b in consensus.broker_rows %}
+            <tr>
+                <td><b>{{ b.broker }}</b></td>
+                <td>{{ b.report_date }}</td>
+                <td class="text-right">{{ "{:,.0f}".format(b.target_price) }}</td>
+                <td>{{ b.rating }}</td>
+                <td class="text-right" style="{% if b.vs_model < -0.25 %}color:#DC2626; font-weight:bold;{% elif b.vs_model > 0.25 %}color:#16A34A; font-weight:bold;{% endif %}">{{ "{:+.1%}".format(b.vs_model) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if consensus.synthesis %}
+    <p style="font-size:12.5px; margin-top:12px;"><b>Tổng hợp luận điểm các CTCK</b> <span style="color:#B45309; font-size:11px;">(AI tổng hợp từ báo cáo CTCK — cần analyst review · nguồn: {{ consensus.synthesis.brokers }})</span></p>
+
+    <div style="border-left:4px solid #16A34A; background:#F0FDF4; padding:8px 14px; margin:8px 0; page-break-inside:avoid;">
+        <p style="font-size:12.5px; margin:0 0 4px 0; color:#166534;"><b>Điểm CHUNG các CTCK đồng thuận</b></p>
+        <ul style="font-size:12px; margin:0; padding-left:18px;">
+            {% for it in consensus.synthesis.diem_chung %}<li>{{ it }}</li>{% endfor %}
+        </ul>
+    </div>
+
+    <div style="border-left:4px solid #D97706; background:#FFFBEB; padding:8px 14px; margin:8px 0; page-break-inside:avoid;">
+        <p style="font-size:12.5px; margin:0 0 4px 0; color:#92400E;"><b>Điểm RIÊNG / khác biệt giữa các CTCK</b></p>
+        <ul style="font-size:12px; margin:0; padding-left:18px;">
+            {% for it in consensus.synthesis.diem_rieng %}<li>{{ it }}</li>{% endfor %}
+        </ul>
+    </div>
+
+    <div style="border-left:4px solid #1D4ED8; background:#EFF6FF; padding:8px 14px; margin:8px 0; page-break-inside:avoid;">
+        <p style="font-size:12.5px; margin:0 0 4px 0; color:#1E40AF;"><b>Điểm MẤU CHỐT — thị trường có thể bỏ sót</b></p>
+        <ul style="font-size:12px; margin:0; padding-left:18px;">
+            {% for it in consensus.synthesis.diem_mau_chot %}<li>{{ it }}</li>{% endfor %}
+        </ul>
+    </div>
+
+    {% if consensus.synthesis.doi_chieu_noi_bo %}
+    <div style="border-left:4px solid #7C3AED; background:#F5F3FF; padding:8px 14px; margin:8px 0; page-break-inside:avoid;">
+        <p style="font-size:12.5px; margin:0 0 4px 0; color:#5B21B6;"><b>Đối chiếu mô hình nội bộ vs đồng thuận</b></p>
+        <p style="font-size:12px; margin:0;">{{ consensus.synthesis.doi_chieu_noi_bo }}</p>
+    </div>
+    {% endif %}
+    {% endif %}
     {% endif %}
 
     <!-- ============ 9. ĐỘ NHẠY & KỊCH BẢN ============ -->
