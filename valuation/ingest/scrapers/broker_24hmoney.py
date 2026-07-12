@@ -12,6 +12,7 @@ NGUYÊN TẮC: chỉ lưu số liệu thật đọc được; không bịa. Ngu�
 from __future__ import annotations
 
 import datetime
+import html as _html
 import re
 from typing import Any, Dict, List
 
@@ -21,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from valuation.db.models import Consensus
 from valuation.db.session import SessionLocalWrite
 
+_ORIGIN = "https://24hmoney.vn"
 _BASE = "https://24hmoney.vn/stock/"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
@@ -66,6 +68,85 @@ def fetch_broker_reports(ticker: str, timeout: float = 20.0) -> List[Dict[str, A
             "source_url": url,
             "raw_quote": f"{broker} {rep_date}: {rating}, giá mục tiêu {tp:,.0f} VND (nguồn 24hmoney)",
         })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# GĐ2 — Bóc TÓM TẮT LUẬN ĐIỂM từng báo cáo (để AI tổng hợp điểm chung/riêng).
+# Mỗi báo cáo trên trang mã có link chi tiết .../bao-cao-phan-tich/...rpIdN.html,
+# trong đó có đoạn tóm tắt luận điểm (động lực, dự phóng, upside). Chỉ lưu nội
+# bộ tham khảo — KHÔNG tải/phát tán PDF gốc có bản quyền.
+# ---------------------------------------------------------------------------
+
+# Ghép: <a href="/bao-cao-phan-tich/...rpId123.html" ... class="title" ...>Tiêu đề</a>
+#        ... Nguồn: BROKER-DD/MM/YYYY
+_LINK_PATTERN = re.compile(
+    r'href="(?P<href>/bao-cao-phan-tich/[^"]*rpId\d+\.html)"[^>]*class="title"[^>]*>'
+    r'(?P<title>[^<]+)</a>.*?Nguồn:\s*(?P<broker>[A-Za-z0-9]+)-(?P<date>\d{2}/\d{2}/\d{4})',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_tags(html: str) -> str:
+    html = re.sub(r"<script.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<style.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<[^>]+>", " ", html)
+    return re.sub(r"\s+", " ", _html.unescape(html)).strip()
+
+
+def report_links(ticker: str, timeout: float = 20.0) -> List[Dict[str, Any]]:
+    """Danh sách link báo cáo chi tiết + broker/ngày cho 1 mã. KHÔNG chạm DB."""
+    url = f"{_BASE}{ticker.upper()}"
+    resp = httpx.get(url, headers={"User-Agent": _UA}, timeout=timeout, follow_redirects=True)
+    resp.raise_for_status()
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for m in _LINK_PATTERN.finditer(resp.text):
+        broker = m.group("broker").upper().strip()
+        try:
+            rep_date = datetime.datetime.strptime(m.group("date"), "%d/%m/%Y").date()
+        except ValueError:
+            continue
+        key = (broker, rep_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        title = _html.unescape(m.group("title").strip())
+        # tiêu đề: "FPT: Khuyến nghị MUA với giá mục tiêu 103,800 đồng/cổ phiếu"
+        tm = re.search(
+            r"Khuyến nghị\s+(?P<rating>.+?)\s+với giá mục tiêu\s+(?P<tp>[\d.,]+)",
+            title, re.IGNORECASE)
+        rating = re.sub(r"\s+", " ", tm.group("rating")).strip().upper() if tm else None
+        tp = _parse_tp(tm.group("tp")) if tm else None
+        out.append({
+            "ticker": ticker.upper(), "broker": broker, "report_date": rep_date,
+            "detail_url": _ORIGIN + m.group("href"),
+            "title": title, "rating": rating, "target_price": tp,
+        })
+    return out
+
+
+def _extract_body(detail_html: str) -> str:
+    """Lấy đoạn tóm tắt luận điểm (giữa 'Tải về' và mục 'Báo cáo mã ...')."""
+    txt = _strip_tags(detail_html)
+    m = re.search(r"Tải về\s+(.*?)\s+(?:Báo cáo mã bạn đang theo dõi|Xem tất cả|$)", txt)
+    return m.group(1).strip() if m else ""
+
+
+def fetch_report_summaries(ticker: str, timeout: float = 20.0) -> List[Dict[str, Any]]:
+    """Lấy tóm tắt luận điểm từng CTCK cho 1 mã (fetch từng trang chi tiết)."""
+    out: List[Dict[str, Any]] = []
+    for rep in report_links(ticker, timeout=timeout):
+        try:
+            resp = httpx.get(rep["detail_url"], headers={"User-Agent": _UA},
+                             timeout=timeout, follow_redirects=True)
+            resp.raise_for_status()
+            summary = _extract_body(resp.text)
+        except Exception:
+            summary = ""
+        if summary:
+            rep = {**rep, "summary": summary}
+            out.append(rep)
     return out
 
 

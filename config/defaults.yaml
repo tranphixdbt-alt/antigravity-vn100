@@ -152,6 +152,8 @@ macro_sources:
     - tradingeconomics.com          # CPI, lãi suất điều hành, GDP, bán lẻ VN (JS-render → cào qua Chrome)
     - 24hmoney.vn                   # Tổng hợp khuyến nghị đa CTCK (SSI/KBSV/BSC/MIRAE/ACBS...) — HTML SSR, lấy bằng httpx
     - api-finance-t19.24hmoney.vn
+    - api2.simplize.vn              # Simplize API JSON: khuyến nghị đa CTCK (FPTS/MAS/VPBS/BVSC/YUANTA/DSC/KIS...) + link PDF
+    - cdn.simplize.vn               # CDN chứa PDF báo cáo CTCK (attachedLink) — tải nội bộ tham khảo
   request_timeout_sec: 15
   user_agent: "antigravity-vn100-macro/1.0"
   # Nguồn TPCP_10Y đang dùng: worldgovernmentbonds.com (đường cong đầy đủ, dữ

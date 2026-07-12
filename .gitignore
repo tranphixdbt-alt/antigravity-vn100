@@ -47,3 +47,7 @@ dist/
 *.spec
 *.sql
 vn100_backup.sql
+
+# Báo cáo PDF CTCK tải nội bộ (bản quyền — không commit/phát tán)
+reports_pdf/
+*.pdf

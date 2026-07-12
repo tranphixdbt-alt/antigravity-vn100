@@ -151,6 +151,27 @@ class Consensus(Base):
     raw_quote = Column(String)
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class ConsensusSynthesis(Base):
+    """Bản AI tổng hợp điểm chung/riêng/mấu chốt từ nhiều báo cáo CTCK cho 1 mã.
+
+    Sinh bởi valuation/engine/consensus_synthesis.py (DeepSeek) dựa trên các
+    tóm tắt luận điểm bóc từ 24hmoney + quan điểm mô hình nội bộ VN100.
+    """
+    __tablename__ = "consensus_synthesis"
+
+    ticker = Column(String, ForeignKey("tickers.ticker"), primary_key=True)
+    n_reports = Column(Integer)          # số báo cáo CTCK dùng để tổng hợp
+    brokers = Column(String)             # danh sách CTCK, phân tách bằng dấu phẩy
+    diem_chung = Column(JSON)            # list[str] — luận điểm đồng thuận
+    diem_rieng = Column(JSON)            # list[str] — điểm khác biệt giữa các CTCK
+    diem_mau_chot = Column(JSON)         # list[str] — nhận định sâu/điều dễ bỏ sót
+    doi_chieu_noi_bo = Column(String)    # so sánh mô hình VN100 vs đồng thuận
+    internal_fv = Column(Numeric)        # fair value mô hình nội bộ (VND/cp)
+    consensus_median = Column(Numeric)   # median giá mục tiêu CTCK (VND/cp)
+    model = Column(String)               # model LLM dùng (truy vết)
+    generated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class ValuationRun(Base):
     __tablename__ = "valuation_runs"
     
