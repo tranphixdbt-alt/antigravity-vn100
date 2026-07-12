@@ -126,11 +126,19 @@ class RNAVValuationModel(BaseValuationModel):
                 
         else:
             # PROXY_MODE
+            # Chiết khấu (rnav_discount) chỉ áp cho PHẦN ĐÁNH GIÁ LẠI (premium
+            # đất/BĐS đầu tư — số liệu ước lượng, có rủi ro/thanh khoản khi
+            # hiện thực hoá), KHÔNG áp cho vốn CSH sổ sách (đã kiểm toán, chắc
+            # chắn). Bản trước chiết khấu cả NAV gộp (equity + premium) —
+            # với công ty quỹ đất lâu năm (đất ghi giá gốc từ nhiều năm trước,
+            # premium/equity lớn), điều này có thể kéo FV xuống DƯỚI CẢ giá trị
+            # sổ sách — phi lý cho công ty có tài sản lõi bị định giá thấp
+            # trên sổ sách. Điều tra 2026-07, xem DECISIONS.md.
             premium = self.assumptions.get('rnav_land_premium', 0.30)
             revaluation_surplus = (inventory + inv_property) * premium
-            nav_equity = equity + revaluation_surplus
-            nav_sau_chiet_khau = nav_equity * (1 - rnav_discount)
-            rnav_fvps = (nav_sau_chiet_khau / shares) if shares > 0 else 0
+            surplus_sau_chiet_khau = revaluation_surplus * (1 - rnav_discount)
+            nav_equity = equity + surplus_sau_chiet_khau
+            rnav_fvps = (nav_equity / shares) if shares > 0 else 0
             flags = ["VALUATION_PROXY"]
 
         return {

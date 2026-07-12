@@ -4,6 +4,105 @@
 
 ---
 
+## Sprint: Điều tra lệch định giá vs đồng thuận đa-CTCK (2026-07)
+
+**Bối cảnh:** sau khi nạp consensus đa nguồn (24hmoney + Simplize, 64 CTCK,
+2.925 dòng), đối chiếu cho thấy mô hình nội bộ thấp hơn đồng thuận CTCK median
+-37% (66/81 mã), lệch nặng nhất ở ngân hàng top-tier, công ty quỹ đất lâu năm,
+và cổ phiếu chu kỳ vừa qua đỉnh capex. Điều tra tìm ra 3 nguyên nhân gốc — đều
+là 1 tham số cố định áp đặt đồng loạt, xoá mất phân hoá chất lượng mà thị
+trường/CTCK định giá.
+
+### D20 — Trần ROE bền vững ngân hàng theo TIER chất lượng (15%/20%), không dùng 1 trần cứng
+
+**Quyết định:** `BankGeneralValuationModel.__init__` — ngân hàng có
+`sustainable_roe` lịch sử (median nhiều năm) > `ELITE_ROE_THRESHOLD=0.18` được
+trần `ELITE_ROE_CAP=0.20`; còn lại giữ trần cũ `STANDARD_ROE_CAP=0.15`.
+
+**Lý do:** trần cứng 15% cho MỌI ngân hàng (thêm ở commit `e36eb41`, sửa lỗi
+"upside phi lý" — sprint 2026-07 đầu dự án) xoá sạch phần bù chất lượng: 11/17
+ngân hàng VN100 (VCB 19.6%, ACB 20.9%, MBB 19.9%, HDB 20.9%, VIB 21.5%...) có
+ROE bền vững lịch sử > trần, bị ép về ĐÚNG mức ngân hàng trung bình (BID
+14.8%, CTG 15.5%) — dù thị trường trả P/B cao hơn hẳn cho nhóm tốt (VCB P/B
+thị trường ~2.16x vs ACB ~1.17x, model cũ chỉ phân hoá ~5%). Vì
+`Target P/B = (ROE-g)/(COE-g)` cực nhạy ROE, đây là nguyên nhân chính khiến
+VCB/ACB/MBB/HDB bị định giá thấp hơn đồng thuận CTCK có hệ thống.
+
+Đối chiếu golden test `TestBankGoldenVcb` (fixture `sustainable_roe=0.20`):
+tài liệu hand-calc gốc kỳ vọng P/B≈2.148, FVPS≈69,232 VND — code cũ (trần 15%)
+cho ra 1.55/50,002 (lệch 28%, không ai phát hiện vì test đã bị viết lại thành
+circular-check thuần công thức, không so với hand-calc). Sau fix: khớp đúng
+2.148/69,232 — test đã bổ sung assertion số cứng.
+
+**Tác động thực nghiệm (build_company_data thật, TTM):**
+VCB upside -24.8%→+0.8% (SELL→HOLD), ACB +30.8%→+77.2%, MBB→+90.8%,
+HDB→+44.9% (đều BUY). BID/CTG gần như không đổi (không thuộc tier elite).
+
+**Files:** `valuation/engine/models/bank_general.py` (dòng ~46-62).
+**Test:** `tests/test_valuation_accuracy.py::TestBankGoldenVcb` (assertion mới
+đối chiếu trực tiếp hand-calc, không còn circular).
+
+---
+
+### D21 — RNAV PROXY_MODE: chiết khấu chỉ áp phần đánh giá lại đất, không áp vốn CSH sổ sách
+
+**Quyết định:** `RNAVValuationModel.perform_valuation()` nhánh PROXY_MODE —
+`rnav_discount` chỉ nhân vào `revaluation_surplus` (phần premium đất/BĐS đầu
+tư), KHÔNG nhân vào `total_equity` (đã kiểm toán). Công thức mới:
+`nav_equity = equity + revaluation_surplus × (1 - discount)`
+(trước: `nav_equity = (equity + revaluation_surplus) × (1 - discount)`).
+
+**Lý do:** `rnav_land_premium=0.20`/`rnav_discount=0.40` là default Pydantic
+đồng loạt cho MỌI công ty BĐS/KCN (comment gốc "# analyst nhập" — thiết kế để
+chuyên viên tự override, nhưng quét batch 100 mã không ai chỉnh). Với công ty
+quỹ đất lâu năm (BCM: đất KCN Bình Dương ghi giá gốc hàng chục năm trước,
+inventory+BĐS đầu tư/cp 39,480đ >> equity/cp 21,718đ), công thức cũ chiết khấu
+40% lên CẢ vốn CSH đã kiểm toán → FV (17,768đ) THẤP HƠN CẢ giá trị sổ sách
+(21,718đ) — phi lý cho công ty có tài sản lõi bị định giá thấp trên sổ sách.
+
+**Tác động thực nghiệm:** BCM FV 17,768→26,455đ (thoát vùng dưới sổ sách, vẫn
+SELL vì thị giá 48,700đ quá cao so với NAV thận trọng). KBC 23,158→34,609đ
+(SELL→HOLD). PHR/GVR ít đổi hơn (premium/equity nhỏ hơn BCM/KBC).
+
+**Chưa sửa (để dành quyết định sau nếu cần):** magnitude premium 20%/discount
+40% vẫn giữ nguyên — không tăng premium riêng cho nhóm đất lâu năm (BCM/GVR),
+vì cần nghiên cứu tuổi quỹ đất/giá KCN hiện tại vs giá gốc mới định lượng đúng
+được. Đây vẫn là proxy thận trọng, không phải NAV chi tiết theo dự án.
+
+**Files:** `valuation/engine/models/rnav.py` (nhánh PROXY_MODE, dòng ~127-142).
+**Test:** `tests/test_proxy_models.py`, `tests/test_ai_rnav_sotp.py` (không đổi
+số, chỉ qualitative — vẫn pass).
+
+---
+
+### D22 — Capex dự phóng DCF: median 3 kỳ gần nhất, không median toàn lịch sử
+
+**Quyết định:** `build_company_data` (repo.py) — `capex_to_rev` ưu tiên
+median của 3 kỳ TÀI CHÍNH GẦN NHẤT (`historical_cf[-3:]`/`historical_is[-3:]`,
+kỳ cuối là TTM), fallback về median toàn lịch sử nếu <3 kỳ có dữ liệu hợp lệ.
+Cùng cửa sổ với `effective_tax` (đã dùng `historical_is[-3:]` từ trước).
+
+**Lý do:** median toàn lịch sử (có thể 9 kỳ) trộn lẫn giai đoạn xây
+dựng/mở rộng công suất (capex/DT cao) với giai đoạn thu hoạch hiện tại (capex/
+DT thấp) rồi chiếu CỐ ĐỊNH cho cả 5 năm tới. VD HPG: capex/DT lịch sử dao động
+3.2%-49.4% (giai đoạn xây Dung Quất 2), median toàn lịch sử = 14.6% — trong
+khi kỳ TTM gần nhất chỉ 3.2% (đúng như tất cả báo cáo CTCK: "Dung Quất 2 đã
+hoàn thành, giai đoạn gặt hái bắt đầu"). Model cũ vẫn giả định capex nặng như
+thời xây dựng → FCFF bị bóp nghẹt (capex ăn ~86% NOPAT năm 1 dự phóng).
+
+**Lưu ý trung thực:** với HPG cụ thể, 3 kỳ gần nhất VẪN còn 2 năm cao điểm
+(25.6%, 16.5%, 3.2% → median 16.5% — cao hơn cả median-9 cũ 14.6%), nên fix
+này KHÔNG cải thiện nhiều cho riêng HPG (FV giảm nhẹ 15,923→14,762). Logic vẫn
+đúng hướng và có lợi hơn cho các mã khác đã hoàn tất capex-cycle sớm hơn (dữ
+liệu 3 kỳ gần nhất phản ánh đúng giai đoạn hiện tại thay vì trộn lẫn quá khứ).
+
+**Files:** `valuation/data_access/repo.py` (dòng ~436-448).
+**Test:** full suite 233 passed, 3 skipped — không có golden test riêng cho
+capex window (áp dụng chung cho mọi mã phi tài chính, không đổi hành vi cho
+DN capex ổn định qua các kỳ).
+
+---
+
 ## Sprint: Kiểm tra file Excel xuất VN100 — sửa lỗi export + engine (2026-07)
 
 ### D9 — DCF chặn vốn cổ phần ÂM về 0 + cờ NEGATIVE_EQUITY_VALUE_DCF

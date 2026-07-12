@@ -380,9 +380,13 @@ class TestBankGoldenVcb:
     Justified P/B (tính tay với sustainable_roe=0.20):
       coe = 0.03 + 0.90 × 0.082 = 0.1038
       g = 0.02
+      terminal_roe = min(0.20, ELITE_ROE_CAP=0.20) = 0.20  (0.20 > 0.18
+        ngưỡng elite → trần 20%, KHÔNG bị ép về 15% chuẩn — điều tra 2026-07,
+        xem DECISIONS.md "Trần ROE ngân hàng theo tier chất lượng")
       P/B = (0.20 - 0.02) / (0.1038 - 0.02) = 0.18 / 0.0838 ≈ 2.148
       BVPS = 120,000 tỷ / 3,723 triệu × 1,000 = 32,231 VND
-      Target (Justified P/B) ≈ 69,232 VND
+      Target (Justified P/B) ≈ 69,232 VND — test_pb_valuation_formula assert
+      trực tiếp số này (±10%), không còn circular-check thuần công thức.
 
     Residual Income: phụ thuộc projection, không tính tay đầy đủ.
     Test assert blended FV nằm trong khoảng hợp lý [30,000; 130,000] VND
@@ -433,6 +437,20 @@ class TestBankGoldenVcb:
         actual_fvps = pb_res["fair_value_per_share"]
         assert abs(actual_fvps - ref_fvps) < 1.0, (
             f"FVPS = {actual_fvps:.0f} VND, tham chiếu = {ref_fvps:.0f} VND"
+        )
+
+        # Không chỉ circular-check công thức: đối chiếu THẲNG với hand-calc gốc
+        # của docstring (sustainable_roe=0.20 → terminal_roe=0.20 vì thuộc tier
+        # elite, KHÔNG bị ép về trần 15% chuẩn). ±10% theo AGENTS.md.
+        assert abs(long_term_roe - 0.20) < 0.001, (
+            f"terminal_roe = {long_term_roe:.4f}, kỳ vọng 0.20 (VCB-like elite tier, "
+            "sustainable_roe=0.20 > ELITE_ROE_THRESHOLD=0.18)"
+        )
+        assert abs(actual_pb - 2.148) / 2.148 < 0.10, (
+            f"target_pb = {actual_pb:.4f}, kỳ vọng ≈2.148 (hand-calc docstring)"
+        )
+        assert abs(actual_fvps - 69_232) / 69_232 < 0.10, (
+            f"FVPS = {actual_fvps:.0f} VND, kỳ vọng ≈69,232 VND (hand-calc docstring)"
         )
 
     def test_bank_blended_in_reasonable_range(self):

@@ -434,9 +434,20 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         nwc_to_rev = 0.12
 
         if historical_cf and historical_is:
-            capexs = [cf.capex / is_rec.revenue for cf, is_rec in zip(historical_cf, historical_is) if is_rec.revenue > 0]
-            if capexs:
-                capex_to_rev = statistics.median(capexs)
+            # Ưu tiên capex 3 KỲ GẦN NHẤT (không median toàn lịch sử) — công ty
+            # vừa qua đỉnh đầu tư (VD: HPG hậu Dung Quất 2, capex/DT lịch sử
+            # 3%-49%) sẽ bị chiếu nhầm capex thời xây dựng cho cả 5 năm tới nếu
+            # trộn lẫn với giai đoạn cũ. 3 kỳ = cùng cửa sổ với effective_tax
+            # bên dưới, đủ mượt để không bị lệch bởi 1 kỳ TTM nhiễu.
+            # Điều tra 2026-07, xem DECISIONS.md.
+            recent_cf, recent_is = historical_cf[-3:], historical_is[-3:]
+            capexs_recent = [cf.capex / is_rec.revenue for cf, is_rec in zip(recent_cf, recent_is) if is_rec.revenue > 0]
+            if capexs_recent:
+                capex_to_rev = statistics.median(capexs_recent)
+            else:
+                capexs_all = [cf.capex / is_rec.revenue for cf, is_rec in zip(historical_cf, historical_is) if is_rec.revenue > 0]
+                if capexs_all:
+                    capex_to_rev = statistics.median(capexs_all)
 
             deprs = [cf.depreciation / is_rec.revenue for cf, is_rec in zip(historical_cf, historical_is) if is_rec.revenue > 0 and cf.depreciation > 0]
             if deprs:

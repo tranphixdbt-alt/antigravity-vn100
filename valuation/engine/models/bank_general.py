@@ -43,16 +43,35 @@ class BankGeneralValuationModel:
         # Dự phóng
         self.projections = projections if projections is not None else forecast_bank_financials(self.company)
 
-        # B3: Fade ROE dài hạn (terminal_roe) về mức bền vững, cap tối đa 15%
+        # B3: Fade ROE dài hạn (terminal_roe) về mức bền vững, TRẦN THEO TIER
+        # chất lượng (không dùng 1 trần cứng cho mọi ngân hàng).
+        #
+        # Trần cứng 15% cho MỌI ngân hàng (bản trước) xoá sạch phần bù chất
+        # lượng: ngân hàng top-tier (VCB/ACB/MBB/HDB/VIB, ROE lịch sử bền vững
+        # >18% nhiều năm liền) bị ép về ĐÚNG mức ngân hàng trung bình (BID/CTG
+        # ~15%), trong khi thị trường trả P/B cao hơn hẳn cho nhóm top-tier
+        # (VD: VCB P/B thị trường ~2.16x vs ACB ~1.17x — model cũ chỉ phân
+        # hoá được ~5%). Hệ quả: undervaluation hệ thống đúng nhóm ngân hàng
+        # tốt nhất — điều tra 2026-07, xem DECISIONS.md.
+        #
+        # Quy tắc mới: ngân hàng có sustainable_roe lịch sử > ELITE_ROE_THRESHOLD
+        # (đã bền vững nhiều năm, không phải đột biến 1 kỳ) được trần cao hơn
+        # (ELITE_ROE_CAP). Ngân hàng còn lại giữ trần cũ (STANDARD_ROE_CAP) —
+        # vẫn chống "upside ảo" cho ngân hàng trung bình/yếu.
+        ELITE_ROE_THRESHOLD = 0.18
+        ELITE_ROE_CAP = 0.20
+        STANDARD_ROE_CAP = 0.15
+
         hist_equity = self.base_bs.total_equity
         hist_ni = self.base_is.net_income
         roe_ttm = hist_ni / hist_equity if hist_equity > 0 else 0.18
-        
+
         sustainable_roe = getattr(self.assumptions, "sustainable_roe", None)
         if sustainable_roe and sustainable_roe > 0:
-            self.terminal_roe = min(sustainable_roe, 0.15)
+            cap = ELITE_ROE_CAP if sustainable_roe > ELITE_ROE_THRESHOLD else STANDARD_ROE_CAP
+            self.terminal_roe = min(sustainable_roe, cap)
         else:
-            self.terminal_roe = min(0.15, roe_ttm if roe_ttm > 0 else 0.15)
+            self.terminal_roe = min(STANDARD_ROE_CAP, roe_ttm if roe_ttm > 0 else STANDARD_ROE_CAP)
 
     def calculate_residual_income(self) -> Dict[str, float]:
         """Tính giá trị hợp lý theo phương pháp Residual Income (Excess Return)."""
