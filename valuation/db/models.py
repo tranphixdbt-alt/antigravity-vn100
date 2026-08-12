@@ -141,7 +141,7 @@ class DailySignal(Base):
 
 class Consensus(Base):
     __tablename__ = "consensus_history"
-    
+
     ticker = Column(String, ForeignKey("tickers.ticker"), primary_key=True)
     broker = Column(String, primary_key=True)
     report_date = Column(Date, primary_key=True)
@@ -150,6 +150,17 @@ class Consensus(Base):
     source_url = Column(String)
     raw_quote = Column(String)
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # --- D24: chất lượng dữ liệu đồng thuận ---
+    # `broker` nằm trong PRIMARY KEY nên KHÔNG được sửa tại chỗ (luật vàng #6).
+    # Tên chuẩn hoá ghi vào cột riêng; mọi reader dùng COALESCE(broker_canon, broker).
+    broker_canon = Column(String, nullable=True)
+    source_site = Column(String, nullable=True)   # 24HMONEY | SIMPLIZE | VNSTOCK | UNKNOWN
+    # Dòng seed để test (scratch/run_consensus_collector.py) — phải loại khỏi
+    # mọi thống kê, nếu không sẽ lẫn với dữ liệu cào thật mà không phân biệt được.
+    is_synthetic = Column(Boolean, nullable=False, server_default="false", default=False)
+    report_title = Column(String, nullable=True)
+    currency_unit = Column(String, nullable=True, server_default="VND", default="VND")
 
 class ConsensusSynthesis(Base):
     """Bản AI tổng hợp điểm chung/riêng/mấu chốt từ nhiều báo cáo CTCK cho 1 mã.
@@ -193,3 +204,94 @@ class ValuationRun(Base):
     report_path = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
+
+
+class CalibrationRunRow(Base):
+    """Một lần chạy hiệu chuẩn toàn VN100 (DECISIONS.md D23).
+
+    Lưu lịch sử để trả lời được "thay đổi vừa rồi làm tốt lên hay xấu đi?" — thứ
+    sprint 2026-07 không có, nên bank overshoot từ -25% sang +10.7% mà không ai biết.
+    `label` UNIQUE ⇒ chạy lại cùng label là ghi đè, không nhân đôi.
+    """
+    __tablename__ = "calibration_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    label = Column(String, nullable=False, unique=True)
+    git_sha = Column(String)
+    as_of = Column(Date, nullable=False)
+    window_days = Column(Integer, default=180)
+    dedup_mode = Column(String)          # 'latest_per_broker'
+    weighting = Column(String)           # 'none' | 'halflife_90d'
+    engine_config = Column(JSON)         # snapshot config ảnh hưởng định giá
+
+    n_tickers = Column(Integer)
+    n_valued = Column(Integer)
+    n_with_consensus = Column(Integer)
+    median_dev_vs_consensus = Column(Numeric)
+    median_abs_dev_vs_consensus = Column(Numeric)
+    share_in_band = Column(Numeric)
+    median_dev_vs_price = Column(Numeric)
+    n_below_price = Column(Integer)
+    n_below_price_40 = Column(Integer)
+    aggregates = Column(JSON)            # per-method / per-sector đầy đủ
+
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CalibrationObservation(Base):
+    """Kết quả đo của 1 mã trong 1 lần chạy hiệu chuẩn."""
+    __tablename__ = "calibration_observations"
+
+    run_id = Column(Integer, ForeignKey("calibration_runs.id", ondelete="CASCADE"), primary_key=True)
+    ticker = Column(String, primary_key=True)
+    method = Column(String)
+    sector_group = Column(String)
+    business_nature = Column(String)
+
+    fair_value = Column(Numeric)
+    market_price = Column(Numeric)
+    consensus_median = Column(Numeric)
+    consensus_weighted = Column(Numeric)
+    n_brokers = Column(Integer)
+    consensus_min = Column(Numeric)
+    consensus_max = Column(Numeric)
+    consensus_age_days = Column(Integer)
+
+    dev_vs_consensus = Column(Numeric)   # (FV - median CTCK)/median
+    dev_vs_price = Column(Numeric)       # (FV - thị giá)/thị giá — sanity độc lập CTCK
+    band = Column(Numeric)
+    band_status = Column(String)         # IN_BAND | OUT_HIGH | OUT_LOW | NO_CONSENSUS | ERROR
+    governance_status = Column(String)   # OK | MISSING_JUSTIFICATION | KNOWN_DEFECT | ...
+    registry_status = Column(String)
+    registry_thesis = Column(String)
+
+    flags = Column(JSON)
+    error = Column(String)
+
+
+class ConsensusReportText(Base):
+    """Luận điểm CÔNG KHAI của báo cáo CTCK + kết quả bóc tách (D31).
+
+    Tách khỏi `consensus_history` vì khác cardinality và khác nhịp refresh; giữ
+    bảng số liệu đồng thuận sạch, không lẫn văn bản dài.
+
+    NGUỒN: chỉ trang tóm tắt công khai trên 24hmoney và tiêu đề Simplize.
+    KHÔNG tải PDF báo cáo gốc — giữ nguyên quyết định bản quyền của dự án
+    (broker_24hmoney.py:74-78, AGENTS.md mục 5).
+    """
+    __tablename__ = "consensus_report_text"
+
+    ticker = Column(String, primary_key=True)
+    broker_canon = Column(String, primary_key=True)
+    report_date = Column(Date, primary_key=True)
+    source_site = Column(String, primary_key=True)   # 24HMONEY | SIMPLIZE
+
+    detail_url = Column(String)
+    title = Column(String)
+    summary_text = Column(String)
+    lang = Column(String, default="vi")
+
+    extracted = Column(JSON)          # kết quả bóc tách tất định (regex)
+    extract_version = Column(String)  # đổi version -> biết cần bóc lại
+    fetched_at = Column(DateTime(timezone=True), server_default=func.now())

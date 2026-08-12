@@ -96,6 +96,24 @@ try:
     from valuation.views.input_assumptions import render_input_assumptions
     from valuation.views.results import render_valuation_results
     
+    # Auto Weekly Freshness Check Hook on Startup
+    if "auto_weekly_check_done" not in st.session_state:
+        from valuation.data_access.freshness_checker import check_data_freshness
+        freshness_status = check_data_freshness(db_read, threshold_days=7)
+        if freshness_status.is_stale:
+            st.warning(
+                f"🚨 **Phát hiện dữ liệu hệ thống đã cũ (Cập nhật {freshness_status.days_since_price} ngày trước).** "
+                f"Đang tự động khởi chạy tiến trình quét BCTC Quý/Năm, Báo cáo định giá CTCK và Giá thị trường mới nhất...",
+                icon="⚠️"
+            )
+            import threading
+            from valuation.ingest.weekly_updater import run_weekly_auto_update
+            def _auto_bg():
+                run_weekly_auto_update(db_read, db_write)
+            threading.Thread(target=_auto_bg, daemon=True).start()
+            st.toast("🚀 Đã tự động kích hoạt tiến trình cập nhật BCTC & Báo cáo CTCK hàng tuần ngầm dưới nền!", icon="🔄")
+        st.session_state["auto_weekly_check_done"] = True
+
     # Render sidebar
     render_select_ticker(db_read, db_write)
     
@@ -203,10 +221,31 @@ try:
                 st.error(f"- {warn}")
                 
         # 3. Hiển thị Summary Banner (Premium Styling)
-        rec_color = "#10B981" if rec == "BUY" else ("#F59E0B" if rec in ["HOLD", "TRIM"] else "#EF4444")
-        bg_color = "#F0FDF4" if rec == "BUY" else ("#FFFBEB" if rec in ["HOLD", "TRIM"] else "#FEF2F2")
-        text_color = "#166534" if rec == "BUY" else ("#92400E" if rec in ["HOLD", "TRIM"] else "#991B1B")
+        # NOT_RATED phải TRUNG TÍNH (xám), không tô đỏ: "chưa đủ cơ sở định giá"
+        # hoàn toàn khác "khuyến nghị bán" — tô đỏ sẽ khiến người đọc hiểu nhầm
+        # thành tín hiệu tiêu cực (D28).
+        if rec == "NOT_RATED":
+            rec_color, bg_color, text_color = "#64748B", "#F8FAFC", "#334155"
+        elif rec == "BUY":
+            rec_color, bg_color, text_color = "#10B981", "#F0FDF4", "#166534"
+        elif rec in ["HOLD", "TRIM"]:
+            rec_color, bg_color, text_color = "#F59E0B", "#FFFBEB", "#92400E"
+        else:
+            rec_color, bg_color, text_color = "#EF4444", "#FEF2F2", "#991B1B"
         
+        # Với NOT_RATED, KHÔNG hiển thị giá mục tiêu và upside — đó chính là con
+        # số hệ thống vừa tuyên bố là không đáng tin. Hiện nó ra rồi dán nhãn
+        # "không định giá được" là tự mâu thuẫn, và người đọc sẽ nhớ con số.
+        if rec == "NOT_RATED":
+            _headline = "CHƯA ĐỦ CƠ SỞ ĐỊNH GIÁ"
+            _right = ("<span style='color:#64748B;font-size:13px;font-weight:500;'>"
+                      "Không công bố giá mục tiêu</span>")
+        else:
+            _headline = f"{rec} · Giá MT {blended_fv:,.0f} VND"
+            _right = (f"<h2 style=\"color: {text_color}; margin: 6px 0 0 0; font-size: 32px; "
+                      f"font-weight: 800; font-family: 'Outfit', sans-serif;\">"
+                      f"Upside {upside:+.1f}%</h2>")
+
         st.markdown(
             f"""
             <div style="background-color: {bg_color}; padding: 24px; border-radius: 12px; border-left: 8px solid {rec_color}; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);">
@@ -216,20 +255,26 @@ try:
                             {scenario_company.ticker} · {scenario_company.sector} · cập nhật thời gian thực
                         </span>
                         <h1 style="color: {text_color}; margin: 6px 0 0 0; font-size: 36px; font-weight: 800; font-family: 'Outfit', sans-serif; letter-spacing: -0.02em;">
-                            {rec} · Giá MT {blended_fv:,.0f} VND
+                            {_headline}
                         </h1>
                     </div>
                     <div style="text-align: right;">
                         <span style="color: #64748B; font-size: 13px; font-weight: 500;">Giá thị trường: {scenario_company.current_price:,.0f} VND</span>
-                        <h2 style="color: {text_color}; margin: 6px 0 0 0; font-size: 32px; font-weight: 800; font-family: 'Outfit', sans-serif;">
-                            Upside {upside:+.1f}%
-                        </h2>
+                        {_right}
                     </div>
                 </div>
             </div>
             """,
             unsafe_allow_html=True
         )
+        if rec == "NOT_RATED":
+            st.warning(
+                "Mô hình **không đủ cơ sở** để định giá mã này (phương pháp proxy cho ra "
+                "kết quả lệch phi lý so thị giá). Hệ thống cố ý **không công bố giá mục "
+                "tiêu và không đưa khuyến nghị** thay vì đưa ra một con số không đáng tin. "
+                "Xem cờ định giá bên dưới để biết cần bổ sung dữ liệu gì.",
+                icon="🚫",
+            )
         
         # Hard Gates & Governance Section
         violations = decision.get("hard_gates_violations", [])
@@ -258,11 +303,14 @@ try:
                     st.info(text, icon="ℹ️")
 
 
-        tab1, tab2, tab3, tab4 = st.tabs([
+        from valuation.views.tradingview_chart import render_tradingview_widget
+
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Báo cáo Tài chính Lịch sử & Dự phóng",
             "⚙️ Giả định & Tham số Dự phóng",
             "🏆 Kết quả Định giá & Quan điểm",
-            "🏦 So sánh CTCK"
+            "🏦 So sánh CTCK",
+            "📈 Biểu đồ Kỹ thuật TradingView"
         ])
 
         with tab1:
@@ -277,6 +325,11 @@ try:
         with tab4:
             from valuation.views.consensus_compare import render_consensus_compare
             render_consensus_compare(company, blended_fv, db_write)
+
+        with tab5:
+            st.subheader(f"📈 Biểu Đồ Kỹ Thuật & Công Cụ Vẽ TradingView ({company.ticker})")
+            st.caption("💡 Sử dụng đầy đủ thanh công cụ phía bên trái biểu đồ để vẽ đường xu hướng (Trendline), Fibonacci, đo khoảng giá, vẽ hình khối, và chèn các chỉ báo kỹ thuật (RSI, MACD, MA, Volume).")
+            render_tradingview_widget(company.ticker, height=680, key_prefix="chart_tab")
     else:
         st.info("👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.", icon="ℹ️")
 

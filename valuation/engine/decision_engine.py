@@ -8,12 +8,16 @@ class InvestmentDecisionMaker:
     Quyết định hành động đầu tư dựa trên Hard Gates và Dynamic Margin of Safety (MOS).
     """
 
-    def __init__(self, business_nature: str, current_price: float, fair_value: float, governance: GovernanceData, macro_env: MacroEnvironment = None):
+    def __init__(self, business_nature: str, current_price: float, fair_value: float, governance: GovernanceData, macro_env: MacroEnvironment = None, not_rated: bool = False):
         self.business_nature = business_nature
         self.current_price = current_price
         self.fair_value = fair_value
         self.governance = governance
         self.macro_env = macro_env
+        # D28: mô hình tự nhận không đủ cơ sở định giá mã này (vd proxy SOTP lệch
+        # phi lý so thị giá). Khi đó KHÔNG được phát khuyến nghị MUA/BÁN — đưa ra
+        # khuyến nghị từ một con số mình không tin là điều tệ hơn cả im lặng.
+        self.not_rated = not_rated
 
     def get_target_mos(self) -> float:
         """
@@ -69,6 +73,10 @@ class InvestmentDecisionMaker:
         _EPS = 1e-9
         if len(hard_gates_violations) > 0:
             recommendation = "HARD REJECT"
+        elif self.not_rated:
+            # Hard gates vẫn ưu tiên cao hơn (rủi ro quản trị là thông tin có
+            # giá trị kể cả khi không định giá được).
+            recommendation = "NOT_RATED"
         elif upside >= target_mos_pct - _EPS:
             recommendation = "BUY"
         elif upside >= -_EPS:

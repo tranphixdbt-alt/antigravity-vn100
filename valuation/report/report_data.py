@@ -18,11 +18,14 @@ Khuôn 11 phần:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from valuation.config import load_defaults
 from valuation.models.financials import Company
 from valuation.models.financials_bank import CompanyBank
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -250,50 +253,46 @@ def build_consensus_comparison(ticker: str, blended_fv: float, db=None,
         return None
     try:
         import datetime
-        from valuation.engine.consensus_helper import get_consensus_stats, get_synthesis
-        from valuation.db.models import Consensus
+        from valuation.calibration.consensus_view import get_consensus_view
+        from valuation.engine.consensus_helper import get_synthesis
 
         today = datetime.date.today()
-        stats = get_consensus_stats(ticker, today, db)
-        median = stats.get("median")
+
+        # Dùng NGUỒN ĐỌC DUY NHẤT (D23): trước đây hàm này tự dedup theo CTCK còn
+        # KPI median lại lấy từ get_consensus_stats (không dedup) → hai số lệch nhau
+        # trên cùng màn hình. Nay median và bảng chi tiết cùng từ một `view`.
+        view = get_consensus_view(db, ticker, as_of=today, window_days=180)
+        median = view.median
         if not median:
             return None
         deviation = (blended_fv - median) / median
 
-        # Bảng từng CTCK: báo cáo MỚI NHẤT của mỗi CTCK trong 180 ngày,
-        # sắp xếp giá mục tiêu giảm dần để đọc như football field.
-        start = today - datetime.timedelta(days=180)
-        records = (db.query(Consensus)
-                   .filter(Consensus.ticker == ticker,
-                           Consensus.report_date >= start,
-                           Consensus.report_date <= today,
-                           Consensus.target_price.isnot(None))
-                   .order_by(Consensus.report_date.desc())
-                   .all())
-        latest_by_broker: Dict[str, Any] = {}
-        for r in records:  # records đã sort mới→cũ nên lần gặp đầu là mới nhất
-            if r.broker not in latest_by_broker:
-                latest_by_broker[r.broker] = r
-        broker_rows = []
-        for r in latest_by_broker.values():
-            tp = float(r.target_price)
-            if tp <= 0:
-                continue
-            broker_rows.append({
-                "broker": r.broker,
-                "report_date": r.report_date.strftime("%d/%m/%Y"),
-                "target_price": tp,
-                "rating": r.rating or "—",
+        # Bảng từng CTCK: báo cáo MỚI NHẤT của mỗi CTCK, sắp xếp giá mục tiêu
+        # giảm dần để đọc như football field.
+        broker_rows = [
+            {
+                "broker": q.broker,
+                "report_date": q.report_date.strftime("%d/%m/%Y"),
+                "target_price": q.target_price,
+                "rating": q.rating or "—",
                 # Chênh lệch của MÔ HÌNH so với CTCK này (dương = mô hình cao hơn)
-                "vs_model": (blended_fv - tp) / tp,
-                "age_days": (today - r.report_date).days,
-            })
-        broker_rows.sort(key=lambda x: x["target_price"], reverse=True)
+                "vs_model": (blended_fv - q.target_price) / q.target_price,
+                "age_days": q.age_days,
+            }
+            for q in view.quotes
+        ]
 
         tps = [b["target_price"] for b in broker_rows]
         out = {
             "consensus_median": median,
-            "n_reports": stats.get("count", 0),
+            # Số CTCK theo dõi (đã dedup) — khớp đúng số dòng bảng bên dưới.
+            "n_reports": view.count,
+            "n_reports_raw": view.n_reports_raw,
+            "consensus_weighted": view.weighted_median,
+            "consensus_stale": view.stale,
+            # Quá ít CTCK để gọi là "đồng thuận" — báo cáo phải nói rõ, tránh
+            # trình bày ý kiến của 1 CTCK như quan điểm thị trường.
+            "consensus_thin": view.thin,
             "our_target": blended_fv,
             "deviation": deviation,
             "flag_high": abs(deviation) > 0.25,
@@ -304,10 +303,43 @@ def build_consensus_comparison(ticker: str, blended_fv: float, db=None,
             "range_min": min(tps) if tps else None,
             "range_max": max(tps) if tps else None,
             "synthesis": get_synthesis(ticker, db),  # None nếu chưa chạy AI tổng hợp
+            "calibration": _calibration_note(ticker, deviation),  # D25
         }
         return out
     except Exception:
+        logger.warning(f"build_consensus_comparison({ticker}) lỗi, bỏ qua tab So sánh CTCK", exc_info=True)
         return None  # thiếu bảng/không có dữ liệu → bỏ qua phần này
+
+
+def _calibration_note(ticker: str, deviation: float) -> Optional[Dict[str, Any]]:
+    """Kết luận hiệu chuẩn của 1 mã để hiển thị kèm bảng so sánh CTCK (D25).
+
+    Trả về band đang áp dụng, mã có nằm trong band không, và — quan trọng nhất —
+    LUẬN ĐIỂM giải trình nếu mô hình cố ý lệch. Người đọc cần biết "lệch vì
+    chúng tôi tin X" hay "lệch vì đang có lỗi đã biết", chứ không chỉ thấy con số.
+    """
+    try:
+        from valuation.calibration.metrics import classify_band
+        from valuation.calibration.registry import band_for, govern, load_registry
+        from valuation.engine.sector_router import route
+
+        registry = load_registry()
+        plan = route(ticker) or {}
+        band = band_for(ticker, plan.get("method"), registry)
+        band_status = classify_band(deviation, band)
+        gov_status, entry = govern(ticker, band_status, registry)
+        return {
+            "band": band,
+            "band_status": band_status,
+            "governance_status": gov_status,
+            "thesis": (entry.thesis if entry else ""),
+            "evidence": list(entry.evidence) if entry else [],
+            "decision_ref": (entry.decision_ref if entry else None),
+            "reviewed_on": (entry.reviewed_on.isoformat() if entry and entry.reviewed_on else None),
+        }
+    except Exception:
+        logger.warning(f"_calibration_note({ticker}) lỗi", exc_info=True)
+        return None
 
 
 # ---------------------------------------------------------------------------

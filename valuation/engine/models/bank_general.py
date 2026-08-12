@@ -4,6 +4,7 @@ Kế thừa tinh hoa từ VCB model và mở rộng cho tất cả các ngân h�
 """
 from typing import Dict, Any, List
 import numpy as np
+from valuation.config import load_defaults
 from valuation.models.financials_bank import CompanyBank
 from valuation.engine.forecast_bank import forecast_bank_financials
 
@@ -58,20 +59,63 @@ class BankGeneralValuationModel:
         # (đã bền vững nhiều năm, không phải đột biến 1 kỳ) được trần cao hơn
         # (ELITE_ROE_CAP). Ngân hàng còn lại giữ trần cũ (STANDARD_ROE_CAP) —
         # vẫn chống "upside ảo" cho ngân hàng trung bình/yếu.
-        ELITE_ROE_THRESHOLD = 0.18
-        ELITE_ROE_CAP = 0.20
-        STANDARD_ROE_CAP = 0.15
+        # D29 — BỎ HỆ THỐNG TIER, DÙNG MỘT TRẦN DUY NHẤT.
+        #
+        # Hệ thống tier của D20 (ngưỡng 18% -> trần 20%, dưới -> trần 15%) tạo một
+        # VÁCH ĐỨNG phi kinh tế: ngân hàng ROE 17,9% bị ép về 15%, ngân hàng 18,1%
+        # được giữ 20% — chênh 0,2pp đầu vào tạo ra chênh 5pp đầu ra, tức ~40% giá
+        # trị. Tier đó sinh ra để CHỮA TRIỆU CHỨNG của một ước lượng tồi (trung
+        # bình toàn lịch sử, gồm cả đỉnh chu kỳ). D29 sửa thẳng ước lượng
+        # (median cửa sổ gần nhất, xem repo.py) nên tier trở thành thừa và có hại.
+        _cfg = load_defaults().get("bank_terminal", {}) or {}
+        ROE_CAP = float(_cfg.get("terminal_roe_cap", 0.20))
+        ROE_FLOOR = float(_cfg.get("terminal_roe_floor", 0.0))
 
         hist_equity = self.base_bs.total_equity
         hist_ni = self.base_is.net_income
-        roe_ttm = hist_ni / hist_equity if hist_equity > 0 else 0.18
+        roe_ttm = hist_ni / hist_equity if hist_equity > 0 else ROE_CAP
 
         sustainable_roe = getattr(self.assumptions, "sustainable_roe", None)
-        if sustainable_roe and sustainable_roe > 0:
-            cap = ELITE_ROE_CAP if sustainable_roe > ELITE_ROE_THRESHOLD else STANDARD_ROE_CAP
-            self.terminal_roe = min(sustainable_roe, cap)
-        else:
-            self.terminal_roe = min(STANDARD_ROE_CAP, roe_ttm if roe_ttm > 0 else STANDARD_ROE_CAP)
+        raw_roe = sustainable_roe if (sustainable_roe and sustainable_roe > 0) else roe_ttm
+        self.terminal_roe = min(max(raw_roe, ROE_FLOOR), ROE_CAP)
+        if raw_roe > ROE_CAP:
+            self.company.warnings.append(
+                f"BANK_TERMINAL_ROE_CAPPED: ROE bền vững {raw_roe:.1%} vượt trần "
+                f"{ROE_CAP:.0%} — một ngân hàng không thể duy trì vĩnh viễn mức sinh "
+                f"lời này dưới áp lực cạnh tranh và tích luỹ vốn."
+            )
+
+        # Kiểm tra NHẤT QUÁN GORDON: công thức Target P/B = (ROE-g)/(COE-g) chỉ
+        # đúng khi tỷ lệ chi trả cổ tức ở trạng thái dừng thoả g = ROE × (1-payout),
+        # tức payout* = 1 - g/ROE. Nếu payout dùng trong giai đoạn dự phóng lệch
+        # quá xa payout* thì hai khối đang mô tả hai thế giới khác nhau.
+        self._check_terminal_consistency()
+
+    def _check_terminal_consistency(self) -> None:
+        """Cảnh báo khi trạng thái dừng KHÔNG THỂ TỒN TẠI về mặt toán học.
+
+        Gordon: ở trạng thái dừng, g = ROE × (1 − payout) ⇒ payout* = 1 − g/ROE.
+
+        LƯU Ý CÓ CHỦ Ý — chỉ cảnh báo ca payout* <= 0 (tức ROE <= g): khi đó ngân
+        hàng phải PHÁT HÀNH THÊM VỐN vĩnh viễn để tăng trưởng bằng g trong khi sinh
+        lời thấp hơn g, một trạng thái dừng không tồn tại.
+
+        Bản đầu của D29 cảnh báo mỗi khi payout* lệch payout dự phóng quá 30pp —
+        và nó bắn ở 15/17 ngân hàng, tức thành NHIỄU chứ không phải tín hiệu.
+        Nghĩ lại: chênh lệch đó là BẢN CHẤT của mọi mô hình 2 giai đoạn (giai đoạn
+        đầu giữ lại lợi nhuận để tăng trưởng, trạng thái dừng chi trả gần hết) —
+        Damodaran nói rõ phải điều chỉnh payout cho khớp g và ROE ở giai đoạn dừng.
+        Cảnh báo cái bình thường sẽ làm người đọc bỏ qua cả cảnh báo thật.
+        """
+        if self.terminal_roe <= 0:
+            return
+        implied_payout = 1.0 - (self.g / self.terminal_roe)
+        if implied_payout <= 0:
+            self.company.warnings.append(
+                f"TERMINAL_IMPOSSIBLE: ROE bền vững {self.terminal_roe:.1%} <= tăng "
+                f"trưởng vĩnh viễn g {self.g:.1%}. Trạng thái dừng này đòi ngân hàng "
+                f"phát hành thêm vốn vĩnh viễn — không tồn tại. Rà lại ROE hoặc g."
+            )
 
     def calculate_residual_income(self) -> Dict[str, float]:
         """Tính giá trị hợp lý theo phương pháp Residual Income (Excess Return)."""
@@ -123,19 +167,42 @@ class BankGeneralValuationModel:
         else:
             target_pb = (long_term_roe - self.g) / (self.coe - self.g)
             
-        # Giới hạn floor tối thiểu cho target_pb
-        target_pb = max(0.3, target_pb)
-        
+        # D29 — có SÀN thì phải có TRẦN. Trước đây chỉ `max(0.3, ...)`, không có
+        # giới hạn trên: ACB ra 1,82x trong khi thị trường trả 1,17x mà không có
+        # gì chặn lại. Ngưỡng lấy từ config (luật vàng #5).
+        _cfg = load_defaults().get("bank_terminal", {}) or {}
+        pb_floor = float(_cfg.get("target_pb_floor", 0.3))
+        pb_ceiling = float(_cfg.get("target_pb_ceiling", 3.0))
+        raw_pb = target_pb
+        target_pb = max(pb_floor, min(target_pb, pb_ceiling))
+        if raw_pb < pb_floor:
+            self.company.warnings.append(
+                f"BANK_PB_CLAMPED_LOW: P/B lý thuyết {raw_pb:.2f}x -> sàn {pb_floor:.2f}x")
+        elif raw_pb > pb_ceiling:
+            self.company.warnings.append(
+                f"BANK_PB_CLAMPED_HIGH: P/B lý thuyết {raw_pb:.2f}x -> trần {pb_ceiling:.2f}x")
+
         total_pb_equity_value = target_pb * self.base_bs.total_equity
         pb_fvps = (total_pb_equity_value / self.company.shares_outstanding) * 1000.0 if self.company.shares_outstanding > 0 else 0.0
-        
+
+        # So P/B mục tiêu với P/B THỊ TRƯỜNG — phép thử độc lập với đồng thuận CTCK.
+        # Không ép khớp thị trường, nhưng lệch xa thì phải có luận điểm.
+        from valuation.engine.guardrails import check_implied_pb, market_pb
+        _mkt_pb = market_pb(
+            self.company.current_price,
+            self.base_bs.total_equity * 1e9,
+            self.company.shares_outstanding * 1e6,
+        )
+        for _f in check_implied_pb(target_pb, _mkt_pb, label="BANK_PB"):
+            self.company.warnings.append(_f)
+
         # Implied P/B sanity check warning
         if target_pb > 4.0 or target_pb < 0.5:
             self.company.warnings.append(
                 f"IMPLIED_PB_WARNING: P/B ngầm định Justified P/B = {target_pb:.2f}x "
                 f"nằm ngoài khoảng hợp lý [0.5, 4.0]. ROE={long_term_roe:.2%}, COE={self.coe:.2%}, g={self.g:.2%}."
             )
-            
+
         return {
             "long_term_roe": long_term_roe,
             "target_pb": target_pb,

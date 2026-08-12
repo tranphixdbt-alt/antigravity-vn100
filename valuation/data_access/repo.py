@@ -62,6 +62,34 @@ BANK_KEYWORDS = {
     "total_equity": ["owners_equity", "shareholders_equity", "Vốn chủ sở hữu"],
 }
 
+def _quarterly_revenues(db: Session, ticker: str) -> List[float]:
+    """Doanh thu thuần theo TỪNG QUÝ, sắp xếp cũ -> mới (D32).
+
+    Dùng cho động lượng năm gốc dự phóng. Dữ liệu quý vốn đã có sẵn trong DB
+    nhưng `build_company_data` chỉ dùng nó để ráp thành năm — thông tin về xu
+    hướng gần đây bị mất trong lúc gộp.
+    """
+    rows = (
+        db.query(FinancialsQuarterly)
+        .filter(FinancialsQuarterly.ticker == ticker,
+                FinancialsQuarterly.statement == "IS")
+        .all()
+    )
+    by_period: Dict[tuple, Dict[str, float]] = {}
+    for r in rows:
+        if r.fiscal_quarter is None or r.fiscal_quarter == 0:
+            continue  # bỏ dòng năm, chỉ lấy quý
+        key = (r.fiscal_year, r.fiscal_quarter)
+        by_period.setdefault(key, {})[r.line_item] = float(r.value or 0.0)
+
+    out: List[float] = []
+    for key in sorted(by_period):
+        rev = _match_value(by_period[key], NON_FIN_KEYWORDS["revenue"])
+        if rev and rev > 0:
+            out.append(rev)
+    return out
+
+
 def _match_value(data: Dict[str, float], keywords: List[str], fallback: float = 0.0) -> float:
     """Tìm giá trị khớp với từ khóa trong dict dữ liệu."""
     for kw in keywords:
@@ -121,7 +149,7 @@ def get_shares_outstanding_repo(db: Session, ticker: str) -> float:
     except Exception:
         return 1000.0  # Fallback 1000 triệu cp
 
-def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Company, CompanyBank]:
+def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: bool = False) -> Union[Company, CompanyBank]:
     """
     Truy vấn dữ liệu tài chính lịch sử, quy đổi kỳ báo cáo và đơn vị,
     trả về đối tượng Pydantic Company (phi tài chính) hoặc CompanyBank (ngân hàng).
@@ -131,7 +159,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         raise ValueError(f"Không tìm thấy ticker {ticker} trong DB")
 
     is_bank = meta.sector == "Banks"
-    current_price = get_latest_price(db, ticker)
+    current_price = get_latest_price(db, ticker, fetch_live=fetch_live)
     shares = get_shares_outstanding_repo(db, ticker)
 
     # 1. Truy vấn toàn bộ dữ liệu quý của ticker
@@ -375,12 +403,23 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         cir = [cir_val, cir_val, cir_val - 0.005, cir_val - 0.005, cir_val - 0.01]
         credit_cost = [cc_val, cc_val, cc_val, cc_val - 0.001, cc_val - 0.001]
 
-        # ROE bền vững
-        avg_roe = 0.18
+        # ROE bền vững — D29: MEDIAN cửa sổ gần nhất, KHÔNG phải trung bình toàn lịch sử.
+        #
+        # Cách cũ `sum(roes)/len(roes)` trộn đỉnh chu kỳ 2018-2021 vào ước lượng
+        # "bền vững": ACB ra 20,8% trong khi ROE thực tế đang phai rõ rệt
+        # 23%→20%→17%→16%. Vì Target P/B = (ROE-g)/(COE-g) CỰC nhạy với ROE, sai
+        # số này đẩy thẳng vào định giá — là nguyên nhân gốc của overshoot D20.
+        #
+        # Median (không phải trung bình) để một quý đột biến không kéo lệch ước lượng.
+        _bank_cfg = config_defaults.get("bank_terminal", {}) or {}
+        _roe_window = int(_bank_cfg.get("roe_window", 3))
+        avg_roe = float(_bank_cfg.get("roe_fallback", 0.15))
         if historical_bs and historical_is:
-            roes = [historical_is[i].net_income / historical_bs[i].total_equity for i in range(len(historical_bs)) if historical_bs[i].total_equity > 0]
+            roes = [historical_is[i].net_income / historical_bs[i].total_equity
+                    for i in range(len(historical_bs)) if historical_bs[i].total_equity > 0]
             if roes:
-                avg_roe = sum(roes) / len(roes)
+                import statistics as _stats
+                avg_roe = _stats.median(roes[-_roe_window:])
 
         assumptions_bank = AssumptionsBank(
             risk_free_rate=rf_dynamic,
@@ -547,7 +586,26 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM") -> Union[Com
         # Revenue growth FADE từ median lịch sử (năm 1) về tăng trưởng GDP danh nghĩa
         # dài hạn (năm 5) — mean-reversion, chống extrapolate tăng trưởng đỉnh chu kỳ.
         g_lt = config_defaults.get('long_run_nominal_gdp_growth', 0.08)
-        revenue_growth = [med_growth + (g_lt - med_growth) * (k / 4.0) for k in range(5)]
+
+        # D32 — NĂM GỐC DỰ PHÓNG (sau cờ, mặc định TRAILING = y hệt hành vi cũ).
+        # Mô hình vốn dựng năm 1 từ median tăng trưởng LỊCH SỬ, tức nhìn hoàn toàn
+        # về quá khứ, trong khi CTCK định giá trên dự phóng FY+1 — nguồn gốc khoảng
+        # lệch âm cấu trúc của nhóm DCF (-30%).
+        _fwd_flags: List[str] = []
+        _fy1_growth = med_growth
+        from valuation.forecast.base_year import (
+            base_year_mode, build_forward_base, revenue_growth_path,
+        )
+        if base_year_mode() == "FORWARD":
+            _q_rev = _quarterly_revenues(db, ticker)
+            _fwd = build_forward_base(_q_rev, med_growth, sector_group=_sector_for_overlay)
+            _fy1_growth = _fwd.fy1_revenue_growth
+            _fwd_flags = list(_fwd.flags)
+            if _fwd.method == "QUARTERLY_MOMENTUM":
+                _fwd_flags.append(
+                    f"FWD_BASE_YEAR: năm 1 {med_growth:+.1%} (median lịch sử) -> "
+                    f"{_fy1_growth:+.1%} (động lượng 4 quý)")
+        revenue_growth = revenue_growth_path(_fy1_growth, g_lt, years=5)
         revenue_growth = overlay_revenue_growth(revenue_growth, _sector_for_overlay, _macro_ctx)
 
         # Ước lượng debt_repayment_rate và new_borrowing_rate từ lịch sử

@@ -74,18 +74,62 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
     from valuation.models.macro_env import MacroEnvironment
     st.session_state["macro_env"] = MacroEnvironment(inflation_rate=macro_inflation, sbv_stance=macro_sbv)
     
-    # Nút bấm để load dữ liệu
-    if st.sidebar.button("Tải dữ liệu mặc định", use_container_width=True) or "company" not in st.session_state or st.session_state.get("current_ticker") != ticker or st.session_state.get("current_mode") != mode:
-        with st.spinner(f"Đang tải dữ liệu cho {ticker}..."):
+    # --- Nút cập nhật dữ liệu ---
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔄 Cập nhật Dữ liệu & BCTC Hàng tuần")
+
+    # Kiểm tra độ tươi dữ liệu
+    from valuation.data_access.freshness_checker import check_data_freshness
+    freshness = check_data_freshness(db_read)
+    if freshness.is_stale:
+        st.sidebar.error(f"🔴 Dữ liệu đã cũ (Cập nhật {freshness.days_since_price} ngày trước)", icon="⚠️")
+    else:
+        st.sidebar.success(f"🟢 Dữ liệu mới nhất (Cập nhật {freshness.days_since_price} ngày trước)", icon="✅")
+
+    col1, col2 = st.sidebar.columns(2)
+    if col1.button(f"Tải mới {ticker}", use_container_width=True, help="Kéo dữ liệu giá, BCTC và báo cáo khuyến nghị CTCK mới nhất cho mã này."):
+        with st.spinner(f"Đang tải dữ liệu mới cho {ticker}..."):
+            from valuation.ingest.pipeline import run_ingest
+            from valuation.ingest.weekly_updater import _CONSENSUS_SOURCES
+            try:
+                run_ingest(ticker, data_types=['prices', 'financials'], incremental=True)
+                # Dùng chung danh sách nguồn với quét hàng tuần (D24) để nút này
+                # và nút quét VN100 không bao giờ lệch nhau về nguồn dữ liệu.
+                for _src_name, _importer in _CONSENSUS_SOURCES:
+                    try:
+                        _importer(ticker)
+                    except Exception as e_broker:
+                        st.sidebar.warning(f"Không lấy được báo cáo CTCK ({_src_name}) cho {ticker}: {e_broker}")
+                # Xóa cache để bắt buộc tải lại
+                if "company" in st.session_state:
+                    del st.session_state["company"]
+                st.toast(f"Đã cập nhật dữ liệu {ticker} thành công!", icon="✅")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Lỗi khi cập nhật {ticker}: {e}")
+
+    if col2.button("Quét VN100 Hàng Tuần", use_container_width=True, help="Tự động kiểm tra BCTC & Báo cáo định giá CTCK mới nhất cho toàn bộ rổ VN100"):
+        import threading
+        from valuation.ingest.weekly_updater import run_weekly_auto_update
+        def _bg_update():
+            run_weekly_auto_update(db_read, db_write)
+        threading.Thread(target=_bg_update, daemon=True).start()
+        st.toast("🚀 Đã khởi chạy tiến trình quét tự động BCTC & Báo cáo định giá CTCK cho VN100 ngầm dưới nền!", icon="✅")
+
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+    # Nút bấm để load dữ liệu vào màn hình
+    if st.sidebar.button("📊 TẢI DỮ LIỆU ĐỊNH GIÁ", use_container_width=True, type="primary") or "company" not in st.session_state or st.session_state.get("current_ticker") != ticker or st.session_state.get("current_mode") != mode:
+        with st.spinner(f"Đang phân tích dữ liệu {ticker}..."):
             try:
                 company = build_company_data(db_read, ticker, mode=mode)
                 st.session_state["company"] = company
                 st.session_state["current_ticker"] = ticker
                 st.session_state["current_mode"] = mode
                 st.session_state["analyst_assumptions"] = None  # Reset assumptions của analyst
-                st.toast(f"Đã tải thành công dữ liệu {ticker} ({mode})!", icon="✅")
+                st.toast(f"Đã nạp xong mô hình định giá {ticker} ({mode})!", icon="✅")
             except Exception as e:
-                st.error(f"Lỗi khi tải dữ liệu: {e}")
+                st.sidebar.error(f"Lỗi khi nạp dữ liệu: {e}")
                 
     if "company" in st.session_state:
         comp = st.session_state["company"]

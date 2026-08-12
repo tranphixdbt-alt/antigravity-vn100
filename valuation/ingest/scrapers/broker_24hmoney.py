@@ -155,10 +155,17 @@ def import_broker_reports(ticker: str) -> List[Dict[str, Any]]:
     recs = fetch_broker_reports(ticker)
     if not recs:
         return []
+    from valuation.ingest.broker_names import normalize_broker
+
     db = SessionLocalWrite()
     try:
         for rec in recs:
-            stmt = insert(Consensus).values(rec)
+            # D24: ghi kèm tên chuẩn hoá + nguồn để dedup đồng thuận đúng theo
+            # CTCK. `broker` gốc giữ nguyên (nằm trong PK, không sửa tại chỗ).
+            canon, _ = normalize_broker(rec["broker"])
+            row = {**rec, "broker_canon": canon, "source_site": "24HMONEY",
+                   "currency_unit": "VND", "is_synthetic": False}
+            stmt = insert(Consensus).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["ticker", "broker", "report_date"],
                 set_={
@@ -166,6 +173,8 @@ def import_broker_reports(ticker: str) -> List[Dict[str, Any]]:
                     "rating": stmt.excluded.rating,
                     "source_url": stmt.excluded.source_url,
                     "raw_quote": stmt.excluded.raw_quote,
+                    "broker_canon": stmt.excluded.broker_canon,
+                    "source_site": stmt.excluded.source_site,
                 },
             )
             db.execute(stmt)

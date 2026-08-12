@@ -30,6 +30,19 @@ from valuation.report.build_pdf import build_pdf_report
 from valuation.report.build_docx import build_docx_report
 from valuation.report.report_data import build_report_sections
 from valuation.report.ai_narrative import generate_report_narratives, _FALLBACK as NARRATIVE_FALLBACK
+from valuation.views.tradingview_chart import render_tradingview_widget
+
+PLOTLY_CONFIG = {
+    "modeBarButtonsToAdd": [
+        "drawline",
+        "drawopenpath",
+        "drawclosedpath",
+        "drawcircle",
+        "drawrect",
+        "eraseshape",
+    ],
+    "displaylogo": False,
+}
 
 def get_consensus_data_with_decay(db: Session, ticker: str) -> Dict[str, Any]:
     """
@@ -320,7 +333,14 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             font=dict(color="#F8FAFC"), bgcolor="rgba(15, 23, 42, 0.9)", bordercolor="#334155", borderwidth=1
         )
     )
-    st.plotly_chart(fig_ff, use_container_width=True, theme=None)
+    st.plotly_chart(fig_ff, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+
+    # 3.2. TradingView Technical Chart Widget (CÔNG CỤ VẼ KĨ THUẬT)
+    st.markdown("---")
+    st.subheader(f"📈 Biểu Đồ Kỹ Thuật & Công Cụ Vẽ TradingView ({company.ticker})")
+    st.caption("💡 Sử dụng thanh công cụ phía bên trái biểu đồ để vẽ đường xu hướng (Trendline), Fibonacci, đo khoảng giá, vẽ hình khối, và chèn các chỉ báo kỹ thuật (RSI, MACD, MA).")
+    render_tradingview_widget(company.ticker, height=650, key_prefix="results_tab")
+    st.markdown("---")
 
     # 3.5. Waterfall Chart (Dòng tiền định giá - FCFF)
     if not is_bank:
@@ -352,7 +372,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                 height=400,
                 margin=dict(l=40, r=40, t=60, b=40)
             )
-            st.plotly_chart(fig_wf, use_container_width=True, theme=None)
+            st.plotly_chart(fig_wf, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
         else:
             st.info("💡 Biểu đồ Waterfall không khả dụng cho phương pháp định giá hiện tại (không có dòng tiền chi tiết).")
 
@@ -393,7 +413,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         font=dict(color="#F8FAFC", family="Inter"),
         height=400
     )
-    st.plotly_chart(fig_heat, use_container_width=True, theme=None)
+    st.plotly_chart(fig_heat, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
 
     # --- BIỂU ĐỒ DỰ PHÓNG 5 NĂM ---
     _dark_theme_res = dict(

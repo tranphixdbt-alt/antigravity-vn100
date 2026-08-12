@@ -103,6 +103,665 @@ DN capex ổn định qua các kỳ).
 
 ---
 
+## Sprint: Hiệu chuẩn định giá vs đồng thuận CTCK (2026-08)
+
+**Bối cảnh:** đo lại toàn bộ VN100 cho thấy mô hình lệch median **-21.5%** so
+đồng thuận CTCK, nhưng phân hoá rất mạnh theo nhóm phương pháp: PB **-76.1%**,
+SOTP **-58.1%**, PE -29.1%, DCF -26.1%, RNAV -17.1%, còn RI_PB (ngân hàng)
+**+10.7%** — tức sprint D20 (2026-07) đã sửa QUÁ TAY nhóm ngân hàng. Nghiêm
+trọng hơn: **52/97 mã có FV thấp hơn CHÍNH THỊ GIÁ**, 28 mã thấp hơn >40%
+(VIC -91.9%, HCM -73.2%, EIB -71.9%). Lệch so với thị giá là dấu hiệu lỗi mô
+hình độc lập với việc CTCK đúng hay sai.
+
+### D23 — Harness hiệu chuẩn + hàng rào chống hồi quy theo nhóm phương pháp
+
+**Quyết định:** thêm package `valuation/calibration/` đo lệch mô hình vs đồng
+thuận CTCK và vs thị giá cho toàn VN100, lưu lịch sử vào 2 bảng
+(`calibration_runs` unique theo `label` ⇒ idempotent, `calibration_observations`),
+kèm CLI `scripts/run_calibration.py` có `--baseline-label --fail-on-regression`.
+
+**Lý do — bài học D20:** sprint 2026-07 sửa undervaluation ngân hàng làm nhóm
+RI_PB nhảy từ ~-25% sang +10.7% (dịch 35 điểm phần trăm, xuyên qua band ra phía
+bên kia) mà KHÔNG AI PHÁT HIỆN, vì các chỉ số tổng thể khi đó "trông tốt lên"
+(|lệch| median giảm). Không có cơ chế đo giữa hai lần chạy thì mọi thay đổi mô
+hình đều là sửa mù.
+
+**5 rule khiến verdict = FAIL** (ngưỡng ở `DEFAULT_RULES`, không hardcode rải rác):
+1. `NEW_ERRORS` — sinh mã lỗi mới.
+2. `BAND_NET_LOSS` — đẩy ra khỏi band nhiều hơn kéo vào.
+3. `OVERALL_REGRESSION` — |lệch| median toàn cục xấu đi > 1pp.
+4. **`METHOD_SHIFT`** — nhóm PP có n≥3 dịch lệch median *có dấu* > 15pp. **Đây
+   chính là rule bắt được sự cố D20.**
+5. `NEW_BELOW_PRICE_ALARM` — mã mới rơi xuống dưới thị giá > 40%.
+
+**Sửa kèm — hai nguồn đọc consensus mâu thuẫn:** trước đây
+`consensus_helper.get_consensus_stats` KHÔNG dedup theo CTCK (1 CTCK ra 3 báo
+cáo = 3 phiếu vào median) trong khi `report_data.build_consensus_comparison` CÓ
+dedup → KPI "Median CTCK" và bảng ngay dưới nó hiện hai con số khác nhau. Nay cả
+hai uỷ quyền cho `calibration/consensus_view.py::get_consensus_view` — nguồn đọc
+DUY NHẤT, có dedup theo CTCK, chống lookahead (`report_date <= as_of`), tuỳ chọn
+trọng số theo độ mới, và loại dòng `is_synthetic`. `count` nay là SỐ CTCK chứ
+không phải số báo cáo.
+
+**Baseline chốt (label `baseline-2026-08-11`, git bbdf0b7, 100 mã, 0 lỗi):**
+
+| Nhóm PP | n | Lệch median | \|Lệch\| median | Trong band | FV<giá 40% |
+|---|---|---|---|---|---|
+| DCF | 36 | -26.1% | 40.5% | 30.6% | 10 |
+| RI_PB | 15 | **+10.7%** | 26.7% | 40.0% | 3 |
+| RNAV | 9 | -17.1% | 17.1% | 55.6% | 1 |
+| PE | 5 | -29.1% | 29.1% | 0.0% | 3 |
+| EV_EBITDA | 4 | -9.4% | 10.4% | 75.0% | 2 |
+| PB | 3 | **-76.1%** | 76.1% | 0.0% | 7 |
+| SOTP | 3 | **-58.1%** | 58.1% | 0.0% | 2 |
+| **TOÀN BỘ** | **75** | **-21.5%** | **31.5%** | **33.3%** | **28** |
+
+**Ranh giới kiến trúc:** engine KHÔNG được import package này. Dữ liệu CTCK chỉ
+để ĐO, không bao giờ là input định giá (sẽ cưỡng chế bằng
+`tests/test_import_boundaries.py` ở GĐ7).
+
+**Files:** `valuation/calibration/{__init__,consensus_view,metrics,harness,compare}.py`,
+`valuation/db/models.py` (+`CalibrationRunRow`, `CalibrationObservation`),
+`scripts/{migrate_calibration,run_calibration}.py`,
+`valuation/engine/consensus_helper.py` (rút thành wrapper),
+`valuation/report/report_data.py` (bỏ vòng dedup riêng).
+
+**Test:** 278 passed, 3 skipped (trước sprint: 233 + 3). Trong đó
+`tests/test_calibration_compare.py::TestSuCoNganHangThang7` tái hiện đúng sự cố
+D20 và assert hàng rào FAIL — test này là bộ nhớ thể chế, nếu ai nới lỏng
+`max_method_shift` thì nó đỏ ngay. Kèm test chứng minh chỉ số tổng thể KHÔNG báo
+động trong kịch bản đó (lý do bắt buộc phải có rule theo nhóm PP).
+
+**Cổng nghiệm thu đã qua:** harness tái lập ĐÚNG từng con số baseline đo độc lập
+trước đó (-21.5% / DCF -26.1% / RI_PB +10.7% / PB -76.1% / SOTP -58.1%), và chạy
+lại 2 lần cho kết quả tất định (100 mã UNCHANGED, verdict PASS).
+
+### D24 — Chất lượng dữ liệu đồng thuận: chuẩn hoá tên CTCK, cách ly dữ liệu giả, bật Simplize
+
+**Quyết định:** làm sạch MẪU SỐ trước khi động vào mô hình — mọi kết luận "lệch
+bao nhiêu so với CTCK" đều vô nghĩa nếu bản thân đồng thuận sai.
+
+**1. Chuẩn hoá tên CTCK** — `config/broker_aliases.yaml` +
+`valuation/ingest/broker_names.py::normalize_broker()`. Bảng alias dựng từ dữ
+liệu THẬT quan sát được ngày 2026-08-11 (24hmoney: 31 mã CTCK; Simplize: 30 mã),
+KHÔNG suy đoán. Các cặp trùng đã xác minh: `VIETCAP/VCSC`, `MIRAE/MAS`,
+`SSV/SHINHAN`, `YSVN/YUANTA`, `VDSC/VDS`, `AGR/AGRISECO`, `SBSC/SBBS`,
+`VIETINBANKSC/CTS`. Tên chưa xác minh (`VPX`, `ELDIAN`) **giữ nguyên, không gộp
+bừa** (`unmatched_policy: keep_raw`) — gộp nhầm hai công ty làm sai median mà
+không ai nhìn thấy.
+
+**Bẫy đã chặn bằng test:** `HCM` vừa là MÃ CỔ PHIẾU VN100 vừa là tên gọi tắt của
+CTCK HSC. Alias list CỐ Ý bỏ `HCM`;
+`tests/test_broker_names.py::test_HCM_khong_duoc_map_sang_HSC` đỏ ngay nếu ai
+thêm vào. Cũng bóc hậu tố `"VCI (Nguyen Van A)"` → `VCI` (lỗi từ
+`consensus_collector.py` ghép tên chuyên viên vào tên CTCK, khiến một nhà bị tách
+thành nhiều "CTCK").
+
+**2. Migration CỘNG THÊM, đảo ngược được** (`scripts/migrate_consensus_quality.py`,
+dry-run mặc định, in báo cáo gộp/dòng-giả trước khi `--apply`): thêm
+`broker_canon`, `source_site`, `is_synthetic`, `report_title`, `currency_unit`.
+**KHÔNG sửa cột `broker`** — nó nằm trong PRIMARY KEY, sửa tại chỗ vi phạm luật
+vàng #6 và xoá mất xuất xứ. Tên chuẩn ghi vào cột riêng; gộp làm ở tầng ĐỌC.
+Kết quả: 268 dòng nguyên vẹn, 268 có `broker_canon`, 6 dòng đổi tên chuẩn
+(`VIETINBANKSC`→CTS, `YSVN`→YUANTA), 0 dòng giả.
+
+**3. Cách ly dữ liệu bịa** — `scratch/run_consensus_collector.py:11-33` chứa 9
+dòng khuyến nghị **gõ tay** (SSI Research/HSC/MBS cho FPT, HPG, SSI) ghi vào
+`consensus_history` y hệt dữ liệu cào thật, không cách nào phân biệt. DB hiện tại
+may mắn chưa từng chạy nó (kiểm tra: 0 dòng khớp predicate). Nay: bắt buộc cờ
+`--i-know-this-is-fake`, và mọi dòng ghi kèm `is_synthetic=True` để
+`consensus_view` tự loại khỏi thống kê.
+
+**4. Trọng số theo độ mới** — `config/consensus_quality.yaml`
+(`half_life_days: 90`, `stale_after_days: 120`, `min_brokers_for_median: 2`).
+`ConsensusView` trả **CẢ HAI** `median` và `weighted_median`, harness ghi cả hai
+vào `calibration_observations` để A/B bằng số liệu thực nghiệm — **chưa chốt dùng
+cái nào làm chuẩn**, sẽ quyết khi có dữ liệu so sánh. Thêm cờ `thin`
+(< 2 CTCK) hiển thị cảnh báo trên tab: một mã chỉ 1 CTCK theo dõi thì "đồng
+thuận" chỉ là ý kiến đơn lẻ, không phải quan điểm thị trường (vd NVL: 1 CTCK,
+lệch +116%).
+
+**5. Bật Simplize vào production** — `weekly_updater.py` chuyển thành vòng lặp
+`_CONSENSUS_SOURCES`, mỗi nguồn try/except RIÊNG (một nguồn chết không kéo theo
+nguồn kia) + đếm riêng từng nguồn trong kết quả trả về. Nút "Tải mới {ticker}" ở
+sidebar dùng CHUNG hằng số này để không bao giờ lệch nguồn với nút quét VN100.
+Simplize vốn đã hoạt động và có test, nhưng **chưa từng được gọi ở production**.
+
+**Kết quả nạp thực tế (101/101 mã, 0 lỗi, 2.064 báo cáo):**
+
+| | Trước | Sau |
+|---|---|---|
+| Số dòng consensus | 268 | 2.265 |
+| Số CTCK phân biệt | 28 | 34 |
+| Mã có đồng thuận 180 ngày | 75 | 80 |
+| ACB | 3 CTCK | **14 CTCK** (17 báo cáo → dedup 14) |
+| POW | 1 CTCK | 12 CTCK |
+| GAS | 2 CTCK | 10 CTCK |
+
+**Hàng rào hồi quy BÁO ĐỘNG — và vì sao vẫn chấp nhận:**
+`baseline-2026-08-11` → `baseline-dedup` cho verdict **FAIL**
+(`BAND_NET_LOSS` 5 rời/3 vào band; `OVERALL_REGRESSION` |lệch| median
+31.5%→33.0%). **Đây là thay đổi DỮ LIỆU, không phải mô hình** — engine không đổi
+một dòng. Đã kiểm chứng từng mã dịch chuyển đều do mẫu CTCK tăng mạnh: DCM 4→15
+CTCK, VHM 0→5, POW 1→12. Con số lệch "xấu đi" thực chất là phép đo TRUNG THỰC
+HƠN, vì trước đó median dựa trên 1-3 CTCK rất nhiễu. Quyết định: nhận
+`baseline-dedup` làm mốc tham chiếu mới cho GĐ3 trở đi.
+
+**Phát hiện kèm theo:** dữ liệu tốt hơn làm lỗi overshoot ngân hàng (D20) **lộ
+rõ hơn**: ACB +34.1%→+44.3%, MBB +63.3%→+93.0%, OCB +44.0%→+55.1%. Củng cố ưu
+tiên cho GĐ5.
+
+**Files:** `config/{broker_aliases,consensus_quality}.yaml`,
+`valuation/ingest/broker_names.py`, `scripts/migrate_consensus_quality.py`,
+`valuation/ingest/scrapers/{broker_24hmoney,broker_simplize}.py`,
+`valuation/ingest/weekly_updater.py`, `valuation/views/{select_ticker,consensus_compare}.py`,
+`valuation/db/models.py`, `valuation/calibration/consensus_view.py`,
+`scratch/run_consensus_collector.py`.
+
+**Test:** 302 passed, 3 skipped (D23: 278). Thêm `tests/test_broker_names.py`
+(20 ca, gồm bẫy HCM≠HSC và tính bất biến normalize∘normalize = normalize cần cho
+backfill idempotent) và mở rộng `tests/test_consensus_view.py` (gộp theo
+`broker_canon`, loại `is_synthetic`).
+
+---
+
+### D25 — Sổ đăng ký hiệu chuẩn từng mã: cơ chế "giữ nguyên hay phải sửa"
+
+**Quyết định:** `config/calibration_registry.yaml` (git-tracked, sửa qua commit
+được review) + `valuation/calibration/registry.py::govern()` phân loại MỖI mã
+VN100 thành một trong các trạng thái quản trị, thay vì để "lệch bao nhiêu" là
+một con số trôi nổi không ai chịu trách nhiệm.
+
+**Lý do:** quyết định #1 của người dùng — mô hình ĐƯỢC PHÉP lệch khỏi đồng thuận
+CTCK (CTCK cũng sai, cũng có thiên lệch lạc quan cố hữu của môi giới bán lẻ),
+nhưng mỗi lần lệch phải GIẢI TRÌNH ĐƯỢC bằng luận điểm cụ thể có bằng chứng.
+Lệch mà không giải trình được ⇒ coi là lỗi giả định và phải sửa. Trước D25 không
+có chỗ nào ghi lại "vì sao mã này được phép lệch", nên mọi lệch đều trông giống
+nhau và không ai phân biệt được "cố ý" với "đang hỏng".
+
+**Bảng chân trị `govern()`:**
+
+| Đo được | Registry | Kết luận |
+|---|---|---|
+| IN_BAND | không có | `OK` |
+| IN_BAND | còn entry cũ | `OBSOLETE_ENTRY` (nhắc dọn registry) |
+| OUT_* | không có | **`MISSING_JUSTIFICATION`** — phải xử lý |
+| OUT_* | justified, còn hạn | `OK_JUSTIFIED` — giữ nguyên mô hình |
+| OUT_* | justified, hết hạn | `STALE_JUSTIFICATION` — rà lại |
+| OUT_* | must_fix | `KNOWN_DEFECT` — backlog sửa |
+| bất kỳ | data_blocked | `DATA_BLOCKED` — không đủ dữ liệu để phán xét |
+| NO_CONSENSUS / ERROR | — | `OK` (không đo được thì không phán xét) |
+
+**Luận điểm CÓ HẠN** (`review_ttl_days: 180`): "đã giải thích một lần năm 2026"
+không cấp quyền miễn nhiễm vĩnh viễn — bối cảnh doanh nghiệp đổi thì phải rà lại.
+
+**Band theo phương pháp:** SOTP 0,35 / RNAV 0,30 / còn lại 0,20. Nới cho nhóm
+proxy là có chủ ý: chúng dựa trên giá trị sổ sách/quỹ đất nên sai số bản chất lớn
+hơn DCF; ép vào ±20% chỉ tạo ra hàng loạt "vi phạm" giả.
+
+**Hiện trạng khởi tạo (label `gov-clean`, 100 mã):**
+`OK=46, MISSING_JUSTIFICATION=38, KNOWN_DEFECT=14, OK_JUSTIFIED=1 (HPG),
+DATA_BLOCKED=1 (NVL)`. 38 mã chưa giải trình chủ yếu thuộc nhóm DCF — nguyên nhân
+chung là thiên lệch quá khứ, sẽ xử lý một thể ở GĐ7 chứ không phải lỗi riêng từng mã.
+
+**Cơ chế tự dọn đã chứng minh hoạt động:** REE ban đầu khai `must_fix`, nhưng với
+band SOTP 0,35 thì -27,6% nằm TRONG band → harness báo `OBSOLETE_ENTRY` → đã gỡ
+khỏi registry. Registry chỉ theo dõi mã NGOÀI band, không theo dõi chất lượng
+phương pháp (SOTP vẫn sẽ sửa ở GĐ4 cho cả nhóm).
+
+**Hiển thị ra người dùng** (`views/consensus_compare.py::_render_calibration`) —
+thay cảnh báo cứng ">25%" trước đây bằng kết luận có ngữ cảnh. Ví dụ ACB nay
+hiện: *"Mô hình lệch +44,3% (ngoài ngưỡng ±20%) — đây là LỖI ĐÃ BIẾT của phương
+pháp định giá cho mã này, đang trong hàng đợi sửa. **Đừng dùng con số định giá
+này để ra quyết định.** Tham chiếu: D20"*. Còn HPG hiện luận điểm capex Dung Quất
+2 kèm bằng chứng. Người đọc phân biệt được "lệch vì ta tin mình đúng" với "lệch
+vì đang hỏng" — trước đây hai thứ này trông y hệt nhau.
+
+**Files:** `config/calibration_registry.yaml`, `valuation/calibration/registry.py`,
+`valuation/report/report_data.py` (`_calibration_note`),
+`valuation/views/consensus_compare.py` (`_render_calibration`).
+
+**Test:** 324 passed, 3 skipped (D24: 302). `tests/test_calibration_registry.py`
+(22 ca) gồm: bảng chân trị đầy đủ; **xác thực chống giải trình rỗng** (status
+`justified` mà thiếu thesis/evidence/reviewed_on đều raise `RegistryError`); mọi
+mã khai báo phải tồn tại trong `routing.json` (gõ nhầm mã sẽ tạo entry không bao
+giờ khớp — im lặng vô dụng); và **test ratchet** `MAX_MISSING=40` chặn số mã chưa
+giải trình tăng lên, hạ dần sau mỗi giai đoạn.
+
+---
+
+### D26 — Chứng khoán: đấu nối model RI+P/B, sửa lỗi ROE lệch tử/mẫu số
+
+**Bối cảnh:** 7 mã CK (SSI VND VCI HCM VIX FTS BSI) lệch **-76%** so đồng thuận,
+**90% số mã có FV thấp hơn CHÍNH THỊ GIÁ** (VCI 7.523đ vs 22.100đ). Không thể
+giải thích bằng "thận trọng" — đó là lỗi phương pháp.
+
+**Ba lỗi thật đã sửa:**
+
+**1. ROE lệch tử/mẫu số** (`pb_relative.py:50-51` cũ) — `median(LNST 3 kỳ) / VCSH
+MỚI NHẤT`: tử số là lợi nhuận TRƯỚC tăng vốn, mẫu số là vốn SAU tăng vốn. Với
+VCI (VCSH 3.643 → 17.138 tỷ, gấp 4,7 lần) điều này bóp ROE xuống một cách máy
+móc. Nay tính ROE TỪNG KỲ trên VCSH BÌNH QUÂN CÙNG KỲ rồi mới lấy median
+(`roe_path_from_history`). Hand-calc: LNST [100,120,130] / VCSH [1000,1000,2000]
+→ cũ 6,0% vs mới 10,33%. Sửa này dùng chung cho MỌI consumer của `pb_relative`.
+
+**2. Perpetuity một nhịp** — model cũ không có giai đoạn dự phóng nào, áp thẳng
+ROE trailing vào công thức vĩnh viễn. Nay dùng `SecuritiesValuationModel` (RI +
+Justified P/B, dự phóng 5 năm) — **model này ĐÃ TỒN TẠI SẴN trong repo nhưng chưa
+bao giờ được đấu nối** vì thiếu `from_pydantic`; `sector_router.METHOD_ENGINE["PB"]
+= "securities"` đã khai báo sai sự thật suốt thời gian đó.
+
+**3. Tầng driver bịa số** — model cũ dựng lợi nhuận từ `market_liquidity=20000`,
+`brokerage_market_share=0.10`... là các hằng số KHÔNG lấy được từ DB (luật vàng
+#1). Nay thiết kế lại: dự phóng **ĐƯỜNG ROE** — ROE hiện tại fade tuyến tính về
+**ROE mid-cycle của CHÍNH công ty đó** (median toàn lịch sử) trong
+`capital_deployment_years` năm. Cơ sở kinh tế: vốn mới huy động chưa sinh lời
+ngay, giải ngân dần vào dư nợ margin 2-3 năm, nên ROE ngay sau tăng vốn là ước
+lượng chệch thấp có hệ thống. Dùng mid-cycle CỦA TỪNG CÔNG TY (không phải một
+hằng số ngành) để giữ được phân hoá chất lượng: SSI 12,2% vs BSI 8,9%.
+Đường driver cũ vẫn giữ cho API/analyst nhập tay (cờ `SEC_LEGACY_DRIVER_MODE`).
+
+**Guardrail mới** (`valuation/engine/guardrails.py`) — là **CỜ, KHÔNG PHẢI CLAMP**.
+Kẹp im lặng chính là sai lầm cũ: `max(0.3, min(pb, 4.0))` biến mọi kết quả rác
+thành 0,3x rồi trình bày như định giá bình thường. Nay `PB_CLAMPED_LOW/HIGH`,
+`FV_FAR_BELOW_PRICE`, `SEC_PB_FAR_BELOW_MARKET`, `SEC_ROE_BELOW_COE` đều lên tiếng.
+
+**Kết quả (label `after-D26-pb` vs `gov-clean`, verdict PASS):**
+
+| Mã | FV cũ | FV mới | Lệch vs CTCK cũ → mới |
+|---|---|---|---|
+| VCI | 7.523 | 11.237 | -75,9% → **-64,0%** |
+| HCM | 6.967 | 10.029 | -69,6% → **-56,2%** |
+| SSI | 10.975 | 13.520 | -71,2% → **-64,5%** |
+
+Nhóm PB: -71,2% → **-64,0%**. `n_below_price_40`: 28 → 27. **Chỉ 3 mã PB dịch
+chuyển, 97 mã còn lại UNCHANGED** — xác nhận thay đổi chỉ nằm ở dispatch, không rò rỉ.
+
+**Phần lệch CÒN LẠI đã phân rã được — và đây là bất đồng quan điểm, không phải lỗi:**
+
+| Mã | P/B mô hình | P/B thị trường | P/B theo CTCK | ROE mà CTCK ngụ ý |
+|---|---|---|---|---|
+| SSI | 0,83x | 1,54x | 2,34x | **30,0%** |
+| VCI | 0,75x | 1,48x | 2,09x | **26,2%** |
+| HCM | 0,74x | 1,91x | 1,69x | **21,9%** |
+
+CTCK đang định giá theo ROE 22-30%, **cao hơn cả đỉnh chu kỳ 2021** (SSI 22%,
+VCI 27%) — tức kịch bản nâng hạng thị trường mới nổi. Mô hình dùng mid-cycle
+8,9%-13,1% và không đưa kịch bản chưa xảy ra vào. Đã ghi
+`out_of_band_justified` cho SSI/VCI/HCM.
+
+**CÂU HỎI MỞ, chưa xử lý (ghi lại để không bị quên, không dùng làm lý do bào chữa):**
+COE nhóm CK 13,4%-15,2% có dấu hiệu hơi cao. `coe.py` lấy rf theo **TPCP VND**
+(4,54%) rồi cộng NGUYÊN phần bù rủi ro dựng theo **khung USD của Damodaran**
+(mature 4,5% + CRP VN 3,7% = 8,2%) — có khả năng tính TRÙNG rủi ro quốc gia, vì
+lợi suất TPCP VND đã hàm chứa rủi ro nội địa. Đáng ngờ thêm: TPCP VN 10Y 4,54%
+chỉ cao hơn UST 10Y ~24bp, quá hẹp so với CDS Việt Nam. Chú thích trong
+`config/defaults.yaml` cũng ghi `rf: 0.043 # UST 10Y` trong khi code dùng TPCP
+VND — tức khung lý thuyết và code đang không khớp nhau.
+**KHÔNG sửa trong GĐ3** vì COE ảnh hưởng TOÀN BỘ 97 mã; sửa lẻ trong phạm vi
+nhóm CK đúng là kiểu thay đổi đã gây ra sự cố D20. Cần một giai đoạn riêng, đo
+bằng harness.
+
+**Files:** `valuation/engine/models/securities.py` (viết lại tầng driver +
+`from_pydantic`), `valuation/engine/models/pb_relative.py` (ROE cùng kỳ + cờ kẹp),
+`valuation/engine/guardrails.py` (mới), `valuation/engine/batch.py` (dispatch),
+`config/defaults.yaml` (`securities`, `relative_pb`, `guardrails`).
+
+**Test:** 347 passed, 3 skipped (D25: 324). `tests/test_securities_insurance.py`
+(23 ca) gồm golden test tính tay (P/B = (0,12-0,02)/(0,15-0,02) = 0,769231; VCSH
+cuộn chiếu 1.000 → 1.096 tỷ) và **test hồi quy riêng cho bug tử/mẫu số**. Golden
+test SSI cũ (`test_golden_fpt_ssi.py`) vẫn xanh nhờ giữ đường legacy.
+
+### D27 — Tách bảo hiểm khỏi chứng khoán: NOT_RATED thay vì số đã kẹp
+
+**Quyết định:** `valuation/engine/models/insurance.py` (mới) cho BVH/BMI/MIG,
+tách khỏi nhánh chứng khoán trong `_dispatch_nonfin` theo `sector` của routing
+(`BH` vs `CK`).
+
+**Lý do:** routing gộp cả 10 mã chung `primary: P/B` nên trước đây dùng chung một
+model, nhưng kinh tế khác hẳn. CTCK: lợi nhuận bám thanh khoản thị trường, chu kỳ
+NGẮN, biên độ RẤT rộng (ROE 5%-35% trong 8 năm). Bảo hiểm: lợi nhuận = kết quả
+nghiệp vụ + thu nhập đầu tư danh mục trái phiếu → bám chu kỳ LÃI SUẤT, dài và êm
+hơn (đo thực tế: ROE 7%-14%, mid-cycle 8,6%-12,6%). Hệ quả: cửa sổ chuẩn hoá ROE
+**5 kỳ** thay vì 3, và KHÔNG có cú fade "hậu tăng vốn" như CTCK.
+
+**Từ chối định giá thay vì kẹp số:** `pb_relative.py` từng tự thú trong docstring
+rằng lợi nhuận bảo hiểm có thể bị map nhầm từ DOANH THU PHÍ, nhưng vẫn kẹp P/B về
+[0,3; 4,0] rồi trả ra một con số trông bình thường. Nay ROE chuẩn hoá nằm ngoài
+[0%, 30%] → trả `NOT_RATED` + cờ `NI_MAPPING_UNVERIFIED`. **Thà một khoảng trống
+được ghi nhận còn hơn một con số sai đầy tự tin.**
+Kiểm chứng thực tế: cả 3 mã đều có ROE 7-14% → dữ liệu SẠCH, không bị map nhầm.
+Cảnh báo trong docstring cũ không thành hiện thực với bộ dữ liệu này — nhưng cơ
+chế vẫn cần thiết để không im lặng nếu sau này có.
+
+**Files:** `valuation/engine/models/insurance.py`, `valuation/engine/batch.py`,
+`config/defaults.yaml` (`insurance`).
+
+---
+
+### D28 — SOTP: từ chối xuất bản số khi proxy không mô tả được doanh nghiệp (NOT_RATED)
+
+**Quyết định:** `SOTPValuationModel` gắn cờ `PROXY_IMPLAUSIBLE` + `NOT_RATED` khi
+PROXY_MODE cho ra kết quả lệch quá `proxy_valuation.proxy_max_divergence` (0,50)
+so THỊ GIÁ. `InvestmentDecisionMaker` nhận thêm `not_rated` → trả khuyến nghị
+`NOT_RATED` thay vì BUY/SELL. Giao diện KHÔNG hiển thị giá mục tiêu và upside cho
+mã NOT_RATED.
+
+**Lý do:** khiếm khuyết thật của SOTP không phải "kém chính xác" mà là **đưa ra
+một con số đầy tự tin từ một proxy vô nghĩa**. VIC ra 16.911đ trong khi thị giá
+208.500đ (-92%) và hệ thống vẫn phát khuyến nghị bán như bình thường. Công thức
+`(0,6 × LNST×11 + 0,4 × VCSH sổ sách) × 0,9` không mô tả được tập đoàn mà giá trị
+nằm ở cổ phần công ty con niêm yết và quỹ đất ghi giá gốc. Nhãn `PARTIAL` /
+`VALUATION_PROXY` cũ bị đọc thành "hơi kém chính xác một chút", không ai hiểu là
+"con số này vô nghĩa".
+
+**Vì sao KHÔNG dựng SOTP theo cổ phần công ty con ngay (đã thử, đã đo):**
+`vnstock` CÓ API `subsidiaries()`/`affiliate()` với tỷ lệ sở hữu thật, đã viết
+`scripts/draft_sotp_holdings.py` để kéo về. Nhưng đo độ phủ so vốn hoá công ty mẹ
+thì quá mỏng:
+
+| Mã | Công ty con niêm yết tìm được | Độ phủ |
+|---|---|---|
+| VIC | VRE 18,37% | **1%** — thiếu hẳn VHM, tài sản lớn nhất |
+| MSN | TCB 14,84% | 32% |
+| TCH | HHS 58,31% (chưa có giá trong DB) | 0% |
+| REE | — | 0% |
+
+Dựng SOTP từ dữ liệu phủ 1% sẽ chỉ tạo ra **một con số sai kiểu khác**. Bịa tỷ lệ
+sở hữu còn tệ hơn (luật vàng #1). Nên: chặn lại bằng NOT_RATED, và giao công cụ
+để chuyên viên bổ sung từ BCTN — `scripts/draft_sotp_holdings.py` in sẵn danh
+sách công ty con + độ phủ để đối chiếu (AGENTS.md §7: không tự động hoá hoàn toàn
+giả định).
+
+**Kết quả:** VIC `SELL @ 16.911đ (-92%)` → **`NOT_RATED`, không công bố giá mục
+tiêu**. MSN (-48%), REE (-6%), TCH (-31%) dưới ngưỡng nên vẫn định giá bình
+thường — cố ý KHÔNG siết ngưỡng để bắt cho bằng được MSN, vì như vậy là chỉnh
+tham số theo kết quả mong muốn.
+
+**Chi tiết giao diện có chủ ý:** NOT_RATED tô XÁM trung tính, không tô đỏ — "chưa
+đủ cơ sở định giá" khác hoàn toàn "khuyến nghị bán", tô đỏ sẽ bị hiểu thành tín
+hiệu tiêu cực. Và **không hiển thị giá mục tiêu/upside**: hiện ra con số rồi dán
+nhãn "không đáng tin" là tự mâu thuẫn — người đọc sẽ nhớ con số chứ không nhớ nhãn.
+
+**Bug sửa kèm trong `draft_sotp_holdings.py`:** cùng một công ty con xuất hiện ở
+cả `subsidiaries()` (chỉ có mã nội bộ `VRJSC`) lẫn `affiliate()` (có
+`right_ticker='VRE'`); logic gộp ban đầu chỉ so tỷ lệ nên giữ nhầm bản KHÔNG có
+mã niêm yết → mất khả năng định giá theo vốn hoá. Nay ưu tiên bản nhận diện được
+mã niêm yết.
+
+**Files:** `valuation/engine/models/sotp.py`, `valuation/engine/decision_engine.py`
+(tham số `not_rated`), `valuation/engine/valuate.py` (truyền cờ), `streamlit_app.py`
+(banner trung tính + ẩn giá mục tiêu), `config/defaults.yaml`
+(`proxy_valuation.proxy_max_divergence`), `scripts/draft_sotp_holdings.py` (mới).
+
+**Test:** 356 passed, 3 skipped (D27: 347). `tests/test_sotp_gate.py` (9 ca) gồm
+ca tái hiện VIC, ca chứng minh KHÔNG chặn bừa khi proxy hợp lý (tính tay 8.946đ),
+ca hard-gate vẫn ưu tiên cao hơn NOT_RATED, và test tích hợp end-to-end trên VIC thật.
+
+**Hiệu chuẩn:** `after-D28-sotp` vs `after-D26-gov` = PASS, 100 mã UNCHANGED. Các
+chỉ số lệch không đổi vì VIC không có đồng thuận CTCK để đo — cải thiện ở đây là
+**chất lượng quyết định**, không phải con số lệch.
+
+---
+
+### D29 — Ngân hàng: sửa ước lượng ROE bền vững, bỏ hệ thống tier, thêm trần P/B
+### (BỔ CHÍNH D20 — đọc kèm)
+
+**Bối cảnh:** D20 (2026-07) sửa undervaluation ngân hàng nhưng **quá tay**. Sau
+khi GĐ1 làm giàu dữ liệu CTCK, mức overshoot lộ rõ hơn: ACB +44,3%, MBB +93,0%,
+OCB +55,1%, VIB +42,4%.
+
+**Nguyên nhân gốc — ước lượng, không phải trần.** `repo.py` lấy
+`sustainable_roe = TRUNG BÌNH ROE TOÀN LỊCH SỬ`, trộn đỉnh chu kỳ 2018-2021 vào
+ước lượng "bền vững". ACB ra 20,8% trong khi ROE thực tế đang phai rõ rệt
+23%→20%→17%→16%. Vì `Target P/B = (ROE−g)/(COE−g)` cực nhạy với ROE, sai số này
+đi thẳng vào định giá. **Hệ thống tier của D20 chỉ là thuốc giảm đau cho một ước
+lượng tồi.**
+
+**Bốn sửa đổi:**
+
+1. **`sustainable_roe` = MEDIAN cửa sổ 3 kỳ gần nhất** (`repo.py`), không phải
+   trung bình toàn lịch sử. Median (không phải trung bình) để một quý đột biến
+   không kéo lệch. Cửa sổ vào `config/defaults.yaml::bank_terminal.roe_window`.
+
+2. **BỎ HỆ THỐNG TIER.** D20 dùng ngưỡng 18% → trần 20%, dưới → trần 15%. Đó là
+   một **vách đứng phi kinh tế**: ngân hàng ROE 17,9% bị ép về 15%, ngân hàng
+   18,1% giữ 20% — chênh 0,2pp đầu vào tạo chênh 5pp đầu ra, tức ~40% giá trị.
+   Sửa thẳng ước lượng thì tier thành thừa và có hại. Nay MỘT trần duy nhất 20%.
+
+3. **Thêm TRẦN cho target P/B.** Trước D29 chỉ có `max(0.3, ...)` — có sàn mà
+   không có trần, nên ACB ra 1,82x trong khi thị trường trả 1,17x mà không gì
+   chặn. Thêm trần 3,0x + so sánh tương đối với P/B thị trường
+   (`BANK_PB_FAR_ABOVE/BELOW_MARKET`).
+
+4. **Bỏ magic number** — `ELITE_ROE_THRESHOLD/CAP`, `STANDARD_ROE_CAP` từ literal
+   trong `bank_general.py` vào `config/defaults.yaml::bank_terminal`, để harness
+   snapshot được vào `engine_config` và quét được.
+
+**Kết quả (label `after-D30-scenario` vs `after-D28-sotp`, verdict WARN — không
+vi phạm rule cứng nào):**
+
+| Mã | Trước | Sau | |
+|---|---|---|---|
+| ACB | +44,3% | **+18,1%** | ✅ vào band |
+| VIB | +42,4% | **+8,8%** | ✅ vào band |
+| OCB | +55,1% | **+19,7%** | ✅ vào band |
+| BID | -21,4% | **-5,7%** | ✅ vào band |
+| CTG | -17,0% | +9,7% | cải thiện |
+| MBB | +93,0% | +89,3% | vẫn ngoài band |
+| VCB | -16,9% | -30,5% | ❌ rời band |
+| SHB | +10,7% | +23,8% | ❌ rời band |
+
+Toàn cục: |lệch| median **33,0% → 29,1%**; tỷ lệ trong band **32,5% → 35,0%**;
+số mã FV thấp hơn thị giá >40%: 28 → 26. P/B mô hình so P/B thị trường nay tập
+trung ở 0,9-1,3x (trước có ca 1,82x/1,17x = 1,56).
+
+**Trung thực về hạn chế:** VCB và SHB RỜI band. VCB là ngân hàng chất lượng cao
+nhất, median-3 (16,8%) thấp hơn trung bình lịch sử (19,8%) nên bị định giá thấp
+hơn — đúng vấn đề mà D20 từng sửa, nay tái xuất hiện ở dạng nhẹ hơn. Đây là đánh
+đổi có ý thức: 4 mã vào band, 2 mã ra. Đã ghi vào registry để theo dõi.
+
+**MBB là ca chưa giải thích được:** ROE 19,6% RẤT ổn định 6 kỳ liền
+(21/23/22/20/19/20%) nên median không kéo xuống được, trong khi thị trường chỉ
+trả P/B 1,25x. Không rõ vì sao thị trường định giá thấp một ngân hàng ROE ~20%.
+Ghi `must_fix` kèm luận điểm "cần điều tra riêng" — KHÔNG chỉnh tham số để ép
+khớp, vì như vậy là fit theo kết quả mong muốn.
+
+**Sửa lại chính mình trong lúc làm:** bản đầu của D29 thêm cờ
+`TERMINAL_INCONSISTENT` khi payout ngụ ý bởi Gordon (1−g/ROE) lệch payout dự
+phóng quá 30pp. Đo thực tế: **bắn ở 15/17 ngân hàng** → thành NHIỄU. Nghĩ lại thì
+chênh lệch đó là BẢN CHẤT của mọi mô hình 2 giai đoạn (Damodaran nói rõ phải điều
+chỉnh payout ở trạng thái dừng cho khớp g và ROE), không phải lỗi. Đã thu hẹp
+thành `TERMINAL_IMPOSSIBLE`, chỉ bắn khi ROE ≤ g — trạng thái dừng toán học không
+tồn tại. Cảnh báo cái bình thường sẽ làm người đọc bỏ qua cả cảnh báo thật.
+
+**Files:** `valuation/data_access/repo.py` (~378-395),
+`valuation/engine/models/bank_general.py`, `config/defaults.yaml` (`bank_terminal`).
+
+### D30 — Hợp nhất định nghĩa kịch bản + cho kịch bản biến thiên khối terminal
+
+**Hai khiếm khuyết trong cùng một file `sensitivity.py`:**
+
+1. **Hai bản sao logic kịch bản với NGƯỠNG KHÁC NHAU.**
+   `apply_scenario_adjustments` (bank Bull cap credit growth 0,40; Bear floor
+   −0,05) vs `run_scenario_analysis` (cap 0,30; floor +0,02). Cùng một mã, cùng
+   một kịch bản, hai kết quả khác nhau tuỳ đường gọi — không ai phát hiện vì
+   không có test đối chiếu hai đường.
+
+2. **Cả hai đều KHÔNG đụng tới COE, g, hay ROE bền vững** — chỉ nhiễu credit
+   growth/NIM. Trong khi giá trị terminal chứa gần hết bất định. Hệ quả: dải
+   Bull-Bear của ACB chỉ **±6%**, tạo **cảm giác an toàn giả**.
+
+**Sửa:** `run_scenario_analysis` uỷ quyền 100% cho `apply_scenario_adjustments`;
+định nghĩa kịch bản chuyển sang `config/scenarios.yaml` (nguồn duy nhất), bổ sung
+`coe_delta`, `terminal_g_delta`, `sustainable_roe_delta`.
+
+**Kết quả — dải kịch bản phản ánh đúng bất định:**
+
+| Mã | Dải Bull-Bear trước | sau |
+|---|---|---|
+| ACB | ±6% | **±42%** |
+| MBB | — | ±32% |
+| VCB | — | ±42% |
+| FPT | — | ±24% |
+| HPG | — | ±33% |
+
+**Files:** `valuation/engine/sensitivity.py`, `config/scenarios.yaml` (mới).
+
+**Test (D29+D30):** 369 passed, 3 skipped (D28: 356).
+`tests/test_bank_terminal_d29.py` (13 ca) + `tests/helpers_bank.py`, gồm: chứng
+minh trung bình-toàn-lịch-sử thổi phồng ROE (tính tay trên chuỗi ACB thật);
+**test chặn vách đứng** (ROE 17,9% vs 18,1% phải cho terminal ROE gần nhau);
+trần/sàn P/B; `TERMINAL_IMPOSSIBLE` chỉ bắn khi ROE ≤ g; **test đối chiếu hai
+đường gọi kịch bản ra cùng số** (chính thứ đáng lẽ đã bắt được bug D30); và test
+dải Bull-Bear phải > 20%. Golden test VCB của D20 (P/B≈2,148) **vẫn xanh** vì
+fixture truyền `sustainable_roe` tường minh — đã kiểm chứng riêng.
+
+---
+
+### D31 — Lưu luận điểm CTCK công khai + bóc tách TẤT ĐỊNH (không LLM)
+
+**Quyết định:** bảng `consensus_report_text` + `valuation/ingest/scrapers/consensus_text.py`
+(thu thập) + `valuation/engine/consensus_extract.py` (bóc tách bằng regex).
+
+**Lý do:** `broker_24hmoney.fetch_report_summaries()` vốn ĐÃ tải đoạn tóm tắt luận
+điểm của từng báo cáo, nhưng chỉ dùng tạm cho AI tổng hợp rồi **vứt đi**. Mỗi lần
+muốn tổng hợp lại phải cào lại toàn bộ, và không có cách nào đối chiếu CTCK thực
+sự giả định gì.
+
+**Vì sao regex chứ không LLM:** kết quả phải TÁI LẬP (cùng đoạn văn luôn cho cùng
+kết quả — có test khẳng định) và AUDIT ĐƯỢC (`matched_spans` giữ nguyên văn để
+truy con số ra từ chữ nào). LLM không đảm bảo cả hai, lại tốn token cho việc regex
+làm đủ tốt.
+
+**Bẫy đã phát hiện và xử lý:** tóm tắt CTCK thường nêu CẢ kết quả quý vừa công bố
+LẪN dự phóng cả năm trong hai câu liền nhau. Ví dụ thật (NHSV/ACB): *"...Q2/2026
+với lợi nhuận sau thuế đạt **4.292** tỷ đồng (-12,1% YoY). Dự phóng cả năm 2026
+LNST đạt **17.207** tỷ đồng (+10,1% YoY)"*. Lấy khớp regex ĐẦU TIÊN ra 4.292 — sai
+hoàn toàn về ý nghĩa. Đã thêm `_first_forecast()` ưu tiên câu mang từ khoá dự
+phóng; câu không rõ thì đánh dấu `[KHÔNG RÕ: dự phóng hay đã công bố]`.
+
+**Tỷ lệ bóc tách ĐO THỰC TẾ** (283 bản ghi 24hmoney có luận điểm; 2.059 bản ghi
+Simplize chỉ có tiêu đề nên không tính vào mẫu số):
+
+| Trường | Tỷ lệ đo được | Dự đoán trong kế hoạch |
+|---|---|---|
+| Giá mục tiêu | **56%** | — |
+| LNST dự phóng | **43%** | — |
+| Phương pháp định giá | **39%** | 30-50% ✓ |
+| Upside | 31% | — |
+| Tăng trưởng dự phóng | 26% | 40-60% (thực tế thấp hơn) |
+| P/E mục tiêu | 19% | 15-25% ✓ |
+| P/B mục tiêu | 18% | 15-25% ✓ |
+| ROE dự phóng | 7% | — |
+| WACC | **0%** (1/283) | <5% ✓ |
+
+**77% bản ghi bóc được ít nhất 1 trường.** Tăng trưởng thấp hơn dự đoán vì đã siết
+điều kiện phải có ngữ cảnh dự phóng (nếu không sẽ bắt nhầm YoY của quý). **WACC
+coi như không dùng được** (1/283) — giữ trường nhưng không đưa vào thống kê nào.
+
+**Quy tắc vàng của module:** thiếu dữ liệu trả `None`, TUYỆT ĐỐI không trả 0 —
+một `target_pe = 0` sẽ lặng lẽ kéo mọi thống kê xuống. Báo cáo hiển thị dạng đếm
+("6/11 CTCK nêu P/B") thay vì bịa giá trị trung bình từ dữ liệu thiếu.
+
+**Nguồn:** CHỈ trang tóm tắt công khai 24hmoney + tiêu đề Simplize. **Không tải
+PDF** — giữ nguyên quyết định bản quyền của dự án. Giữ cả báo cáo ngành/chiến lược
+không có giá mục tiêu (bị loại khỏi `consensus_history` vì median cần giá mục tiêu,
+nhưng ngôn ngữ phương pháp trong đó vẫn có giá trị).
+
+**Nạp thực tế:** 101/101 mã, **2.347 bản ghi**.
+
+**Files:** `valuation/db/models.py` (`ConsensusReportText`),
+`valuation/ingest/scrapers/consensus_text.py`, `valuation/engine/consensus_extract.py`.
+**Test:** `tests/test_consensus_extract.py` (19 ca) — fixture là văn bản THẬT từ
+24hmoney, không phải câu tự bịa.
+
+### D32 — Năm gốc dự phóng: cơ chế đã sẵn sàng, MẶC ĐỊNH VẪN TRAILING
+
+**Quyết định:** thêm `valuation/forecast/base_year.py` + cờ
+`config/defaults.yaml::forecast.base_year_mode`. **Mặc định `TRAILING`** — tức
+hành vi y hệt trước D32 (đã kiểm chứng: 100 mã UNCHANGED).
+
+**Vấn đề nhắm tới:** mô hình dựng tăng trưởng năm 1 từ median tăng trưởng LỊCH SỬ,
+nhìn hoàn toàn về quá khứ, trong khi CTCK định giá trên dự phóng FY+1 — nguồn gốc
+khoảng lệch âm cấu trúc của nhóm DCF (-30%).
+
+**Đo thực nghiệm 3 phương án (harness, baseline `gd5-final`):**
+
+| Phương án | Nhóm DCF | \|Lệch\| median | Trong band | FV<giá 40% | Verdict |
+|---|---|---|---|---|---|
+| (a) Động lượng thuần | -30,0% → **-24,6%** | 29,1% → **31,6%** ❌ | 38,8% | 26 → 27 ❌ | **FAIL** |
+| (b) Co ngót 50/50 | -30,0% → **-24,0%** | 29,1% → 29,1% ✓ | 37,5% | 26 → 27 ❌ | **FAIL** |
+| (c) (b) + bỏ qua ngành chu kỳ | như (b) | như (b) | như (b) | 26 → 27 ❌ | **FAIL** |
+
+**KẾT LUẬN TRUNG THỰC: chưa bật.** Tiêu chí chấp nhận đã đặt TRƯỚC khi đo (trong
+kế hoạch): *"chỉ chấp nhận khi lệch median toàn cục về gần 0 VÀ `n_below_price_40`
+KHÔNG tăng VÀ không nhóm PP nào dịch quá ngưỡng"*. Cả 3 phương án đều làm
+`n_below_price_40` tăng 26→27, nên **không đạt**.
+
+**Tôi đã dừng đúng lúc.** Mã gây vi phạm là SBT — doanh thu 4 quý gần nhất giảm
+thật (-5,6% YoY) nên mô hình hạ định giá. Tôi đã thử thêm SBT vào danh sách ngành
+chu kỳ, nhưng `sector` của SBT là "Food & Beverage" chứ không phải "Mía đường" —
+và **thêm từ khoá cho tới khi hàng rào chuyển xanh chính là chỉnh cho vừa kết
+quả**, đúng thứ hàng rào sinh ra để ngăn. Nên dừng, giữ TRAILING, ghi lại số đo.
+
+**Cải tiến giữ lại trong cơ chế (dùng được ngay khi bật):**
+- **Co ngót về median lịch sử** (`momentum_weight: 0.5`) thay vì thay thế hẳn —
+  ước lượng có cơ sở thống kê, kéo ước lượng nhiễu về phía tiên nghiệm ổn định.
+  Đo được: giữ nguyên |lệch| median trong khi vẫn cải thiện nhóm DCF 6pp.
+- **Bỏ qua ngành chu kỳ** — với thép/dầu khí/hoá chất, động lượng SAI VỀ BẢN CHẤT
+  (một cửa sổ TTM ở đáy chu kỳ đem ngoại suy 5 năm). Dùng chung định nghĩa "chu kỳ"
+  với `engine/batch.py`.
+- Kẹp ±10pp quanh median lịch sử, mọi lần kẹp bắn cờ.
+
+**Việc cần làm tiếp (giao lại):** phân loại chu kỳ hiện dựa trên chuỗi ngành của
+routing, chưa đủ mịn (SBT mía đường bị xếp Food & Beverage). Cần bảng phân loại
+chu kỳ riêng trước khi bật FORWARD.
+
+**Files:** `valuation/forecast/base_year.py`, `valuation/data_access/repo.py`
+(`_quarterly_revenues` + nhánh cờ), `config/defaults.yaml` (`forecast`).
+
+### D33 — Cưỡng chế bằng máy: engine không được biết gì về dữ liệu CTCK
+
+**Quyết định:** `tests/test_forward_base.py::TestRanhGioiKienTruc` quét AST toàn
+bộ `engine/models/`, `repo.py`, `forecast*.py`, `valuation/forecast/` và
+**assert không module nào import** `consensus_*` hay `calibration`.
+
+**Lý do:** quyết định #2 của người dùng — dữ liệu CTCK chỉ để ĐO, không bao giờ là
+input định giá. Đây là cách biến lời hứa thành **thuộc tính kiểm chứng được**: nếu
+ai đó (kể cả vô tình, kể cả với ý tốt "cho khớp CTCK hơn") import consensus vào
+engine, test đỏ ngay. Không trông chờ vào kỷ luật của người viết code.
+
+**Test:** 406 passed, 3 skipped (D30: 369).
+
+---
+
+### D23-b — Sự cố hạ tầng: hai cluster PostgreSQL, cluster dữ liệu thật bị chết
+
+**Hiện tượng:** sáng 2026-08-11 toàn bộ định giá lỗi
+`column prices_daily.foreign_buy_vol does not exist`; DB chỉ còn 37 mã, giá đến
+25/06, `macro_series` 9 dòng.
+
+**Nguyên nhân gốc:** máy có 2 cluster — `postgresql@16` (dữ liệu thật, 358M) và
+`postgresql@15` (cũ, 199M). Sau reboot, @16 tắt không sạch để lại
+`postmaster.pid` ghi PID 803; PID này bị **MongoDB tái sử dụng**, nên PostgreSQL
+tưởng "có postmaster khác đang chạy trên cùng data directory" và **từ chối khởi
+động, lặp lại mỗi 10 giây**. Trong lúc đó @15 chiếm cổng 5432 → app trỏ vào
+cluster gần rỗng. (@15 chưa từng chạy `alter_db.py` nên thiếu 12 cột market-flow
+— đó là lỗi hiển thị ra ngoài.)
+
+**Xử lý:** dừng @15 (`launchctl bootout`), đổi tên file khoá cũ thành
+`postmaster.pid.stale-backup-<timestamp>` (sao lưu chứ không xoá; đã xác minh PID
+803 là `mongod` chứ không phải postgres nên không có nguy cơ hai postmaster cùng
+ghi), khởi động lại @16. Dữ liệu nguyên vẹn 100%: 101 mã VN100, 174.295 dòng giá
+đến 10/08, 700.866 dòng BCTC, TPCP_10Y đến 10/08.
+
+**Rủi ro còn lại:** plist `homebrew.mxcl.postgresql@15` vẫn nằm trong
+`~/Library/LaunchAgents` → sẽ tự khởi động lại ở lần đăng nhập sau và có thể
+giành cổng 5432 trước @16. Cần vô hiệu hoá vĩnh viễn nếu không dùng @15.
+
+---
+
 ## Sprint: Kiểm tra file Excel xuất VN100 — sửa lỗi export + engine (2026-07)
 
 ### D9 — DCF chặn vốn cổ phần ÂM về 0 + cờ NEGATIVE_EQUITY_VALUE_DCF

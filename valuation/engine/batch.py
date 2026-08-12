@@ -29,7 +29,7 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
         return {"ticker": ticker, "error": "NOT_IN_VN100"}
 
     method, status, group = plan["method"], plan["status"], plan["group"]
-    price = get_latest_price(db, ticker)
+    price = get_latest_price(db, ticker, fetch_live=False)
     base = {
         "ticker": ticker, "method": method, "status": status,
         "group": group, "verified": plan["verified"], "price": price,
@@ -38,7 +38,7 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
         # Engine DUY NHẤT: build_company_data → valuate (best-of-both theo ngành).
         # Cùng lõi với Streamlit → CLI/batch/Sheets và UI ra cùng một số.
         from valuation.engine.valuate import valuate
-        company = build_company_data(db, ticker, mode="TTM")
+        company = build_company_data(db, ticker, mode="TTM", fetch_live=False)
         res = valuate(company, macro_env=macro_env)
 
         fv = float(res["blended_fair_value_per_share"])
@@ -88,8 +88,18 @@ def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None)
         from valuation.engine.models.pe_relative import PERelativeValuationModel
         m = PERelativeValuationModel.from_pydantic(company, sector=group)
     elif method == "PB":
-        from valuation.engine.models.pb_relative import PBRelativeValuationModel
-        m = PBRelativeValuationModel.from_pydantic(company)
+        # D26/D27 — routing gộp CK và BẢO HIỂM chung `primary: P/B`, nhưng kinh tế
+        # hai ngành khác hẳn (CTCK bám thanh khoản, chu kỳ ngắn biên độ rộng;
+        # bảo hiểm bám chu kỳ lãi suất, dài và êm). Tách theo `sector` của routing.
+        if (group or "").upper() in ("CK", "CHỨNG KHOÁN", "CHUNG KHOAN"):
+            from valuation.engine.models.securities import SecuritiesValuationModel
+            m = SecuritiesValuationModel.from_pydantic(company)
+        elif (group or "").upper() in ("BH", "BẢO HIỂM", "BAO HIEM"):
+            from valuation.engine.models.insurance import InsuranceValuationModel
+            m = InsuranceValuationModel.from_pydantic(company)
+        else:
+            from valuation.engine.models.pb_relative import PBRelativeValuationModel
+            m = PBRelativeValuationModel.from_pydantic(company)
     elif method in ("DCF", "DCF_EVEBITDA"):
         m = DCFValuationModel.from_pydantic(company)
         res = m.perform_valuation()

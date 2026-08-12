@@ -54,12 +54,16 @@ def fetch_reports(ticker: str, size: int = 30, timeout: float = 20.0) -> List[Di
             continue
         seen.add(key)
         rating = re.sub(r"\s+", " ", (rec.get("recommend") or "").strip()).upper() or None
+        title = (rec.get("title") or "").strip()
         out.append({
             "ticker": ticker.upper(), "broker": broker, "report_date": rep_date,
             "target_price": float(tp), "rating": rating,
             "source_url": rec.get("attachedLink") or "",
+            # D24: tiêu đề báo cáo lưu vào cột riêng để truy vấn được, thay vì
+            # chỉ nhét trong chuỗi raw_quote.
+            "report_title": title or None,
             "raw_quote": f"{broker} {rep_date}: {rating}, giá mục tiêu {float(tp):,.0f} VND "
-                         f"— {rec.get('title', '')} (nguồn Simplize)",
+                         f"— {title} (nguồn Simplize)",
         })
     return out
 
@@ -69,10 +73,18 @@ def import_reports(ticker: str, size: int = 30) -> List[Dict[str, Any]]:
     recs = fetch_reports(ticker, size=size)
     if not recs:
         return []
+    from valuation.ingest.broker_names import normalize_broker
+
     db = SessionLocalWrite()
     try:
         for rec in recs:
-            stmt = insert(Consensus).values(rec)
+            # D24: `broker` giữ nguyên tên thô của Simplize (bảo toàn xuất xứ);
+            # việc gộp cùng-một-CTCK-khác-tên (VCSC vs VIETCAP) làm ở tầng đọc
+            # qua `broker_canon`, xem calibration/consensus_view.py.
+            canon, _ = normalize_broker(rec["broker"])
+            row = {**rec, "broker_canon": canon, "source_site": "SIMPLIZE",
+                   "currency_unit": "VND", "is_synthetic": False}
+            stmt = insert(Consensus).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["ticker", "broker", "report_date"],
                 set_={
@@ -80,6 +92,9 @@ def import_reports(ticker: str, size: int = 30) -> List[Dict[str, Any]]:
                     "rating": stmt.excluded.rating,
                     "source_url": stmt.excluded.source_url,
                     "raw_quote": stmt.excluded.raw_quote,
+                    "report_title": stmt.excluded.report_title,
+                    "broker_canon": stmt.excluded.broker_canon,
+                    "source_site": stmt.excluded.source_site,
                 },
             )
             db.execute(stmt)

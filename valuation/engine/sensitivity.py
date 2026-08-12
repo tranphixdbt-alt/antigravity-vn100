@@ -7,45 +7,87 @@ from valuation.models.financials import Company
 from valuation.models.financials_bank import CompanyBank
 from valuation.engine.blend import blend_intrinsic_relative
 
+def _scenario_config() -> Dict[str, Any]:
+    """Đọc config/scenarios.yaml (D30). Thiếu file -> dict rỗng, dùng mặc định cũ."""
+    import yaml
+    from valuation.config import PROJECT_ROOT
+    path = PROJECT_ROOT / "config" / "scenarios.yaml"
+    if not path.exists():
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _scaled(values, mult, cap=None, floor=None):
+    out = []
+    for v in values:
+        x = v * mult
+        if cap is not None:
+            x = min(x, cap)
+        if floor is not None:
+            x = max(x, floor)
+        out.append(x)
+    return out
+
+
 def apply_scenario_adjustments(company: Union[Company, CompanyBank], scenario: str) -> Union[Company, CompanyBank]:
     """
     Áp dụng hệ số điều chỉnh giả định cho kịch bản Bull / Bear.
+
+    D30 — ĐÂY LÀ NGUỒN ĐỊNH NGHĨA KỊCH BẢN DUY NHẤT. `run_scenario_analysis` uỷ
+    quyền hoàn toàn cho hàm này; trước đó nó nhân bản logic với ngưỡng KHÁC nhau
+    nên cùng một mã ra hai kết quả tuỳ đường gọi.
+
+    Bổ sung quan trọng: kịch bản nay biến thiên cả COE, tăng trưởng vĩnh viễn g
+    và ROE BỀN VỮNG — không chỉ credit growth/NIM. Bất định thật của định giá
+    ngân hàng nằm gần hết ở khối terminal; bản cũ chỉ nhiễu giai đoạn dự phóng
+    nên dải Bull-Bear chỉ ±6%, tạo cảm giác an toàn giả.
     """
     import copy
     comp_copy = copy.deepcopy(company)
     if scenario == "Base" or not scenario:
         return comp_copy
-        
+
+    cfg = (_scenario_config().get(scenario) or {})
+    a = comp_copy.assumptions
     is_bank = isinstance(comp_copy, CompanyBank)
-    if scenario == "Bull":
-        if is_bank:
-            comp_copy.assumptions.credit_growth = [min(cg * 1.2, 0.4) for cg in comp_copy.assumptions.credit_growth]
-            if hasattr(comp_copy.assumptions, "deposit_growth") and comp_copy.assumptions.deposit_growth:
-                comp_copy.assumptions.deposit_growth = [min(dg * 1.2, 0.4) for dg in comp_copy.assumptions.deposit_growth]
-            comp_copy.assumptions.nim = [min(n * 1.1, 0.06) for n in comp_copy.assumptions.nim]
-            comp_copy.assumptions.cir = [max(c * 0.9, 0.15) for c in comp_copy.assumptions.cir]
-            if comp_copy.assumptions.cost_of_equity is not None:
-                comp_copy.assumptions.cost_of_equity = max(0.05, comp_copy.assumptions.cost_of_equity - 0.01)
-            comp_copy.assumptions.risk_free_rate = max(0.01, comp_copy.assumptions.risk_free_rate - 0.01)
-        else:
-            comp_copy.assumptions.revenue_growth = [min(g * 1.2, 0.5) for g in comp_copy.assumptions.revenue_growth]
-            comp_copy.assumptions.ebit_margin = [min(m * 1.2, 0.6) for m in comp_copy.assumptions.ebit_margin]
-            comp_copy.assumptions.risk_free_rate = max(0.01, comp_copy.assumptions.risk_free_rate - 0.01)
-    elif scenario == "Bear":
-        if is_bank:
-            comp_copy.assumptions.credit_growth = [max(cg * 0.8, -0.05) for cg in comp_copy.assumptions.credit_growth]
-            if hasattr(comp_copy.assumptions, "deposit_growth") and comp_copy.assumptions.deposit_growth:
-                comp_copy.assumptions.deposit_growth = [max(dg * 0.8, -0.05) for dg in comp_copy.assumptions.deposit_growth]
-            comp_copy.assumptions.nim = [max(n * 0.9, 0.01) for n in comp_copy.assumptions.nim]
-            comp_copy.assumptions.cir = [min(c * 1.1, 0.70) for c in comp_copy.assumptions.cir]
-            if comp_copy.assumptions.cost_of_equity is not None:
-                comp_copy.assumptions.cost_of_equity = comp_copy.assumptions.cost_of_equity + 0.01
-            comp_copy.assumptions.risk_free_rate = comp_copy.assumptions.risk_free_rate + 0.01
-        else:
-            comp_copy.assumptions.revenue_growth = [max(g * 0.8, -0.2) for g in comp_copy.assumptions.revenue_growth]
-            comp_copy.assumptions.ebit_margin = [max(m * 0.8, 0.01) for m in comp_copy.assumptions.ebit_margin]
-            comp_copy.assumptions.risk_free_rate = comp_copy.assumptions.risk_free_rate + 0.01
-            
+    sec = (cfg.get("bank") if is_bank else cfg.get("nonfin")) or {}
+
+    if is_bank:
+        a.credit_growth = _scaled(a.credit_growth,
+                                  sec.get("credit_growth_mult", 1.0),
+                                  sec.get("credit_growth_cap"), sec.get("credit_growth_floor"))
+        if getattr(a, "deposit_growth", None):
+            a.deposit_growth = _scaled(a.deposit_growth,
+                                       sec.get("deposit_growth_mult", 1.0),
+                                       sec.get("deposit_growth_cap"), sec.get("deposit_growth_floor"))
+        a.nim = _scaled(a.nim, sec.get("nim_mult", 1.0),
+                        sec.get("nim_cap"), sec.get("nim_floor"))
+        a.cir = _scaled(a.cir, sec.get("cir_mult", 1.0),
+                        sec.get("cir_cap"), sec.get("cir_floor"))
+        # ROE bền vững chi phối giá trị terminal -> BẮT BUỘC phải biến thiên.
+        roe_delta = sec.get("sustainable_roe_delta")
+        if roe_delta and getattr(a, "sustainable_roe", None):
+            a.sustainable_roe = max(0.0, a.sustainable_roe + roe_delta)
+    else:
+        a.revenue_growth = _scaled(a.revenue_growth,
+                                   sec.get("revenue_growth_mult", 1.0),
+                                   sec.get("revenue_growth_cap"), sec.get("revenue_growth_floor"))
+        a.ebit_margin = _scaled(a.ebit_margin,
+                                sec.get("ebit_margin_mult", 1.0),
+                                sec.get("ebit_margin_cap"), sec.get("ebit_margin_floor"))
+
+    # Tham số chung cho cả hai loại hình.
+    rf_delta = cfg.get("rf_delta")
+    if rf_delta:
+        a.risk_free_rate = max(0.01, a.risk_free_rate + rf_delta)
+    coe_delta = cfg.get("coe_delta")
+    if coe_delta and getattr(a, "cost_of_equity", None) is not None:
+        a.cost_of_equity = max(0.05, a.cost_of_equity + coe_delta)
+    g_delta = cfg.get("terminal_g_delta")
+    if g_delta and getattr(a, "terminal_growth_rate", None) is not None:
+        a.terminal_growth_rate = max(0.0, a.terminal_growth_rate + g_delta)
+
     return comp_copy
 
 def run_valuation_engine(company: Union[Company, CompanyBank], wacc_override: float = None, coe_override: float = None, g_override: float = None, projections: List[Dict[str, Any]] = None) -> Tuple[float, float]:
@@ -152,41 +194,23 @@ def calculate_sensitivity_matrix(
 def run_scenario_analysis(company: Union[Company, CompanyBank]) -> Dict[str, float]:
     """
     Tính kết quả định giá blended cho 3 kịch bản: Bull, Base, Bear.
+
+    D30 — UỶ QUYỀN 100% cho `apply_scenario_adjustments`. Bản cũ nhân bản logic
+    kịch bản NGAY TRONG CÙNG FILE nhưng với ngưỡng KHÁC (bank Bull cap credit
+    growth 0,30 vs 0,40; Bear floor +0,02 vs -0,05), nên cùng một mã ra hai kết
+    quả khác nhau tuỳ đường gọi — và không ai phát hiện vì không có test đối chiếu.
     """
     from valuation.engine.router import ValuationRouter
     route = ValuationRouter().get_routing(company.ticker)
     weight_intrinsic = route.get("weight_primary", 1.0)
-    
-    # 1. Base Scenario
-    base_int, base_rel = run_valuation_engine(company)
-    base_blended, _, _ = blend_intrinsic_relative(base_int, base_rel, weight_intrinsic, company.current_price)
-    
-    # 2. Bull Scenario (+20% tăng trưởng & ebit/nim)
-    bull_comp = copy.deepcopy(company)
-    if isinstance(bull_comp, Company):
-        bull_comp.assumptions.revenue_growth = [min(g * 1.2, 0.4) for g in bull_comp.assumptions.revenue_growth]
-        bull_comp.assumptions.ebit_margin = [min(m * 1.2, 0.6) for m in bull_comp.assumptions.ebit_margin]
-    else:
-        bull_comp.assumptions.credit_growth = [min(g * 1.2, 0.3) for g in bull_comp.assumptions.credit_growth]
-        bull_comp.assumptions.nim = [min(n * 1.1, 0.06) for n in bull_comp.assumptions.nim]
-        
-    bull_int, bull_rel = run_valuation_engine(bull_comp)
-    bull_blended, _, _ = blend_intrinsic_relative(bull_int, bull_rel, weight_intrinsic, company.current_price)
-    
-    # 3. Bear Scenario (-20% tăng trưởng & ebit/nim)
-    bear_comp = copy.deepcopy(company)
-    if isinstance(bear_comp, Company):
-        bear_comp.assumptions.revenue_growth = [max(g * 0.8, -0.1) for g in bear_comp.assumptions.revenue_growth]
-        bear_comp.assumptions.ebit_margin = [max(m * 0.8, 0.02) for m in bear_comp.assumptions.ebit_margin]
-    else:
-        bear_comp.assumptions.credit_growth = [max(g * 0.8, 0.02) for g in bear_comp.assumptions.credit_growth]
-        bear_comp.assumptions.nim = [max(n * 0.9, 0.015) for n in bear_comp.assumptions.nim]
-        
-    bear_int, bear_rel = run_valuation_engine(bear_comp)
-    bear_blended, _, _ = blend_intrinsic_relative(bear_int, bear_rel, weight_intrinsic, company.current_price)
-    
-    return {
-        "Bull": round(bull_blended, 0),
-        "Base": round(base_blended, 0),
-        "Bear": round(bear_blended, 0)
-    }
+
+    out: Dict[str, float] = {}
+    for scenario in ("Bull", "Base", "Bear"):
+        comp = apply_scenario_adjustments(company, scenario)
+        # COE/g của kịch bản nằm trong assumptions của bản sao -> model tự đọc.
+        intrinsic, relative = run_valuation_engine(comp)
+        blended, _, _ = blend_intrinsic_relative(
+            intrinsic, relative, weight_intrinsic, company.current_price
+        )
+        out[scenario] = round(blended, 0)
+    return out

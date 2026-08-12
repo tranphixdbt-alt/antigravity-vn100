@@ -109,16 +109,21 @@ def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: M
 
     # Decision Engine cho Phi tài chính
     business_nature = plan.get("business_nature", "Unknown")
+    # D28: model tự nhận không đủ cơ sở định giá (proxy lệch phi lý, thiếu dữ
+    # liệu cấu trúc tập đoàn...) -> không phát khuyến nghị MUA/BÁN.
+    not_rated = bool(res.get("not_rated"))
     decision_engine = InvestmentDecisionMaker(
         business_nature=business_nature,
         current_price=company.current_price,
         fair_value=blended_fv,
         governance=company.governance,
-        macro_env=macro_env
+        macro_env=macro_env,
+        not_rated=not_rated,
     )
     decision = decision_engine.make_decision()
 
     return {
+        "not_rated": not_rated,
         "blended_fair_value_per_share": blended_fv,
         "intrinsic_fv": blended_fv,
         "relative_fv": res.get("multiples_fvps", blended_fv),

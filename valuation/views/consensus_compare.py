@@ -91,6 +91,57 @@ def _panel(title: str, icon: str, color: str, items) -> None:
     )
 
 
+def _render_calibration(data: dict, dev: float) -> None:
+    """Kết luận hiệu chuẩn cho mã này (D25).
+
+    Thay cho cảnh báo cứng ">25%" trước đây: nay nói rõ mã có nằm trong band
+    không, và nếu lệch thì lệch CÓ CHỦ Ý (kèm luận điểm) hay đang là LỖI ĐÃ BIẾT.
+    Người đọc cần phân biệt hai thứ đó.
+    """
+    cal = data.get("calibration") or {}
+    status = cal.get("governance_status")
+    band = cal.get("band")
+    band_txt = f"±{band:.0%}" if band else "±20%"
+
+    if not status:  # không lấy được registry -> giữ cảnh báo cũ
+        if data.get("flag_high"):
+            st.warning(f"Mô hình lệch **{dev:+.1%}** so với trung vị CTCK (>25%) — rà soát giả định.",
+                       icon="🚨")
+        return
+
+    if cal.get("band_status") == "IN_BAND":
+        st.success(f"Mô hình lệch **{dev:+.1%}** — nằm trong ngưỡng chấp nhận {band_txt} "
+                   f"so với đồng thuận CTCK.", icon="✅")
+        return
+
+    if status == "OK_JUSTIFIED":
+        st.info(f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **lệch có chủ ý, "
+                f"đã được giải trình**:", icon="🧭")
+        st.markdown(f"> {cal.get('thesis')}")
+        ev = cal.get("evidence") or []
+        if ev:
+            st.caption("Bằng chứng: " + " · ".join(ev))
+        if cal.get("decision_ref"):
+            st.caption(f"Tham chiếu quyết định: {cal['decision_ref']} · "
+                       f"rà soát lần cuối {cal.get('reviewed_on')}")
+    elif status == "KNOWN_DEFECT":
+        st.error(f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **đây là LỖI ĐÃ BIẾT** "
+                 f"của phương pháp định giá cho mã này, đang trong hàng đợi sửa. "
+                 f"Đừng dùng con số định giá này để ra quyết định.", icon="🛠️")
+        if cal.get("decision_ref"):
+            st.caption(f"Tham chiếu: {cal['decision_ref']}")
+    elif status == "DATA_BLOCKED":
+        st.warning(f"Chưa đủ dữ liệu để kết luận mô hình đúng hay sai: {cal.get('thesis')}",
+                   icon="📭")
+    elif status == "STALE_JUSTIFICATION":
+        st.warning(f"Mô hình lệch **{dev:+.1%}** — có luận điểm giải trình nhưng **đã quá hạn "
+                   f"rà soát** ({cal.get('reviewed_on')}). Cần xem lại còn đúng không.", icon="🕒")
+    else:  # MISSING_JUSTIFICATION
+        st.warning(f"Mô hình lệch **{dev:+.1%}**, vượt ngưỡng {band_txt} so với đồng thuận CTCK "
+                   f"và **chưa có luận điểm giải trình**. Theo quy ước hiệu chuẩn, cần hoặc "
+                   f"giải trình được, hoặc coi là lỗi giả định và sửa.", icon="⚠️")
+
+
 def render_consensus_compare(company: Union[Company, CompanyBank],
                              blended_fv: float, db: Session) -> None:
     """Render tab So sánh CTCK cho 1 mã."""
@@ -101,7 +152,8 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
     if not data or not data.get("broker_rows"):
         st.info(
             "Chưa có dữ liệu khuyến nghị CTCK trong 180 ngày cho mã này. "
-            "Chạy `import_reports` (Simplize) / `import_broker_reports` (24hmoney) để nạp.",
+            "Bấm nút **'Tải mới " + company.ticker + "'** hoặc **'Quét VN100 Hàng Tuần'** "
+            "ở sidebar để thu thập báo cáo CTCK (Simplize/24hmoney) cho mã này.",
             icon="ℹ️",
         )
         return
@@ -111,18 +163,30 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 FV mô hình VN100", f"{_fmt_vnd(data['our_target'])} đ")
     c2.metric("🏦 Median CTCK", f"{_fmt_vnd(data['consensus_median'])} đ",
-              help=f"Trung vị {data['n_reports']} báo cáo trong 180 ngày")
+              help=f"Trung vị {data['n_reports']} CTCK trong 180 ngày "
+                   f"(từ {data.get('n_reports_raw', data['n_reports'])} báo cáo, "
+                   f"mỗi CTCK tính báo cáo mới nhất)")
     c3.metric("↔️ Mô hình vs CTCK", f"{dev:+.1%}",
               delta=f"{dev:+.1%}", delta_color="normal")
     c4.metric("📄 Số CTCK theo dõi", f"{data['n_brokers']}",
               help=f"Dải giá mục tiêu: {_fmt_vnd(data['range_min'])} – {_fmt_vnd(data['range_max'])} đ")
 
-    if data["flag_high"]:
+    # Đồng thuận quá mỏng: median chỉ phản ánh ý kiến 1 CTCK, không phải thị trường.
+    if data.get("consensus_thin"):
         st.warning(
-            f"Mô hình lệch **{dev:+.1%}** so với trung vị CTCK (>25%) — rà soát giả định "
-            "hoặc xem mục *Đối chiếu mô hình nội bộ* bên dưới.",
-            icon="🚨",
+            f"Chỉ **{data['n_brokers']} CTCK** theo dõi mã này — con số 'đồng thuận' bên trên "
+            "thực chất là ý kiến đơn lẻ, không đại diện quan điểm thị trường. "
+            "Hãy đọc kèm luận điểm thay vì chỉ nhìn độ lệch.",
+            icon="⚠️",
         )
+    if data.get("consensus_stale"):
+        st.info(
+            "Báo cáo CTCK mới nhất đã cũ hơn 120 ngày — có thể chưa phản ánh "
+            "kết quả kinh doanh gần đây.",
+            icon="🕒",
+        )
+
+    _render_calibration(data, dev)
 
     # ---- 2. Football field ------------------------------------------------
     st.subheader("📊 Giá mục tiêu từng CTCK vs Mô hình vs Thị giá")
@@ -164,9 +228,16 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
             _panel("Điểm RIÊNG / khác biệt giữa CTCK", "⚖️", "#D97706", synth["diem_rieng"])
             _panel("Đối chiếu mô hình nội bộ", "🧭", "#7C3AED", synth["doi_chieu_noi_bo"])
     else:
-        st.info(
-            "Chưa có bản AI tổng hợp cho mã này. Chạy:\n"
-            "`python3 -c \"from valuation.engine.consensus_synthesis import import_synthesis; "
-            f"import_synthesis('{company.ticker}')\"`",
-            icon="🤖",
-        )
+        st.info("Chưa có bản AI tổng hợp cho mã này.", icon="🤖")
+        if st.button("🪄 Sinh AI tổng hợp luận điểm CTCK", key="gen_consensus_synthesis"):
+            with st.spinner("AI đang tổng hợp luận điểm từ các báo cáo CTCK..."):
+                from valuation.engine.consensus_synthesis import import_synthesis
+                try:
+                    rec = import_synthesis(company.ticker)
+                    if rec:
+                        st.toast("Đã sinh bản AI tổng hợp!", icon="✅")
+                        st.rerun()
+                    else:
+                        st.warning("Không đủ dữ liệu báo cáo CTCK để tổng hợp.")
+                except Exception as e:
+                    st.error(f"Lỗi khi sinh AI tổng hợp: {e}")

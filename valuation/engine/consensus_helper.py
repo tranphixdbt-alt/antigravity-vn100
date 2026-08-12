@@ -1,37 +1,25 @@
 import datetime
-import statistics
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
-from valuation.db.models import Consensus, ConsensusSynthesis
+from valuation.db.models import ConsensusSynthesis
 
 def get_consensus_stats(ticker: str, trade_date: datetime.date, db: Session) -> Dict[str, Any]:
     """
-    Truy vấn các khuyến nghị trong consensus_history cho ticker,
-    lọc điều kiện report_date <= trade_date và trong vòng 180 ngày gần nhất.
-    Tính toán trung vị (Median), trung bình (Mean) và số lượng báo cáo.
+    Thống kê khuyến nghị CTCK cho 1 mã trong 180 ngày tính đến `trade_date`.
+
+    Giữ nguyên contract cũ {median, mean, count} cho code đang dùng, nhưng nay
+    uỷ quyền cho `calibration.consensus_view` — NGUỒN ĐỌC DUY NHẤT (D23).
+
+    Thay đổi hành vi CÓ CHỦ Ý (sửa bug): trước đây KHÔNG dedup theo CTCK, nên một
+    CTCK ra 3 báo cáo trong cửa sổ được tính 3 phiếu vào median; trong khi bảng chi
+    tiết ở `report_data.build_consensus_comparison` LẠI dedup. Hậu quả: KPI
+    "Median CTCK" và bảng ngay dưới nó hiển thị hai con số khác nhau. Nay cả hai
+    dùng chung một nguồn. `count` giờ là SỐ CTCK, không phải số báo cáo.
     """
-    start_date = trade_date - datetime.timedelta(days=180)
-    records = db.query(Consensus).filter(
-        Consensus.ticker == ticker,
-        Consensus.report_date <= trade_date,
-        Consensus.report_date >= start_date
-    ).all()
-    
-    if not records:
-        return {"median": None, "mean": None, "count": 0}
-        
-    prices = [float(r.target_price) for r in records if r.target_price is not None]
-    if not prices:
-        return {"median": None, "mean": None, "count": 0}
-        
-    median_val = statistics.median(prices)
-    mean_val = sum(prices) / len(prices)
-    
-    return {
-        "median": median_val,
-        "mean": mean_val,
-        "count": len(prices)
-    }
+    from valuation.calibration.consensus_view import get_consensus_view
+
+    view = get_consensus_view(db, ticker, as_of=trade_date, window_days=180)
+    return {"median": view.median, "mean": view.mean, "count": view.count}
 
 
 def get_synthesis(ticker: str, db: Session) -> Optional[Dict[str, Any]]:

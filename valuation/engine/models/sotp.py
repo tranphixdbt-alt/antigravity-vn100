@@ -130,10 +130,45 @@ class SOTPValuationModel(BaseValuationModel):
             
         sotp_ps = max(0.0, sotp_ps)
 
+        # ------------------------------------------------------------------
+        # D28 — CỔNG CHẶN: proxy không được phép xuất bản số tự tin.
+        #
+        # Khiếm khuyết thật của SOTP cũ không phải "kém chính xác" mà là ĐƯA RA
+        # MỘT CON SỐ ĐẦY TỰ TIN từ một proxy vô nghĩa: VIC ra 16.911đ trong khi
+        # thị giá 208.500đ (-92%). Giá trị VIC nằm ở cổ phần công ty con niêm yết
+        # và quỹ đất ghi giá gốc — công thức (0,6 × LNST×11 + 0,4 × VCSH sổ sách)
+        # không mô tả được gì cả.
+        #
+        # Thà một khoảng trống ĐƯỢC GHI NHẬN còn hơn một con số sai đầy tự tin.
+        # ------------------------------------------------------------------
+        price = self.current_financials.get("current_price")
+        not_rated = False
+        cfg = load_defaults().get("proxy_valuation", {})
+        max_div = float(cfg.get("proxy_max_divergence", 0.50))
+        is_proxy_mode = not (sotp_segments and len(sotp_segments) > 0)
+
+        if is_proxy_mode and price and price > 0 and sotp_ps > 0:
+            div = abs(sotp_ps - price) / price
+            if div > max_div:
+                not_rated = True
+                flags.append(
+                    f"PROXY_IMPLAUSIBLE: proxy SOTP lệch {((sotp_ps - price) / price):+.0%} "
+                    f"so thị giá (ngưỡng ±{max_div:.0%}) — proxy sổ sách/lợi nhuận không "
+                    f"mô tả được cấu trúc tập đoàn này. Cần khai báo cổ phần công ty con "
+                    f"trong config/sotp_holdings.yaml."
+                )
+        if is_proxy_mode and price and price > 0 and sotp_ps <= 0:
+            not_rated = True
+            flags.append("PROXY_IMPLAUSIBLE: proxy SOTP ra giá trị <= 0")
+
+        if not_rated:
+            flags.append("NOT_RATED")
+
         return {
             "blended_fair_value_per_share": sotp_ps, # Dùng luôn làm target price
             "earnings_value_per_share": earnings_ps if not (sotp_segments and len(sotp_segments) > 0) else sotp_ps,
             "nav_per_share": nav_ps if not (sotp_segments and len(sotp_segments) > 0) else 0.0,
             "discount_applied": discount,
+            "not_rated": not_rated,
             "flags": flags,
         }
