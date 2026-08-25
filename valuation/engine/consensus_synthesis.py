@@ -24,6 +24,8 @@ from valuation.db.models import ConsensusSynthesis
 from valuation.db.session import SessionLocalWrite
 from valuation.ingest.scrapers.broker_24hmoney import fetch_report_summaries
 
+# "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì tốn token
+# "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt JSON (xem valuation/analysis/ai_insight.py).
 _MODEL = "deepseek-chat"
 _KEYS = ("diem_chung", "diem_rieng", "diem_mau_chot", "doi_chieu_noi_bo")
 

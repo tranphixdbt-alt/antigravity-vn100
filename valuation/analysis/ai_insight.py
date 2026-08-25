@@ -44,12 +44,18 @@ def generate_ai_insight(ticker: str, sector: str, close_price: float, fair_value
 
     try:
         response = client.chat.completions.create(
+            # "deepseek-v4-flash" là model suy luận (reasoning) — tiêu tốn số
+            # token "suy nghĩ" NGẪU NHIÊN (đo thực tế: 89-1065 token/lần gọi cho
+            # cùng 1 prompt) trước khi sinh nội dung. Với max_tokens cố định, đôi
+            # khi ăn hết ngân sách vào suy luận → nội dung bị cắt/rỗng → JSON lỗi
+            # → exception bị nuốt → fallback im lặng, người dùng thấy "nút không
+            # chạy". "deepseek-chat" không suy luận (reasoning_tokens=0), ổn định.
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "You are a professional equity research analyst. Keep your responses extremely concise, structured, and sharp in Vietnamese."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150,
+            max_tokens=1000,
             temperature=0.3
         )
         insight = response.choices[0].message.content.strip()

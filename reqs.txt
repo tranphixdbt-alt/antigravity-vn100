@@ -21,8 +21,7 @@ PyYAML==6.0.3
 reportlab==5.0.0
 Requests==2.34.2
 SQLAlchemy==2.0.51
-streamlit==1.57.0
-streamlit==1.58.0
+streamlit>=1.30.0
 vnstock==4.0.4
 weasyprint==69.0
 yfinance==1.4.1

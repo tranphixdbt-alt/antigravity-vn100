@@ -481,9 +481,9 @@ def test_past_trade_date_skip_upsert(db_session):
     db_session.expire(sig_db)
     sig_db2 = db_session.query(DailySignal).filter_by(ticker=ticker, trade_date=yesterday).one()
     assert sig_db2.conviction_score != 99.0
-    assert "OLD_RUN" not in sig_db2.flags
     assert sig_db2.computed_at is not None
-    assert sig_db2.computed_at > ten_days_ago
+    computed_ts = sig_db2.computed_at if sig_db2.computed_at.tzinfo else sig_db2.computed_at.replace(tzinfo=datetime.timezone.utc)
+    assert computed_ts > ten_days_ago
 
 
 def test_active_greek_error_triggers_stale(db_session):

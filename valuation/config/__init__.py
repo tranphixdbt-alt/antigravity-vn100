@@ -3,7 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULTS_FILE = PROJECT_ROOT / "config" / "defaults.yaml"
 
 def load_defaults() -> dict:

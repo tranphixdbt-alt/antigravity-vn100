@@ -136,7 +136,44 @@ def get_latest_price(db: Session, ticker: str, fetch_live: bool = True) -> float
 
 def load_ticker_metadata(db: Session, ticker: str) -> Ticker:
     """Tải thông tin ngành và sàn giao dịch của ticker."""
-    return db.query(Ticker).filter(Ticker.ticker == ticker).first()
+    meta = db.query(Ticker).filter(Ticker.ticker == ticker).first()
+    if not meta:
+        try:
+            import json, os
+            routing_path = os.path.join(os.path.dirname(__file__), "..", "config", "routing.json")
+            if os.path.exists(routing_path):
+                with open(routing_path, "r", encoding="utf-8") as f:
+                    routing = json.load(f)
+                info = routing.get(ticker, {})
+                sector_raw = info.get("sector", "Khác")
+                sector_map = {
+                    "NH": "Banks",
+                    "CK": "Securities",
+                    "BH": "Insurance",
+                    "BĐS": "Real Estate",
+                    "KCN": "Industrial Real Estate",
+                    "Thép": "Steel",
+                    "Tiêu dùng": "Consumer",
+                    "Bán lẻ": "Retail",
+                    "Công nghệ": "Technology",
+                    "Điện": "Utilities",
+                    "Dầu khí": "Oil & Gas",
+                    "Hóa chất": "Chemicals",
+                }
+                sector_name = sector_map.get(sector_raw, sector_raw)
+                meta = Ticker(
+                    ticker=ticker,
+                    company_name=f"Công ty cổ phần {ticker}",
+                    exchange="HOSE",
+                    sector=sector_name,
+                    industry=sector_name
+                )
+                db.add(meta)
+                db.commit()
+                db.refresh(meta)
+        except Exception:
+            pass
+    return meta
 
 def get_shares_outstanding_repo(db: Session, ticker: str) -> float:
     """Lấy số lượng cổ phiếu lưu hành (đổi sang triệu cổ phiếu)."""

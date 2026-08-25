@@ -172,6 +172,9 @@ def extract_consensus_from_pdf_text(text: str) -> Dict[str, Any]:
 
     try:
         response = client.chat.completions.create(
+            # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì
+            # tốn token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt JSON (xem
+            # valuation/analysis/ai_insight.py).
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "You are a precise financial data extraction assistant. Always respond in pure JSON format without markdown code blocks."},

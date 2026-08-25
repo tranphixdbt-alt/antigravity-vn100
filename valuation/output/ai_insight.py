@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
 
-def call_deepseek_sync(prompt: str, max_tokens: int = 500, temperature: float = 0.3) -> str:
+def call_deepseek_sync(prompt: str, max_tokens: int = 1200, temperature: float = 0.3) -> str:
     if not settings.deepseek_api_key:
         return "⚠️ Không tìm thấy DEEPSEEK_API_KEY trong cấu hình. Không thể tạo nhận định AI."
 
@@ -22,6 +22,9 @@ def call_deepseek_sync(prompt: str, max_tokens: int = 500, temperature: float = 
         "Content-Type": "application/json",
     }
     payload = {
+        # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì tốn
+        # token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt nội dung (xem
+        # valuation/analysis/ai_insight.py).
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,

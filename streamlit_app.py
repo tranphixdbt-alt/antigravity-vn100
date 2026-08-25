@@ -49,22 +49,36 @@ st.markdown(
 # 1. Cấu hình DB engine cache để tránh cạn kiệt connection pool
 @st.cache_resource
 def get_db_engines():
-    db_url_read = os.getenv("DATABASE_URL_READONLY") or "postgresql://readonly_user:readonly_pass@localhost:5432/vn100"
-    db_url_write = os.getenv("DATABASE_URL_WRITE") or "postgresql://write_user:write_pass@localhost:5432/vn100"
+    db_url_read = os.getenv("DATABASE_URL_READONLY") or "sqlite:///vn100.db"
+    db_url_write = os.getenv("DATABASE_URL_WRITE") or "sqlite:///vn100.db"
     
-    # pool_pre_ping: tự reconnect nếu connection đứt (vd sau khi máy ngủ / Google Drive gián đoạn).
-    # pool_recycle: chủ động thay connection cũ hơn 30 phút (tránh connection "chết" bị poll liên tục).
-    # pool_size/max_overflow: giới hạn số kết nối để không làm ngập DB khi rerun nhiều.
-    # pool_timeout: fail nhanh thay vì treo nếu pool cạn.
-    _pool_kwargs = dict(
-        pool_pre_ping=True,
-        pool_recycle=1800,
-        pool_size=5,
-        max_overflow=5,
-        pool_timeout=30,
-    )
-    engine_read = create_engine(db_url_read, **_pool_kwargs)
-    engine_write = create_engine(db_url_write, **_pool_kwargs)
+    _pool_kwargs = dict(pool_pre_ping=True)
+    if "sqlite" in db_url_read:
+        _pool_kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        _pool_kwargs.update(dict(
+            pool_recycle=1800,
+            pool_size=5,
+            max_overflow=5,
+            pool_timeout=30,
+        ))
+    
+    try:
+        engine_read = create_engine(db_url_read, **_pool_kwargs)
+        engine_write = create_engine(db_url_write, **_pool_kwargs)
+        # Test connection
+        with engine_read.connect() as conn:
+            pass
+    except Exception as e:
+        # Fallback sang SQLite nếu PostgreSQL local không hoạt động
+        sqlite_url = "sqlite:///vn100.db"
+        engine_read = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+        engine_write = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+
+    # Tự động khởi tạo schema nếu dùng SQLite
+    if "sqlite" in str(engine_write.url):
+        from valuation.db.models import Base
+        Base.metadata.create_all(bind=engine_write)
 
     return engine_read, engine_write
 
@@ -102,14 +116,22 @@ try:
         freshness_status = check_data_freshness(db_read, threshold_days=7)
         if freshness_status.is_stale:
             st.warning(
-                f"🚨 **Phát hiện dữ liệu hệ thống đã cũ (Cập nhật {freshness_status.days_since_price} ngày trước).** "
-                f"Đang tự động khởi chạy tiến trình quét BCTC Quý/Năm, Báo cáo định giá CTCK và Giá thị trường mới nhất...",
+                f"🚨 **Phát hiện dữ liệu hệ thống cần làm mới (Giá: {freshness_status.days_since_price} ngày, Báo cáo CTCK: {freshness_status.days_since_consensus} ngày trước).** "
+                f"Đang tự động khởi chạy tiến trình quét BCTC Quý/Năm, Báo cáo định giá CTCK và Giá thị trường mới nhất dưới nền...",
                 icon="⚠️"
             )
             import threading
             from valuation.ingest.weekly_updater import run_weekly_auto_update
             def _auto_bg():
-                run_weekly_auto_update(db_read, db_write)
+                bg_read = SessionRead()
+                bg_write = SessionWrite()
+                try:
+                    run_weekly_auto_update(bg_read, bg_write)
+                except Exception as e_bg:
+                    logger.error(f"Lỗi chạy cập nhật ngầm: {e_bg}")
+                finally:
+                    bg_read.close()
+                    bg_write.close()
             threading.Thread(target=_auto_bg, daemon=True).start()
             st.toast("🚀 Đã tự động kích hoạt tiến trình cập nhật BCTC & Báo cáo CTCK hàng tuần ngầm dưới nền!", icon="🔄")
         st.session_state["auto_weekly_check_done"] = True
@@ -337,7 +359,7 @@ except Exception as e:
     st.error(f"Đã xảy ra lỗi hệ thống: {e}")
     import traceback
     st.code(traceback.format_exc())
-    with open("streamlit_crash.log", "w") as f:
+    with open("streamlit_crash.log", "w", encoding="utf-8") as f:
         f.write(traceback.format_exc())
 
 finally:

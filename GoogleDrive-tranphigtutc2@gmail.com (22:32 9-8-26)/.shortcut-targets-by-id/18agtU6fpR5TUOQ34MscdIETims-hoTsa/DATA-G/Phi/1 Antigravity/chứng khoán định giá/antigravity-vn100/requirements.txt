@@ -1,0 +1,8 @@
+
+yfinance
+beautifulsoup4
+openai
+gspread
+gspread-dataframe
+discord-webhook
+discord.py>=2.3

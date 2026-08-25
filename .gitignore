@@ -1,53 +1,54 @@
-.env
-*.env
-secrets/
-*service-account*.json
-*.pem
-*.key
+# Python
 __pycache__/
-*.pyc
-.venv/
-venv/
-.DS_Store
-n8n_data/
-vn100_valuations.csv
-
-# Caches công cụ
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Build artifacts
-*.egg-info/
-
-# Log & output tạm
-*.log
-temp_reports/
-
-# Scratch: script debug/thăm dò một lần, không phải nguồn sự thật
-scratch/
-
-# File nội dung sinh tự động từ docx/xlsx (dùng để đọc, không version)
-*_content.txt
-
-# Scratch/debug ở GỐC repo (test thật nằm trong tests/). Không version.
-/test_*.py
-/fix_*.py
-/fix_*.sh
-*.pdf
-test_output.txt
-.macro_bulletin_cache.json
-VN100_Valuation_Results.csv
-compare_table.md
-.streamlit/secrets.toml
-
-# Build artifacts (PyInstaller) & DB backups
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 build/
+develop-eggs/
 dist/
-*.spec
-*.sql
-vn100_backup.sql
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Báo cáo PDF CTCK tải nội bộ (bản quyền — không commit/phát tán)
-reports_pdf/
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+*.db
+*.sqlite3
+*.sql
+*.xlsx
+*.csv
 *.pdf
+*.docx
+*.html
+secrets/
+temp_reports/
+reports_pdf/
+scratch/
+bot.log
+backend.log
+streamlit_run.log
+streamlit_crash.log
+
+# Streamlit config (if you don't want to expose secrets)
+# .streamlit/secrets.toml

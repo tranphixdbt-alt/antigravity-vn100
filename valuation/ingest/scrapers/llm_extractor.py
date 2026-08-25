@@ -33,6 +33,9 @@ def extract_macro_from_text(text: str, indicator_name: str) -> Dict[str, Any]:
 
     try:
         response = client.chat.completions.create(
+            # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì
+            # tốn token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt JSON trước khi kịp
+            # trả lời (xem valuation/analysis/ai_insight.py).
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "You are a helpful financial data extraction assistant. Always respond in pure JSON."},

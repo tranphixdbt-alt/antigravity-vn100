@@ -87,22 +87,37 @@ def fetch_rss_news():
             
     return "\n\n".join(news_items)
 
-def get_openai_client() -> OpenAI:
+def get_openai_client() -> OpenAI | None:
+    """Trả client AI; None nếu chưa cấu hình API key.
+
+    Trả None thay vì để OpenAI(api_key=None) ném OpenAIError: bản tin vĩ mô chỉ là
+    tính năng phụ, thiếu key thì tắt riêng nó, KHÔNG được kéo sập cả app định giá.
+    """
     from valuation.config import settings
     api_key = settings.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY") # fallback
-    if api_key and api_key.startswith("sk-"):
+    if not api_key:
+        return None
+    if api_key.startswith("sk-"):
         # if using deepseek
         return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     return OpenAI(api_key=api_key)
 
 def generate_macro_bulletin() -> str:
+    # Kiểm tra key TRƯỚC khi tải RSS để khỏi tốn request mạng vô ích.
+    client = get_openai_client()
+    if client is None:
+        return (
+            "⚠️ Chưa cấu hình API key cho AI (`DEEPSEEK_API_KEY` hoặc `OPENAI_API_KEY` "
+            "trong `.env`). Bản tin vĩ mô tạm nghỉ — các chức năng định giá khác vẫn "
+            "chạy bình thường."
+        )
+
     news_text = fetch_rss_news()
     if not news_text:
         return "⚠️ Không thể lấy được bản tin Vĩ mô lúc này. Vui lòng thử lại sau."
-        
-    client = get_openai_client()
+
     prompt = f"""Bạn là một chuyên gia kinh tế vĩ mô và chiến lược gia thị trường chứng khoán.
 Dưới đây là các tin tức vĩ mô mới nhất được tổng hợp từ báo chí trong 24h qua:
 
@@ -129,11 +144,15 @@ LƯU Ý: Không được bịa đặt thông tin, chỉ lấy từ nội dung đ
 
     try:
         response = client.chat.completions.create(
+            # "deepseek-chat" (không phải "deepseek-v4-flash" — model suy luận,
+            # tốn token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt nội dung trước khi
+            # kịp trả lời; xem valuation/analysis/ai_insight.py).
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "You are a top-tier macroeconomic analyst."},
                 {"role": "user", "content": prompt}
             ],
+            max_tokens=1500,
             temperature=0.3
         )
         return response.choices[0].message.content.strip()

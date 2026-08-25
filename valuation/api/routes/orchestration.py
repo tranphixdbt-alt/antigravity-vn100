@@ -133,7 +133,7 @@ def _run_vn100_batch_job(channel_id=None):
 
         if valid:
             summary_prompt = _build_market_summary_prompt(valid, top10, bottom10)
-            market_summary = call_deepseek_sync(summary_prompt, max_tokens=120, temperature=0.4)
+            market_summary = call_deepseek_sync(summary_prompt, max_tokens=1000, temperature=0.4)
         else:
             market_summary = "Không đủ dữ liệu hợp lệ để đưa ra nhận định thị trường."
 

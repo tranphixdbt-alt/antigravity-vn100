@@ -105,8 +105,7 @@ class TestHopNhatKichBan:
     """D30: run_scenario_analysis phải uỷ quyền cho apply_scenario_adjustments."""
 
     def test_hai_duong_goi_cho_cung_ket_qua(self):
-        from valuation.data_access.repo import build_company_data
-        from valuation.db.session import SessionLocalRead
+        from tests.helpers_bank import build_fake_bank
         from valuation.engine.blend import blend_intrinsic_relative
         from valuation.engine.router import ValuationRouter
         from valuation.engine.sensitivity import (
@@ -115,13 +114,8 @@ class TestHopNhatKichBan:
             run_valuation_engine,
         )
 
-        db = SessionLocalRead()
-        try:
-            company = build_company_data(db, "ACB", mode="TTM", fetch_live=False)
-        finally:
-            db.close()
-
-        w = ValuationRouter().get_routing("ACB").get("weight_primary", 1.0)
+        company = build_fake_bank(sustainable_roe=0.16, coe=0.12, price=25000.0)
+        w = ValuationRouter().get_routing(company.ticker).get("weight_primary", 1.0)
         direct = run_scenario_analysis(company)
         for scenario in ("Bull", "Base", "Bear"):
             comp = apply_scenario_adjustments(company, scenario)
@@ -133,16 +127,10 @@ class TestHopNhatKichBan:
 
     def test_kich_ban_bien_thien_ca_khoi_terminal(self):
         """Bản cũ chỉ nhiễu credit_growth/NIM -> dải Bull-Bear chỉ ±6%."""
-        from valuation.data_access.repo import build_company_data
-        from valuation.db.session import SessionLocalRead
+        from tests.helpers_bank import build_fake_bank
         from valuation.engine.sensitivity import apply_scenario_adjustments
 
-        db = SessionLocalRead()
-        try:
-            company = build_company_data(db, "ACB", mode="TTM", fetch_live=False)
-        finally:
-            db.close()
-
+        company = build_fake_bank(sustainable_roe=0.16, coe=0.12)
         bull = apply_scenario_adjustments(company, "Bull")
         bear = apply_scenario_adjustments(company, "Bear")
         assert bull.assumptions.sustainable_roe > company.assumptions.sustainable_roe
@@ -150,29 +138,19 @@ class TestHopNhatKichBan:
         assert bull.assumptions.terminal_growth_rate > bear.assumptions.terminal_growth_rate
 
     def test_dai_kich_ban_du_rong_de_co_y_nghia(self):
-        from valuation.data_access.repo import build_company_data
-        from valuation.db.session import SessionLocalRead
+        from tests.helpers_bank import build_fake_bank
         from valuation.engine.sensitivity import run_scenario_analysis
 
-        db = SessionLocalRead()
-        try:
-            company = build_company_data(db, "ACB", mode="TTM", fetch_live=False)
-        finally:
-            db.close()
+        company = build_fake_bank(sustainable_roe=0.16, coe=0.12, price=25000.0)
         s = run_scenario_analysis(company)
         spread = (s["Bull"] - s["Bear"]) / s["Base"]
         assert spread > 0.20, f"dải Bull-Bear quá hẹp ({spread:.0%}) — tạo cảm giác an toàn giả"
 
     def test_base_khong_bi_thay_doi(self):
-        from valuation.data_access.repo import build_company_data
-        from valuation.db.session import SessionLocalRead
+        from tests.helpers_bank import build_fake_bank
         from valuation.engine.sensitivity import apply_scenario_adjustments
 
-        db = SessionLocalRead()
-        try:
-            company = build_company_data(db, "ACB", mode="TTM", fetch_live=False)
-        finally:
-            db.close()
+        company = build_fake_bank(sustainable_roe=0.16, coe=0.12)
         base = apply_scenario_adjustments(company, "Base")
         assert base.assumptions.sustainable_roe == company.assumptions.sustainable_roe
         assert base.assumptions.credit_growth == company.assumptions.credit_growth

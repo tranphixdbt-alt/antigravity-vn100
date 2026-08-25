@@ -134,12 +134,18 @@ TRẢ VỀ JSON THUẦN đúng schema: {{"thesis": "...", "overview": "...",
         from openai import OpenAI
         client = OpenAI(api_key=settings.deepseek_api_key, base_url="https://api.deepseek.com/v1")
         response = client.chat.completions.create(
+            # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash":
+            # đo thực tế tiêu tốn 89-1065 "reasoning token" NGẪU NHIÊN cho cùng
+            # 1 prompt, đôi khi ăn hết max_tokens trước khi kịp sinh JSON trả về
+            # → content rỗng/cắt cụt → json.loads lỗi → exception bị nuốt → rơi
+            # về fallback im lặng. Đây là nguyên nhân nút "Sinh nháp văn bản AI"
+            # thỉnh thoảng không hoạt động mà không báo lỗi gì.
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "You are a senior equity research analyst. Reply with pure JSON only."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1200,
+            max_tokens=2000,
             temperature=0.3,
         )
         raw = response.choices[0].message.content.strip()

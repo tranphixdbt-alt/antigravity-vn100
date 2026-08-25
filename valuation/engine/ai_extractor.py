@@ -131,12 +131,12 @@ Bạn PHẢI trả về ĐÚNG định dạng JSON sau:
     
     try:
         response = client.chat.completions.create(
-            model=os.getenv("AI_MODEL_NAME", "deepseek-reasoner"),
+            model=os.getenv("AI_MODEL_NAME", "deepseek-chat"),
             messages=[
                 {"role": "system", "content": "You are a highly precise financial data extractor. Output strict JSON exactly as requested."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"} if "gpt" in os.getenv("AI_MODEL_NAME", "deepseek-chat") or "deepseek-chat" in os.getenv("AI_MODEL_NAME", "deepseek-chat") else None
+            response_format={"type": "json_object"}
         )
         content = response.choices[0].message.content
         if content.startswith("```json"):
@@ -202,12 +202,12 @@ Bạn PHẢI trả về ĐÚNG định dạng JSON sau:
     
     try:
         response = client.chat.completions.create(
-            model=os.getenv("AI_MODEL_NAME", "deepseek-reasoner"),
+            model=os.getenv("AI_MODEL_NAME", "deepseek-chat"),
             messages=[
                 {"role": "system", "content": "You are a highly precise financial data extractor. Output strict JSON exactly as requested."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"} if "gpt" in os.getenv("AI_MODEL_NAME", "deepseek-chat") or "deepseek-chat" in os.getenv("AI_MODEL_NAME", "deepseek-chat") else None
+            response_format={"type": "json_object"}
         )
         content = response.choices[0].message.content
         if content.startswith("```json"):

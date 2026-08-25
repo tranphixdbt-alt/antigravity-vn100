@@ -14,6 +14,18 @@ import os
 import openai
 from datetime import datetime
 
+PLOTLY_CONFIG = {
+    "modeBarButtonsToAdd": [
+        "drawline",
+        "drawopenpath",
+        "drawclosedpath",
+        "drawcircle",
+        "drawrect",
+        "eraseshape",
+    ],
+    "displaylogo": False,
+}
+
 def generate_ai_narrative(ticker: str, company_name: str, blended_fv: float, current_price: float, upside: float, rec: str, company: Union[Company, CompanyBank] = None) -> str:
     """
     Sử dụng DeepSeek API để sinh báo cáo tóm tắt 500-1000 từ.
@@ -75,6 +87,9 @@ Phần 5: Rủi ro Đầu tư & Monitoring Dashboard (Chỉ báo theo dõi)
     
     try:
         response = client.chat.completions.create(
+            # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì
+            # tốn token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt nội dung (xem
+            # valuation/analysis/ai_insight.py).
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": "Bạn là Senior Equity Analyst kiêm Data Supervisor. Bạn viết báo cáo phân tích khách quan, mang tính phản biện cao, tuyệt đối không dùng ngôn từ phóng đại. Bạn phải soi xét số liệu và phản biện nếu định giá có sự bất thường (Upside phi lý). Luôn sử dụng dữ liệu vĩ mô cập nhật nhất (hiện tại là năm " + str(current_year) + ")."},
@@ -305,7 +320,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     fig_overview.update_yaxes(title_text=f"{rev_name} (Tỷ VNĐ)", secondary_y=False, showgrid=True, gridcolor='#334155')
     fig_overview.update_yaxes(title_text="Lợi nhuận (Tỷ VNĐ)", secondary_y=True, showgrid=False)
     
-    st.plotly_chart(fig_overview, use_container_width=True, theme=None)
+    st.plotly_chart(fig_overview, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
 
     # ----------------------------------------------------
     # PHÂN ĐOẠN 1: BÁO CÁO KẾT QUẢ KINH DOANH (IS)
@@ -414,7 +429,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
             barmode="group", height=420, **_dark_theme,
         )
 
-    st.plotly_chart(fig_is_trend, use_container_width=True, theme=None)
+    st.plotly_chart(fig_is_trend, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
 
     # 1.2. Dữ liệu dự phóng IS
     is_proj_data = []
@@ -566,7 +581,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
             )
         )
 
-    st.plotly_chart(fig_bs_comp, use_container_width=True, theme=None)
+    st.plotly_chart(fig_bs_comp, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
 
     # 2.2. Dữ liệu dự phóng BS
     bs_proj_data = []
