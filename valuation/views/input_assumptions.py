@@ -82,7 +82,7 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
         df_schedule = pd.DataFrame(schedule_data).set_index("Năm")
         edited_schedule = st.data_editor(
             df_schedule, 
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Tăng trưởng tín dụng (%)": st.column_config.NumberColumn("Tăng trưởng tín dụng (%)", help="Dự phóng tốc độ tăng trưởng cho vay khách hàng."),
                 "Tăng trưởng tiền gửi (%)": st.column_config.NumberColumn("Tăng trưởng tiền gửi (%)", help="Dự phóng tốc độ huy động vốn từ khách hàng."),
@@ -115,7 +115,7 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
         df_schedule = pd.DataFrame(schedule_data).set_index("Năm")
         edited_schedule = st.data_editor(
             df_schedule, 
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Tăng trưởng Doanh thu (%)": st.column_config.NumberColumn("Tăng trưởng Doanh thu (%)", help="Dự phóng tốc độ tăng trưởng doanh thu cốt lõi hàng năm."),
                 "Biên EBIT (%)": st.column_config.NumberColumn("Biên EBIT (%)", help="Biên lợi nhuận hoạt động (Lợi nhuận trước lãi vay và thuế). Đo lường hiệu quả cốt lõi."),
@@ -190,7 +190,7 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
         
         context_text = st.text_area("Nội dung Báo cáo:", height=150)
         
-        if st.button("Chạy AI Bóc tách", use_container_width=True):
+        if st.button("Chạy AI Bóc tách", width="stretch"):
             if not context_text.strip():
                 st.warning("Vui lòng nhập nội dung báo cáo!")
             else:
@@ -218,14 +218,14 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
             if current_projects:
                 st.write("**Danh sách Dự án (Có thể chỉnh sửa):**")
                 df_proj = pd.DataFrame(current_projects)
-                edited_proj = st.data_editor(df_proj, num_rows="dynamic", use_container_width=True)
+                edited_proj = st.data_editor(df_proj, num_rows="dynamic", width="stretch")
                 assumptions.rnav_projects = edited_proj.to_dict('records')
         else: # SOTP
             current_segments = st.session_state.get(f"ai_sotp_segments_{company.ticker}", getattr(assumptions, 'sotp_segments', []))
             if current_segments:
                 st.write("**Danh sách Mảng kinh doanh (Có thể chỉnh sửa):**")
                 df_seg = pd.DataFrame(current_segments)
-                edited_seg = st.data_editor(df_seg, num_rows="dynamic", use_container_width=True)
+                edited_seg = st.data_editor(df_seg, num_rows="dynamic", width="stretch")
                 assumptions.sotp_segments = edited_seg.to_dict('records')
 
     if not is_bank:
@@ -246,7 +246,7 @@ def render_input_assumptions(company: Union[Company, CompanyBank]):
         edited_land = st.data_editor(
             df_land,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "ten": "Tên khu đất/dự án",
                 "dien_tich_ha": st.column_config.NumberColumn("Diện tích (ha)", min_value=0.0),

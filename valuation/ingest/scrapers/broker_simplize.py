@@ -18,10 +18,10 @@ import re
 from typing import Any, Dict, List, Optional
 
 import httpx
-from sqlalchemy.dialects.postgresql import insert
 
 from valuation.db.models import Consensus
 from valuation.db.session import SessionLocalWrite
+from valuation.db.upsert import dialect_insert
 
 _API = "https://api2.simplize.vn/api/company/analysis-report/list"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
@@ -84,7 +84,7 @@ def import_reports(ticker: str, size: int = 30) -> List[Dict[str, Any]]:
             canon, _ = normalize_broker(rec["broker"])
             row = {**rec, "broker_canon": canon, "source_site": "SIMPLIZE",
                    "currency_unit": "VND", "is_synthetic": False}
-            stmt = insert(Consensus).values(row)
+            stmt = dialect_insert(db, Consensus).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["ticker", "broker", "report_date"],
                 set_={

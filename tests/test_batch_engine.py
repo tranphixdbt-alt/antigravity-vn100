@@ -45,6 +45,57 @@ def test_dataframe_columns_and_proxy_label(db):
     df = build_vn100_dataframe(results)
     for col in ["Mã", "Ngành", "Phương pháp", "FV", "Upside %", "Độ tin cậy", "Cờ"]:
         assert col in df.columns
-    # NLG (RNAV) phải gắn nhãn Proxy
+    # NLG (RNAV) phải ghi rõ proxy không phải khuyến nghị đầu tư.
     nlg = df[df["Mã"] == "NLG"].iloc[0]
-    assert nlg["Độ tin cậy"] == "Proxy"
+    assert nlg["Độ tin cậy"] == "Proxy - không khuyến nghị"
+
+
+@pytest.mark.parametrize(
+    "result,expected_label",
+    [
+        (
+            {
+                "ticker": "AAA", "group": "Khác", "method": "DCF",
+                "status": "IMPLEMENTED", "verified": True, "price": 10_000,
+                "fair_value": 12_000, "upside": 0.2, "flags": [],
+            },
+            "Đã kiểm chứng",
+        ),
+        (
+            {
+                "ticker": "BBB", "group": "Khác", "method": "DCF",
+                "status": "IMPLEMENTED", "verified": False, "price": 10_000,
+                "fair_value": 12_000, "upside": 0.2, "flags": [],
+            },
+            "Mô hình ngành - chưa golden test",
+        ),
+        (
+            {
+                "ticker": "CCC", "group": "Khác", "method": "DCF",
+                "status": "IMPLEMENTED", "verified": True, "price": 10_000,
+                "fair_value": 12_000, "upside": 0.2, "flags": ["STALE_PRICE"],
+            },
+            "Cần cập nhật dữ liệu",
+        ),
+        (
+            {
+                "ticker": "DDD", "group": "BĐS", "method": "RNAV",
+                "status": "PARTIAL", "verified": False, "price": 10_000,
+                "fair_value": 12_000, "upside": 0.2, "flags": ["VALUATION_PROXY"],
+            },
+            "Proxy - không khuyến nghị",
+        ),
+        (
+            {
+                "ticker": "EEE", "group": "Khác", "method": "DCF",
+                "status": "IMPLEMENTED", "verified": False, "price": 10_000,
+                "fair_value": None, "upside": None,
+                "flags": ["NEGATIVE_EQUITY_VALUE_DCF", "NOT_RATEABLE"],
+            },
+            "Không định giá",
+        ),
+    ],
+)
+def test_dataframe_confidence_reflects_data_quality(result, expected_label):
+    df = build_vn100_dataframe([result])
+    assert df.iloc[0]["Độ tin cậy"] == expected_label

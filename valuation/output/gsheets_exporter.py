@@ -1,10 +1,19 @@
 import logging
 import datetime
+from collections import Counter
+from pathlib import Path
 import pandas as pd
 import gspread
 from gspread_dataframe import set_with_dataframe
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from valuation.db.models import DailySignal, Ticker
+from valuation.db.models import (
+    DailySignal,
+    FinancialsQuarterly,
+    MacroSeries,
+    PricesDaily,
+    Ticker,
+)
 from valuation.db.session import SessionLocalRead
 from valuation.config import settings
 from valuation.engine.ttm_helper import (
@@ -299,7 +308,9 @@ def update_single_ticker_to_gsheets(
     blended_fv: float, 
     greeks: dict, 
     qc_flags: list, 
-    db: Session
+    db: Session,
+    ai_insight: str = None,
+    allow_ai_call: bool = True,
 ):
     """
     Cập nhật hoặc chèn mới kết quả định giá của một mã CK đơn lẻ vào Google Sheets 'Daily_Screener'.
@@ -405,19 +416,22 @@ def update_single_ticker_to_gsheets(
             else:
                 rating = "THEO DÕI"
                 
-        # 5. Gọi DeepSeek tạo nhận định AI (AI Insight)
-        ai_insight = generate_ai_insight(
-            ticker=ticker,
-            sector=display_sector,
-            close_price=curr_price,
-            fair_value=blended_fv,
-            upside=upside,
-            flags=qc_flags,
-            roe=roe,
-            pe=pe,
-            pb=pb,
-            consensus_target=consensus_target
-        )
+        # 5. UI ưu tiên dùng lại báo cáo đã kiểm chứng để không tạo API call thứ hai.
+        if not ai_insight and allow_ai_call:
+            ai_insight = generate_ai_insight(
+                ticker=ticker,
+                sector=display_sector,
+                close_price=curr_price,
+                fair_value=blended_fv,
+                upside=upside,
+                flags=qc_flags,
+                roe=roe,
+                pe=pe,
+                pb=pb,
+                consensus_target=consensus_target,
+            )
+        if not ai_insight:
+            ai_insight = "Chưa sinh báo cáo AI đã kiểm chứng cho mã này."
         
         # 6. Chuẩn bị hàng dữ liệu để ghi vào Sheet
         row_data = [
@@ -554,6 +568,25 @@ _METHOD_LABEL = {
 }
 
 
+def _confidence_label(result: dict, flags: list[str]) -> str:
+    flag_set = set(flags)
+    if result.get("fair_value") is None or "NOT_RATEABLE" in flag_set:
+        return "Không định giá"
+    if result.get("status") == "PARTIAL":
+        return "Proxy - không khuyến nghị"
+    if any(flag.startswith("STALE_") or flag.startswith("MISSING_") for flag in flags):
+        return "Cần cập nhật dữ liệu"
+    if {
+        "UPSIDE_EXTREME_REVIEW",
+        "DOWNSIDE_EXTREME_REVIEW",
+        "PROXY_IMPLAUSIBLE",
+    }.intersection(flag_set):
+        return "Cần kiểm tra"
+    if result.get("verified"):
+        return "Đã kiểm chứng"
+    return "Mô hình ngành - chưa golden test"
+
+
 def build_vn100_dataframe(results: list) -> pd.DataFrame:
     """Dựng DataFrame bảng định giá VN100 từ kết quả batch.value_all."""
     rows = []
@@ -563,24 +596,178 @@ def build_vn100_dataframe(results: list) -> pd.DataFrame:
                 "Mã": r["ticker"], "Ngành": r.get("group", ""),
                 "Phương pháp": _METHOD_LABEL.get(r.get("method", ""), r.get("method", "")),
                 "Giá": r.get("price"), "FV": None, "Upside %": None,
-                "Độ tin cậy": "Lỗi", "Cờ": r["error"],
+                "Khuyến nghị": "LỖI", "Độ tin cậy": "Lỗi", "Cờ": r["error"],
             })
             continue
         flags = r.get("flags", [])
-        proxy = "Proxy" if r.get("status") == "PARTIAL" else ("Đã kiểm chứng" if r.get("verified") else "Chuẩn ngành")
+        confidence = _confidence_label(r, flags)
         rows.append({
             "Mã": r["ticker"], "Ngành": r.get("group", ""),
             "Phương pháp": _METHOD_LABEL.get(r["method"], r["method"]),
             "Giá": round(r["price"]) if r.get("price") else None,
             "FV": round(r["fair_value"]) if r.get("fair_value") is not None else None,
             "Upside %": round(r["upside"] * 100, 1) if r.get("upside") is not None else None,
-            "Độ tin cậy": proxy,
+            "Khuyến nghị": r.get("recommendation", "THEO DÕI"),
+            "Độ tin cậy": confidence,
             "Cờ": ", ".join(flags),
         })
     df = pd.DataFrame(rows)
     if "Upside %" in df.columns:
         df = df.sort_values("Upside %", ascending=False, na_position="last").reset_index(drop=True)
     return df
+
+
+def export_vn100_valuations_to_xlsx(
+    results: list,
+    db: Session,
+    output_path: Path,
+) -> Path:
+    """Xuất workbook local có bảng kết quả và dữ liệu truy vết tối thiểu."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from valuation.ingest.universe import load_vn100_snapshot
+
+    output_path = Path(output_path)
+    valuation_df = build_vn100_dataframe(results)
+    symbols = [str(result["ticker"]) for result in results]
+    quality_rows = []
+    for symbol in symbols:
+        price_date = (
+            db.query(func.max(PricesDaily.trade_date))
+            .filter(PricesDaily.ticker == symbol)
+            .scalar()
+        )
+        latest_fin = (
+            db.query(
+                FinancialsQuarterly.fiscal_year,
+                FinancialsQuarterly.fiscal_quarter,
+            )
+            .filter(
+                FinancialsQuarterly.ticker == symbol,
+                FinancialsQuarterly.fiscal_quarter > 0,
+            )
+            .distinct()
+            .order_by(
+                FinancialsQuarterly.fiscal_year.desc(),
+                FinancialsQuarterly.fiscal_quarter.desc(),
+            )
+            .first()
+        )
+        sources = [
+            row[0]
+            for row in db.query(FinancialsQuarterly.source)
+            .filter(FinancialsQuarterly.ticker == symbol)
+            .distinct()
+            .all()
+            if row[0]
+        ]
+        published_rows = (
+            db.query(func.count())
+            .select_from(FinancialsQuarterly)
+            .filter(
+                FinancialsQuarterly.ticker == symbol,
+                FinancialsQuarterly.published_at.isnot(None),
+            )
+            .scalar()
+        )
+        quality_rows.append(
+            {
+                "Mã": symbol,
+                "Ngày giá mới nhất": price_date,
+                "Kỳ BCTC mới nhất": (
+                    f"{latest_fin[0]}Q{latest_fin[1]}" if latest_fin else None
+                ),
+                "Nguồn BCTC": ", ".join(sorted(sources)),
+                "Số dòng có published_at": int(published_rows or 0),
+            }
+        )
+    quality_df = pd.DataFrame(quality_rows)
+
+    flag_counts = Counter()
+    for result in results:
+        for flag in result.get("flags", []) or []:
+            flag_counts[str(flag).split(":", 1)[0]] += 1
+    flag_df = pd.DataFrame(
+        [{"Cờ": flag, "Số mã": count} for flag, count in flag_counts.most_common()]
+    )
+
+    snapshot = load_vn100_snapshot()
+    macro = (
+        db.query(MacroSeries)
+        .filter(MacroSeries.indicator_code == "TPCP_10Y")
+        .order_by(MacroSeries.date.desc())
+        .first()
+    )
+    source_df = pd.DataFrame(
+        [
+            {
+                "Dữ liệu": "Danh mục VN100",
+                "Kỳ/Ngày": snapshot["as_of"],
+                "Giá trị": "100 mã",
+                "Nguồn": snapshot["source"],
+                "URL": snapshot["official_reference"],
+            },
+            {
+                "Dữ liệu": "TPCP Việt Nam 10 năm",
+                "Kỳ/Ngày": macro.date if macro else None,
+                "Giá trị": float(macro.value) if macro else None,
+                "Nguồn": macro.source if macro else None,
+                "URL": "https://www.hnx.vn/vi-vn/chi-tiet-tin-60023234-0.html",
+            },
+            {
+                "Dữ liệu": "BCTC và giá",
+                "Kỳ/Ngày": datetime.date.today(),
+                "Giá trị": "Consolidated, VND",
+                "Nguồn": "vnstock/VCI",
+                "URL": "https://vnstocks.com/",
+            },
+        ]
+    )
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        valuation_df.to_excel(writer, sheet_name="VN100_Valuations", index=False)
+        quality_df.to_excel(writer, sheet_name="Data_Quality", index=False)
+        flag_df.to_excel(writer, sheet_name="Flag_Summary", index=False)
+        source_df.to_excel(writer, sheet_name="Sources_Assumptions", index=False)
+
+        header_fill = PatternFill("solid", fgColor="1F4E78")
+        warning_fill = PatternFill("solid", fgColor="FFF2CC")
+        bad_fill = PatternFill("solid", fgColor="F4CCCC")
+        proxy_fill = PatternFill("solid", fgColor="D9EAD3")
+        for worksheet in writer.book.worksheets:
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = worksheet.dimensions
+            for cell in worksheet[1]:
+                cell.fill = header_fill
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            for column in worksheet.columns:
+                width = min(
+                    max(len(str(cell.value or "")) for cell in column) + 2,
+                    48,
+                )
+                worksheet.column_dimensions[column[0].column_letter].width = max(width, 10)
+
+        valuation_ws = writer.book["VN100_Valuations"]
+        headers = {cell.value: cell.column for cell in valuation_ws[1]}
+        for row in range(2, valuation_ws.max_row + 1):
+            confidence = valuation_ws.cell(row, headers["Độ tin cậy"]).value
+            target = valuation_ws.cell(row, headers["Độ tin cậy"])
+            if confidence == "Không định giá":
+                target.fill = bad_fill
+            elif confidence == "Proxy - không khuyến nghị":
+                target.fill = proxy_fill
+            elif confidence in {"Cần cập nhật dữ liệu", "Cần kiểm tra"}:
+                target.fill = warning_fill
+        for name in ("Giá", "FV"):
+            for cell in valuation_ws.iter_cols(
+                min_col=headers[name], max_col=headers[name], min_row=2
+            ):
+                for item in cell:
+                    item.number_format = "#,##0"
+        for cell in valuation_ws["F"][1:]:
+            cell.number_format = '0.0"%"'
+
+    return output_path
 
 
 def export_vn100_valuations_to_gsheets(results: list, sheet_name: str = "VN100_Valuations"):

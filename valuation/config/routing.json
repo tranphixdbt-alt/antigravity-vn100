@@ -109,6 +109,17 @@
     "raw_secondary": "So sánh P/B",
     "raw_weights": "P/B 50–70% + RI 30–50%"
   },
+  "SSB": {
+    "sector": "NH",
+    "primary": "RI",
+    "secondary": "P/B",
+    "weight_primary": 0.5,
+    "weight_secondary": 0.5,
+    "verified": false,
+    "raw_primary": "Thu nhập thặng dư (Residual Income)",
+    "raw_secondary": "So sánh P/B",
+    "raw_weights": "P/B 50–70% + RI 30–50%"
+  },
   "VIB": {
     "sector": "NH",
     "primary": "RI",
@@ -1098,5 +1109,22 @@
     "raw_primary": "SOTP",
     "raw_secondary": "NAV",
     "raw_weights": "SOTP"
-  }
+  },
+  "BAF": {"sector": "Cao su/NN", "primary": "FCFF", "secondary": "P/B", "weight_primary": 0.5, "weight_secondary": 0.5, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "P/B", "raw_weights": "Chưa golden test"},
+  "BWE": {"sector": "Nước", "primary": "FCFF", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "DDM", "raw_weights": "Chưa golden test"},
+  "CII": {"sector": "Xây dựng", "primary": "FCFF", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "SOTP", "raw_weights": "Chưa golden test"},
+  "CTS": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
+  "DBC": {"sector": "Cao su/NN", "primary": "FCFF", "secondary": "P/B", "weight_primary": 0.5, "weight_secondary": 0.5, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "P/B", "raw_weights": "Chưa golden test"},
+  "DSE": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
+  "EVF": {"sector": "Tài chính", "primary": "P/B", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "P/B", "raw_secondary": null, "raw_weights": "Chưa golden test"},
+  "GEE": {"sector": "Đa ngành", "primary": "SOTP", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "SOTP", "raw_secondary": "NAV", "raw_weights": "Proxy, chưa golden test"},
+  "KOS": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
+  "PAN": {"sector": "Đa ngành", "primary": "SOTP", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "SOTP", "raw_secondary": "NAV", "raw_weights": "Proxy, chưa golden test"},
+  "SJS": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
+  "TAL": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
+  "TCX": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
+  "VCK": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
+  "VPI": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
+  "VPL": {"sector": "Du lịch", "primary": "FCFF", "secondary": "EV/EBITDA", "weight_primary": 0.6, "weight_secondary": 0.4, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "EV/EBITDA", "raw_weights": "Chưa golden test"},
+  "VPX": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"}
 }

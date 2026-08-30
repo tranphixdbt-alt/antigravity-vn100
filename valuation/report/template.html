@@ -208,6 +208,11 @@
     {% if narrative.ai_generated %}<span class="ai-notice">⚠ Nháp do AI tạo — cần analyst review</span>{% endif %}
     <div class="narrative">{{ narrative.industry }}</div>
 
+    <!-- ============ SỰ KIỆN VỐN & QUYỀN CỔ ĐÔNG ============ -->
+    <div class="section-title">4A. Cổ tức, tăng vốn & quyền cổ đông</div>
+    {% if narrative.ai_generated %}<span class="ai-notice">⚠ Nháp do AI tạo — cần analyst review</span>{% endif %}
+    <div class="narrative">{{ narrative.corporate_actions }}</div>
+
     <!-- ============ 6. PHÂN TÍCH TÀI CHÍNH LỊCH SỬ ============ -->
     <div class="section-title">5. Phân tích tài chính lịch sử</div>
     <table>

@@ -17,18 +17,19 @@ import re
 from typing import Any, Dict, List
 
 import httpx
-from sqlalchemy.dialects.postgresql import insert
 
 from valuation.db.models import Consensus
 from valuation.db.session import SessionLocalWrite
+from valuation.db.upsert import dialect_insert
 
 _ORIGIN = "https://24hmoney.vn"
 _BASE = "https://24hmoney.vn/stock/"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 # "Khuyến nghị MUA với giá mục tiêu 103,800 đồng/cổ phiếu Nguồn: KBSV-08/06/2026"
+# Một số trang cũ ghi thiếu rating: "Khuyến nghị với giá mục tiêu ..."
 _PATTERN = re.compile(
-    r"Khuyến nghị\s+(?P<rating>[^<]{1,30}?)\s+với giá mục tiêu\s+"
+    r"Khuyến nghị(?:\s+(?P<rating>[^<]{1,30}?))?\s+với giá mục tiêu\s+"
     r"(?P<tp>[\d.,]+)\s*đồng.*?Nguồn:\s*(?P<broker>[A-Za-z0-9]+)-"
     r"(?P<date>\d{2}/\d{2}/\d{4})",
     re.IGNORECASE | re.DOTALL,
@@ -57,7 +58,8 @@ def fetch_broker_reports(ticker: str, timeout: float = 20.0) -> List[Dict[str, A
             continue
         tp = _parse_tp(m.group("tp"))
         # đơn vị: 24hmoney ghi bằng ĐỒNG (vd 103,800) — giữ nguyên VND
-        rating = re.sub(r"\s+", " ", m.group("rating")).strip().upper()
+        rating_raw = m.group("rating")
+        rating = re.sub(r"\s+", " ", rating_raw).strip().upper() if rating_raw else "KHÔNG RÕ"
         key = (broker, rep_date)
         if key in seen or tp <= 0:
             continue
@@ -165,7 +167,7 @@ def import_broker_reports(ticker: str) -> List[Dict[str, Any]]:
             canon, _ = normalize_broker(rec["broker"])
             row = {**rec, "broker_canon": canon, "source_site": "24HMONEY",
                    "currency_unit": "VND", "is_synthetic": False}
-            stmt = insert(Consensus).values(row)
+            stmt = dialect_insert(db, Consensus).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["ticker", "broker", "report_date"],
                 set_={

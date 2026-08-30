@@ -1,5 +1,4 @@
 import pandas as pd
-from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,12 +8,15 @@ try:
     HAS_VNSTOCK_DATA = True
 except ImportError:
     HAS_VNSTOCK_DATA = False
-    logger.warning("Thư viện 'vnstock_data' chưa được cài đặt. Đang sử dụng chế độ MOCK (giả lập dữ liệu) cho dòng tiền.")
+    logger.info(
+        "Không có thư viện optional 'vnstock_data'; dùng dữ liệu đã lưu trong DB "
+        "và trả fallback rỗng khi cập nhật mới dòng tiền."
+    )
 
 class MarketFlowClient:
     """
     Client sử dụng vnstock_data (Sponsor) để lấy dữ liệu dòng tiền khối ngoại và tự doanh.
-    Nếu chưa cài đặt vnstock_data, sẽ trả về dữ liệu rỗng hoặc giả lập.
+    Nếu chưa cài đặt vnstock_data, trả về DataFrame rỗng có schema chuẩn.
     """
     def __init__(self):
         if HAS_VNSTOCK_DATA:
@@ -28,7 +30,7 @@ class MarketFlowClient:
         Trả về DataFrame với các cột: time, buy_vol, buy_val, sell_vol, sell_val, net_vol, net_val.
         """
         if not HAS_VNSTOCK_DATA:
-            logger.info(f"[MOCK] Lấy dữ liệu khối ngoại cho {ticker} từ {start}")
+            logger.info(f"Không cập nhật foreign_flow cho {ticker} từ {start}: thiếu vnstock_data optional.")
             # Trả về DF rỗng với cấu trúc chuẩn
             return pd.DataFrame(columns=['time', 'buy_vol', 'buy_val', 'sell_vol', 'sell_val', 'net_vol', 'net_val'])
             
@@ -48,7 +50,7 @@ class MarketFlowClient:
         Trả về DataFrame với các cột: time, buy_vol, buy_val, sell_vol, sell_val, net_vol, net_val.
         """
         if not HAS_VNSTOCK_DATA:
-            logger.info(f"[MOCK] Lấy dữ liệu tự doanh cho {ticker} từ {start}")
+            logger.info(f"Không cập nhật proprietary_flow cho {ticker} từ {start}: thiếu vnstock_data optional.")
             return pd.DataFrame(columns=['time', 'buy_vol', 'buy_val', 'sell_vol', 'sell_val', 'net_vol', 'net_val'])
             
         try:

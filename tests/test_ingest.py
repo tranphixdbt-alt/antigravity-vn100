@@ -1,4 +1,10 @@
 import pandas as pd
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from valuation.db.models import FinancialsQuarterly, Ticker
+from valuation.db.session import Base
+from valuation.ingest import pipeline
 from valuation.ingest.normalizer import normalize_daily_prices, unpivot_financials
 
 def test_normalize_daily_prices():
@@ -46,3 +52,32 @@ def test_unpivot_financials():
     assert cash_2024q1.iloc[0]['statement'] == 'BS'
     assert cash_2024q1.iloc[0]['is_consolidated'] == True
     assert cash_2024q1.iloc[0]['is_restated'] == False
+
+
+def test_financial_upsert_is_idempotent_and_does_not_overwrite_history(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(pipeline, "SessionLocalWrite", session_factory)
+    db = session_factory()
+    db.add(Ticker(ticker="AAA", company_name="AAA", is_vn100=True))
+    db.commit()
+    db.close()
+
+    base = {
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "is_consolidated": True,
+        "is_restated": False,
+        "statement": "BS",
+        "line_item": "total_assets",
+        "currency": "VND",
+    }
+    pipeline.upsert_financials(pd.DataFrame([{**base, "value": 100.0}]), "AAA")
+    pipeline.upsert_financials(pd.DataFrame([{**base, "value": 200.0}]), "AAA")
+
+    db = session_factory()
+    rows = db.query(FinancialsQuarterly).all()
+    assert len(rows) == 1
+    assert float(rows[0].value) == 100.0
+    db.close()

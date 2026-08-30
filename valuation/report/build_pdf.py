@@ -3,7 +3,11 @@ PDF Builder module — Render HTML template sang tài liệu PDF.
 Hỗ trợ WeasyPrint với cơ chế fallback sang Playwright/ReportLab nếu thiếu thư viện hệ thống.
 """
 import os
+import logging
+from importlib.util import find_spec
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 def build_pdf_report(
     html_content: str, 
@@ -15,30 +19,30 @@ def build_pdf_report(
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # 1. Thử dùng WeasyPrint (lựa chọn ưu tiên)
-    try:
-        from weasyprint import HTML
-        print("Using WeasyPrint to render PDF...")
-        HTML(string=html_content).write_pdf(output_path)
-        print(f"PDF report created successfully via WeasyPrint at: {output_path}")
-        return True
-    except Exception as e:
-        print(f"WeasyPrint failed or not installed: {e}. Trying fallback to Playwright...")
+    # 1. Thử dùng WeasyPrint nếu môi trường đã cài đủ native libraries.
+    if find_spec("weasyprint") is not None:
+        try:
+            from weasyprint import HTML
+            HTML(string=html_content).write_pdf(output_path)
+            logger.info("PDF report created via WeasyPrint at %s", output_path)
+            return True
+        except Exception as e:
+            logger.info("WeasyPrint không khả dụng trong môi trường này, chuyển fallback: %s", e)
 
-    # 2. Thử dùng Playwright (phương án dự phòng 1)
-    try:
-        from playwright.sync_api import sync_playwright
-        print("Using Playwright fallback...")
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.set_content(html_content)
-            page.pdf(path=output_path, format="A4", print_background=True)
-            browser.close()
-        print(f"PDF report created successfully via Playwright at: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Playwright fallback failed or not installed: {e}. Trying fallback to ReportLab/Simple HTML...")
+    # 2. Thử Playwright nếu package/browser runtime đã được chuẩn bị.
+    if find_spec("playwright") is not None:
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.set_content(html_content)
+                page.pdf(path=output_path, format="A4", print_background=True)
+                browser.close()
+            logger.info("PDF report created via Playwright at %s", output_path)
+            return True
+        except Exception as e:
+            logger.info("Playwright không khả dụng trong môi trường này, chuyển fallback: %s", e)
 
     # 3. Phương án dự phòng 2: Lưu HTML gốc và ghi log
     # (Do WeasyPrint và Playwright đều đòi hỏi thư viện ngoài hệ thống nặng)
@@ -46,7 +50,7 @@ def build_pdf_report(
     html_backup_path = output_path.replace(".pdf", ".html")
     with open(html_backup_path, "w", encoding="utf-8") as f:
         f.write(html_content)
-    print(f"Saved raw HTML report to: {html_backup_path} (Please print manually to PDF via Chrome)")
+    logger.info("Saved raw HTML report to %s", html_backup_path)
     
     # Tạo file PDF giả lập tối thiểu bằng reportlab nếu có
     try:
@@ -57,9 +61,9 @@ def build_pdf_report(
         c.drawString(100, 730, f"HTML file path: {html_backup_path}")
         c.drawString(100, 710, "Please open the HTML file in your browser (e.g. Chrome) and choose Print -> Save as PDF.")
         c.save()
-        print(f"Created fallback index PDF at: {output_path}")
+        logger.info("Created fallback index PDF at %s", output_path)
         return True
     except Exception as e:
-        print(f"ReportLab failed: {e}")
+        logger.warning("ReportLab không tạo được PDF fallback: %s", e)
         
     return False

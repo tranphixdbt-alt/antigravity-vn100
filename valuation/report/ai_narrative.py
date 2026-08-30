@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 AI_DRAFT_NOTICE = "Nháp do AI tạo từ số liệu định giá — cần analyst review trước khi phát hành."
 
-# Khung gợi ý khi không có AI (analyst tự điền)
+# Khung gợi ý khi chưa sinh báo cáo bằng nút DeepSeek duy nhất.
 _FALLBACK = {
     "thesis": (
         "(Analyst tự viết 3–5 luận điểm. Gợi ý: định giá đang rẻ/đắt so với giá "
@@ -33,6 +33,10 @@ _FALLBACK = {
     "industry": (
         "(Analyst tóm tắt bối cảnh ngành: chu kỳ, cung–cầu, chính sách, driver "
         "vĩ mô liên quan.)"
+    ),
+    "corporate_actions": (
+        "(Analyst rà soát cổ tức, quyền mua, ESOP/phát hành và tác động pha loãng; "
+        "chỉ kết luận sau khi đối chiếu công bố chính thức và mục đích sử dụng vốn.)"
     ),
     "risks": (
         "(Analyst liệt kê rủi ro: rủi ro ngành/chu kỳ, rủi ro thực thi, rủi ro "

@@ -49,9 +49,9 @@ st.markdown(
 # 1. Cấu hình DB engine cache để tránh cạn kiệt connection pool
 @st.cache_resource
 def get_db_engines():
-    db_url_read = os.getenv("DATABASE_URL_READONLY") or "sqlite:///vn100.db"
-    db_url_write = os.getenv("DATABASE_URL_WRITE") or "sqlite:///vn100.db"
-    
+    db_url_read = os.getenv("DATABASE_URL_READONLY") or "sqlite:///vn100_full.db"
+    db_url_write = os.getenv("DATABASE_URL_WRITE") or "sqlite:///vn100_full.db"
+
     _pool_kwargs = dict(pool_pre_ping=True)
     if "sqlite" in db_url_read:
         _pool_kwargs["connect_args"] = {"check_same_thread": False}
@@ -71,7 +71,7 @@ def get_db_engines():
             pass
     except Exception as e:
         # Fallback sang SQLite nếu PostgreSQL local không hoạt động
-        sqlite_url = "sqlite:///vn100.db"
+        sqlite_url = "sqlite:///vn100_full.db"
         engine_read = create_engine(sqlite_url, connect_args={"check_same_thread": False})
         engine_write = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
@@ -89,6 +89,9 @@ SessionWrite = sessionmaker(bind=engine_write)
 @st.cache_data(ttl=300)
 def fetch_live_price_cached(ticker: str) -> float:
     """Lấy giá live từ vnstock với cache 5 phút để không bị lag UI"""
+    if os.getenv("ENABLE_LIVE_PRICE", "").lower() not in {"1", "true", "yes", "on"}:
+        return 0.0
+
     from valuation.ingest.vnstock_client import vnstock_client
     try:
         return vnstock_client.get_live_price(ticker)
@@ -110,30 +113,19 @@ try:
     from valuation.views.input_assumptions import render_input_assumptions
     from valuation.views.results import render_valuation_results
     
-    # Auto Weekly Freshness Check Hook on Startup
+    # Freshness check on startup. Không tự chạy ingest khi mở app: bản portable
+    # trong Drive phải ưu tiên xem dữ liệu đã lưu, tránh spam API/rate-limit và
+    # tránh ghi DB ngoài ý muốn.
     if "auto_weekly_check_done" not in st.session_state:
         from valuation.data_access.freshness_checker import check_data_freshness
         freshness_status = check_data_freshness(db_read, threshold_days=7)
         if freshness_status.is_stale:
-            st.warning(
-                f"🚨 **Phát hiện dữ liệu hệ thống cần làm mới (Giá: {freshness_status.days_since_price} ngày, Báo cáo CTCK: {freshness_status.days_since_consensus} ngày trước).** "
-                f"Đang tự động khởi chạy tiến trình quét BCTC Quý/Năm, Báo cáo định giá CTCK và Giá thị trường mới nhất dưới nền...",
+            st.info(
+                f"**Dữ liệu lưu trong Drive cần làm mới khi bạn muốn cập nhật thị trường.** "
+                f"Giá cách {freshness_status.days_since_price} ngày, báo cáo CTCK cách "
+                f"{freshness_status.days_since_consensus} ngày. Dùng nút cập nhật trong sidebar khi cần.",
                 icon="⚠️"
             )
-            import threading
-            from valuation.ingest.weekly_updater import run_weekly_auto_update
-            def _auto_bg():
-                bg_read = SessionRead()
-                bg_write = SessionWrite()
-                try:
-                    run_weekly_auto_update(bg_read, bg_write)
-                except Exception as e_bg:
-                    logger.error(f"Lỗi chạy cập nhật ngầm: {e_bg}")
-                finally:
-                    bg_read.close()
-                    bg_write.close()
-            threading.Thread(target=_auto_bg, daemon=True).start()
-            st.toast("🚀 Đã tự động kích hoạt tiến trình cập nhật BCTC & Báo cáo CTCK hàng tuần ngầm dưới nền!", icon="🔄")
         st.session_state["auto_weekly_check_done"] = True
 
     # Render sidebar
@@ -325,18 +317,50 @@ try:
                     st.info(text, icon="ℹ️")
 
 
-        from valuation.views.tradingview_chart import render_tradingview_widget
+        from valuation.config import load_defaults
+        from valuation.data_access.corporate_actions import (
+            should_refresh_corporate_actions,
+        )
+        from valuation.ingest.corporate_actions_background import (
+            schedule_corporate_actions_refresh,
+        )
+        from valuation.views.corporate_actions import render_corporate_actions
+
+        # Dữ liệu đã lưu hiển thị ngay; kiểm tra nguồn mới chạy nền và không chặn UI.
+        # Nhiều Streamlit rerun của cùng mã dùng chung một Future nên không tải trùng.
+        _corporate_cfg = load_defaults().get("corporate_actions") or {}
+        if should_refresh_corporate_actions(
+            db_write,
+            company.ticker,
+            ttl_hours=int(_corporate_cfg.get("refresh_ttl_hours", 24)),
+            error_retry_minutes=int(_corporate_cfg.get("error_retry_minutes", 30)),
+        ):
+            corporate_refresh = schedule_corporate_actions_refresh(company.ticker)
+        else:
+            corporate_refresh = {
+                "status": "FRESH",
+                "checked": False,
+                "inserted": 0,
+                "updated": 0,
+            }
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Báo cáo Tài chính Lịch sử & Dự phóng",
             "⚙️ Giả định & Tham số Dự phóng",
             "🏆 Kết quả Định giá & Quan điểm",
             "🏦 So sánh CTCK",
-            "📈 Biểu đồ Kỹ thuật TradingView"
+            "💰 Cổ tức, tăng vốn & quyền"
         ])
 
         with tab1:
-            render_input_financials(company, blended_fv=blended_fv, upside=upside, rec=rec)
+            render_input_financials(
+                company,
+                blended_fv=blended_fv,
+                upside=upside,
+                rec=rec,
+                db=db_write,
+                corporate_actions_context=None,
+            )
 
         with tab2:
             render_input_assumptions(company)
@@ -349,9 +373,11 @@ try:
             render_consensus_compare(company, blended_fv, db_write)
 
         with tab5:
-            st.subheader(f"📈 Biểu Đồ Kỹ Thuật & Công Cụ Vẽ TradingView ({company.ticker})")
-            st.caption("💡 Sử dụng đầy đủ thanh công cụ phía bên trái biểu đồ để vẽ đường xu hướng (Trendline), Fibonacci, đo khoảng giá, vẽ hình khối, và chèn các chỉ báo kỹ thuật (RSI, MACD, MA, Volume).")
-            render_tradingview_widget(company.ticker, height=680, key_prefix="chart_tab")
+            render_corporate_actions(
+                company,
+                db_write,
+                refresh_result=corporate_refresh,
+            )
     else:
         st.info("👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.", icon="ℹ️")
 

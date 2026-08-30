@@ -5,6 +5,7 @@ sau đó tái tính toán định giá và xuất báo cáo (CSV + Google Sheets
 import os
 import sys
 import logging
+import argparse
 from datetime import datetime
 
 # Import DB và pipeline
@@ -14,20 +15,41 @@ from valuation.ingest.pipeline import run_ingest
 from sqlalchemy import distinct, func
 from valuation.engine.batch import value_all
 from valuation.models.macro_env import MacroEnvironment
-from valuation.output.gsheets_exporter import build_vn100_dataframe, export_vn100_valuations_to_gsheets
-from valuation.config import PROJECT_ROOT
+from valuation.output.gsheets_exporter import (
+    build_vn100_dataframe,
+    export_vn100_valuations_to_gsheets,
+    export_vn100_valuations_to_xlsx,
+)
+from valuation.config import PROJECT_ROOT, settings
+from valuation.ingest.universe import get_vn100_symbols
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ingest_update")
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--publish-sheets",
+        action="store_true",
+        help="Chỉ publish sau khi file local đã vượt kiểm tra chất lượng.",
+    )
+    args = parser.parse_args()
+
+    if settings.vnstock_api_key:
+        from vnstock.core import setup_api_key
+
+        setup_api_key(settings.vnstock_api_key)
     print("=" * 60)
     print("1. KHỞI CHẠY CẬP NHẬT DỮ LIỆU TÀI CHÍNH & GIÁ THỊ TRƯỜNG MỚI NHẤT")
     print("=" * 60)
 
     db_write = SessionLocalWrite()
     try:
-        tickers = [t.ticker for t in db_write.query(Ticker.ticker).order_by(Ticker.ticker.asc()).all()]
+        tickers = get_vn100_symbols()
+        have_financials = {
+            row[0]
+            for row in db_write.query(distinct(FinancialsQuarterly.ticker)).all()
+        }
         print(f"-> Tìm thấy {len(tickers)} mã cổ phiếu trong danh mục.")
     finally:
         db_write.close()
@@ -38,7 +60,13 @@ def main():
     for idx, ticker in enumerate(tickers, start=1):
         print(f"[{idx}/{len(tickers)}] Đang cập nhật {ticker}...", end=" ", flush=True)
         try:
-            run_ingest(ticker, ['prices', 'financials'], incremental=True)
+            run_ingest(
+                ticker,
+                ['prices', 'financials'],
+                incremental=True,
+                include_yearly=ticker not in have_financials,
+                include_market_flows=False,
+            )
             print("OK")
             success_count += 1
         except Exception as e:
@@ -61,22 +89,38 @@ def main():
         # Xuất CSV
         out_csv = PROJECT_ROOT / "vn100_valuations.csv"
         df.to_csv(out_csv, index=False, encoding="utf-8-sig")
+        out_xlsx = PROJECT_ROOT / "vn100_valuations.xlsx"
+        export_vn100_valuations_to_xlsx(results, db_read, out_xlsx)
         
         ok_val = sum(1 for r in results if "error" not in r)
-        print(f"-> Đã tái định giá thành công {ok_val}/{len(have)} mã.")
+        print(f"-> Đã tái định giá thành công {ok_val}/{len(results)} mã.")
         print(f"-> Đã lưu kết quả ra file: {out_csv}")
+        print(f"-> Đã lưu workbook kiểm toán: {out_xlsx}")
 
-        # Xuất Google Sheets
-        print("-> Đang đồng bộ kết quả lên Google Sheets...")
-        res_gsheets = export_vn100_valuations_to_gsheets(results, sheet_name="VN100_Valuations")
-        print("-> Google Sheets status:", res_gsheets.get("status"))
+        if args.publish_sheets:
+            print("-> Đang đồng bộ kết quả đã kiểm tra lên Google Sheets...")
+            res_gsheets = export_vn100_valuations_to_gsheets(
+                results, sheet_name="VN100_Valuations"
+            )
+            print("-> Google Sheets status:", res_gsheets.get("status"))
 
         # Thống kê tổng hợp báo cáo
         max_price_date = db_read.query(func.max(PricesDaily.trade_date)).scalar()
-        max_yr_q = db_read.query(
-            func.max(FinancialsQuarterly.fiscal_year),
-            func.max(FinancialsQuarterly.fiscal_quarter)
-        ).first()
+        max_yr_q = (
+            db_read.query(
+                FinancialsQuarterly.fiscal_year,
+                FinancialsQuarterly.fiscal_quarter,
+            )
+            .filter(
+                FinancialsQuarterly.ticker.in_(tickers),
+                FinancialsQuarterly.fiscal_quarter > 0,
+            )
+            .order_by(
+                FinancialsQuarterly.fiscal_year.desc(),
+                FinancialsQuarterly.fiscal_quarter.desc(),
+            )
+            .first()
+        )
 
         print("\n" + "=" * 60)
         print("BÁO CÁO TỔNG HỢP SAU CẬP NHẬT:")

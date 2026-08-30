@@ -30,7 +30,11 @@ class DCFValuationModel(BaseValuationModel):
         cf_dict = {
             'total_equity': base_bs.total_equity * 1e9,
             'total_assets': base_bs.total_assets * 1e9,
-            'cash_and_equivalents': base_bs.cash_and_equivalents * 1e9,
+            'cash_and_equivalents': (
+                base_bs.cash_and_equivalents
+                + base_bs.short_term_financial_investments
+            ) * 1e9,
+            'minority_interest': base_bs.minority_interest * 1e9,
             'total_debt': (base_bs.short_term_debt + base_bs.long_term_debt) * 1e9,
             'total_revenue': base_is.revenue * 1e9,
             'cogs': base_is.cogs * 1e9,
@@ -236,7 +240,8 @@ class DCFValuationModel(BaseValuationModel):
         
         # Từ EV ra Equity Value
         net_debt = self.current_financials.get('total_debt', 0.0) - self.current_financials.get('cash_and_equivalents', 0.0)
-        equity_value_dcf = enterprise_value_dcf - net_debt
+        minority_interest = self.current_financials.get('minority_interest', 0.0)
+        equity_value_dcf = enterprise_value_dcf - net_debt - minority_interest
         shares_out = self.current_financials.get('shares_outstanding', 1000.0)
         dcf_fvps = equity_value_dcf / shares_out if shares_out > 0 else 0.0
         
@@ -261,7 +266,7 @@ class DCFValuationModel(BaseValuationModel):
             target_ev_ebitda = self.assumptions.get('target_ev_ebitda', 8.0)
             base_ebitda = self.current_financials.get('ebitda', term_nopat)  # Fallback
             ev_multiples = base_ebitda * target_ev_ebitda
-            equity_value_multi = ev_multiples - net_debt
+            equity_value_multi = ev_multiples - net_debt - minority_interest
             multi_fvps = equity_value_multi / shares_out if shares_out > 0 else 0.0
             multi_label = "EV_EBITDA"
 

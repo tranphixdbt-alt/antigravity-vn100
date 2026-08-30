@@ -15,7 +15,13 @@ from valuation.engine.ttm_helper import estimate_vcb_beta, get_latest_tpcp_10y
 # Từ khóa matching cho Phi tài chính
 NON_FIN_KEYWORDS = {
     "revenue": ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần", "Doanh thu hoạt động"],
-    "cogs": ["cost_of_goods_sold", "cogs", "Giá vốn hàng bán", "Chi phí hoạt động tự doanh"],
+    "cogs": [
+        "cost_of_goods_sold",
+        "cost_of_sales",
+        "cogs",
+        "Giá vốn hàng bán",
+        "Chi phí hoạt động tự doanh",
+    ],
     "gross_profit": ["gross_profit", "Lợi nhuận gộp"],
     # OPEX tách 2 cấu phần để CỘNG (không dùng chung 1 key — xem build_company_data).
     "selling_expenses": ["selling_expenses", "Chi phí bán hàng"],
@@ -29,7 +35,12 @@ NON_FIN_KEYWORDS = {
     # doanh thu phí (ROE phi lý). Đặt SAU key chuẩn để DN thường vẫn match key đầu.
     "net_income": ["net_profit_loss_after_tax", "net_profit_attributable_to_shareholders_of_the_group", "profit_after_tax", "net_income", "Lợi nhuận sau thuế"],
     
-    "cash": ["cash_and_cash_equivalents", "short_term_financial_investments", "Tiền và các khoản tương đương tiền", "Đầu tư tài chính ngắn hạn"],
+    "cash": ["cash_and_cash_equivalents", "Tiền và các khoản tương đương tiền"],
+    "short_term_financial_investments": [
+        "short_term_financial_investments",
+        "short_term_investments",
+        "Đầu tư tài chính ngắn hạn",
+    ],
     "receivables": ["short_term_trade_receivables", "short_term_receivables", "Phải thu ngắn hạn của khách hàng", "Các khoản phải thu"],
     "inventory": ["inventories", "inventory", "Hàng tồn kho"],
     "fixed_assets": ["tangible_fixed_assets", "fixed_assets", "Tài sản cố định", "Tài sản cố định hữu hình"],
@@ -38,6 +49,11 @@ NON_FIN_KEYWORDS = {
     "lt_debt": ["long_term_borrowings", "long_term_debt", "Vay và nợ thuê tài chính dài hạn", "Vay dài hạn"],
     "accounts_payable": ["short_term_trade_payables", "accounts_payable", "Phải trả người bán ngắn hạn", "Phải trả người bán"],
     "total_equity": ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"],
+    "minority_interest": [
+        "minority_interests",
+        "minority_interest",
+        "Lợi ích cổ đông không kiểm soát",
+    ],
     
     "cfo": ["net_cash_inflows_outflows_from_operating_activities", "net_cash_flows_from_operating_activities", "cfo", "Lưu chuyển tiền thuần từ hoạt động kinh doanh"],
     "capex": ["purchases_of_fixed_assets_and_other_long_term_assets", "payments_for_purchase_of_fixed_assets", "capex", "Tiền chi để mua sắm, xây dựng TSCĐ"],
@@ -61,6 +77,17 @@ BANK_KEYWORDS = {
     "total_assets": ["total_assets", "TỔNG TÀI SẢN", "Tổng tài sản"],
     "total_equity": ["owners_equity", "shareholders_equity", "Vốn chủ sở hữu"],
 }
+
+
+def _bounded_bank_credit_growth(
+    raw_growth: float, config: Dict[str, Any]
+) -> Tuple[float, bool]:
+    floor = float(config.get("credit_growth_floor", 0.05))
+    cap = float(config.get("credit_growth_cap", 0.25))
+    if floor > cap:
+        raise ValueError("credit_growth_floor không được lớn hơn credit_growth_cap")
+    bounded = min(max(float(raw_growth), floor), cap)
+    return bounded, bounded != float(raw_growth)
 
 def _quarterly_revenues(db: Session, ticker: str) -> List[float]:
     """Doanh thu thuần theo TỪNG QUÝ, sắp xếp cũ -> mới (D32).
@@ -94,7 +121,11 @@ def _match_value(data: Dict[str, float], keywords: List[str], fallback: float = 
     """Tìm giá trị khớp với từ khóa trong dict dữ liệu."""
     for kw in keywords:
         kw_lower = kw.lower()
-        # Ưu tiên startswith
+        for k, v in data.items():
+            if k.lower().strip() == kw_lower:
+                return clean_value(v)
+        # Sau exact match mới dùng startswith để không bắt nhầm các dòng legacy
+        # như minority_interests_before_2015 khi cần minority_interests hiện hành.
         for k, v in data.items():
             if k.lower().startswith(kw_lower):
                 return clean_value(v)
@@ -178,13 +209,12 @@ def load_ticker_metadata(db: Session, ticker: str) -> Ticker:
 def get_shares_outstanding_repo(db: Session, ticker: str) -> float:
     """Lấy số lượng cổ phiếu lưu hành (đổi sang triệu cổ phiếu)."""
     from valuation.engine.ttm_helper import get_shares_outstanding
-    try:
-        shares = get_shares_outstanding(db, ticker)
-        # ttm_helper trả về số cp thô (ví dụ: 8,355,675,094)
-        # Ta đổi sang triệu cp (chia 10^6)
-        return shares / 1e6
-    except Exception:
-        return 1000.0  # Fallback 1000 triệu cp
+
+    shares = get_shares_outstanding(db, ticker)
+    if shares <= 0:
+        raise ValueError(f"Số lượng cổ phiếu không hợp lệ cho {ticker}: {shares}")
+    # ttm_helper trả về số cp thô (ví dụ: 8,355,675,094).
+    return shares / 1e6
 
 def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: bool = False) -> Union[Company, CompanyBank]:
     """
@@ -205,6 +235,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
         "fiscal_year": r.fiscal_year,
         "fiscal_quarter": r.fiscal_quarter,
         "line_item": r.line_item,
+        "statement": r.statement,
+        "is_restated": r.is_restated,
+        "published_at": r.published_at,
         "value": float(r.value) if r.value is not None else 0.0
     } for r in records]
     df_fin = pd.DataFrame(fin_data)
@@ -317,6 +350,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 ni = (ebit - int_exp) * 0.8
 
             cash = _match_value(annual_data, NON_FIN_KEYWORDS["cash"])
+            short_term_financial_investments = _match_value(
+                annual_data, NON_FIN_KEYWORDS["short_term_financial_investments"]
+            )
             rec = _match_value(annual_data, NON_FIN_KEYWORDS["receivables"])
             inv = _match_value(annual_data, NON_FIN_KEYWORDS["inventory"])
             fixed = _match_value(annual_data, NON_FIN_KEYWORDS["fixed_assets"])
@@ -325,6 +361,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
             lt_debt = _match_value(annual_data, NON_FIN_KEYWORDS["lt_debt"])
             pay = _match_value(annual_data, NON_FIN_KEYWORDS["accounts_payable"])
             equity = _match_value(annual_data, NON_FIN_KEYWORDS["total_equity"])
+            minority_interest = _match_value(
+                annual_data, NON_FIN_KEYWORDS["minority_interest"]
+            )
             
             # Đảm bảo Cân đối kế toán: Tổng Tài Sản = Nợ Phải Trả + Vốn Chủ Sở Hữu
             # Suy ra: Nợ Phải Trả mục tiêu = assets - equity
@@ -352,8 +391,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 other_curr_liab = 0.0
                 other_lt_liab = 0.0
                 
-            # Đảm bảo Vốn chủ sở hữu chuẩn xác để khớp bảng
-            equity = assets - (st_debt + pay + other_curr_liab + lt_debt + other_lt_liab)
+            # Giữ nguyên vốn chủ sở hữu báo cáo. Nếu các cấu phần không khớp,
+            # Pydantic sẽ phát cảnh báo cân đối; không được che lỗi bằng cách dựng
+            # lại equity từ phần dư vì equity là đầu vào trực tiếp của định giá.
 
             cfo = _match_value(annual_data, NON_FIN_KEYWORDS["cfo"])
             capex = abs(_match_value(annual_data, NON_FIN_KEYWORDS["capex"]))  # lấy trị tuyệt đối
@@ -375,6 +415,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
             historical_bs.append(BalanceSheet(
                 year=y,
                 cash_and_equivalents=to_billion_vnd(cash),
+                short_term_financial_investments=to_billion_vnd(
+                    short_term_financial_investments
+                ),
                 receivables=to_billion_vnd(rec),
                 inventory=to_billion_vnd(inv),
                 other_current_assets=to_billion_vnd(other_curr_assets),
@@ -386,7 +429,8 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 other_current_liabilities=to_billion_vnd(other_curr_liab),
                 long_term_debt=to_billion_vnd(lt_debt),
                 other_long_term_liabilities=to_billion_vnd(other_lt_liab),
-                total_equity=to_billion_vnd(equity)
+                total_equity=to_billion_vnd(equity),
+                minority_interest=to_billion_vnd(minority_interest),
             ))
             
             historical_cf.append(CashFlow(
@@ -429,13 +473,25 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
         )
         nim_val = compute_historical_nim(db, ticker) or 0.03
         cir_val = compute_historical_cir(db, ticker) or 0.35
-        cg_val = compute_historical_credit_growth(db, ticker) or 0.12
+        cg_raw = compute_historical_credit_growth(db, ticker) or 0.12
         cc_val = compute_historical_credit_cost(db, ticker) or 0.01
+        _bank_forecast_cfg = config_defaults.get("bank_forecast", {}) or {}
+        cg_val, credit_growth_capped = _bounded_bank_credit_growth(
+            cg_raw, _bank_forecast_cfg
+        )
 
         # Declining schedules
         credit_growth = [cg_val, cg_val - 0.01, cg_val - 0.02, cg_val - 0.02, max(cg_val - 0.03, 0.08)]
         # Macro overlay: điều chỉnh theo tăng trưởng tín dụng hệ thống (no-op nếu thiếu data)
         credit_growth = overlay_credit_growth(credit_growth, _sector_for_overlay, _macro_ctx)
+        bounded_schedule = []
+        for growth in credit_growth:
+            bounded, was_capped = _bounded_bank_credit_growth(
+                growth, _bank_forecast_cfg
+            )
+            bounded_schedule.append(bounded)
+            credit_growth_capped = credit_growth_capped or was_capped
+        credit_growth = bounded_schedule
         nim = [nim_val, nim_val, nim_val - 0.001, nim_val - 0.001, nim_val - 0.002]
         cir = [cir_val, cir_val, cir_val - 0.005, cir_val - 0.005, cir_val - 0.01]
         credit_cost = [cc_val, cc_val, cc_val, cc_val - 0.001, cc_val - 0.001]
@@ -472,6 +528,9 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
         )
 
         from valuation.data_access.freshness import data_freshness_flags
+        data_flags = data_freshness_flags(db, ticker)
+        if credit_growth_capped:
+            data_flags.append("CREDIT_GROWTH_CAPPED")
         return CompanyBank(
             ticker=ticker,
             name=meta.company_name,
@@ -480,7 +539,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
             historical_is=historical_is,
             historical_bs=historical_bs,
             assumptions=assumptions_bank,
-            data_flags=data_freshness_flags(db, ticker)
+            data_flags=data_flags
         )
     else:
         # Phi tài chính: dùng MEDIAN (không phải mean) cho growth & margin.

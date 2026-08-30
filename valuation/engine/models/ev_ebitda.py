@@ -37,7 +37,10 @@ class EVEBITDAValuationModel(BaseValuationModel):
         cf_dict = {
             'ebitda_history': ebitda_hist,            # tỷ đồng
             'total_debt': (bs.short_term_debt + bs.long_term_debt) * 1e9,
-            'cash_and_equivalents': bs.cash_and_equivalents * 1e9,
+            'cash_and_equivalents': (
+                bs.cash_and_equivalents + bs.short_term_financial_investments
+            ) * 1e9,
+            'minority_interest': bs.minority_interest * 1e9,
             'shares_outstanding': company.shares_outstanding * 1e6,
             'current_price': company.current_price,
         }
@@ -61,7 +64,8 @@ class EVEBITDAValuationModel(BaseValuationModel):
 
         ev = norm_ebitda * target
         net_debt = self.current_financials.get('total_debt', 0.0) - self.current_financials.get('cash_and_equivalents', 0.0)
-        equity_value = ev - net_debt
+        minority_interest = self.current_financials.get('minority_interest', 0.0)
+        equity_value = ev - net_debt - minority_interest
         shares = self.current_financials.get('shares_outstanding', 1.0)
         fvps = equity_value / shares if shares > 0 else 0.0
 

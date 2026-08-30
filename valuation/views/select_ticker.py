@@ -7,6 +7,17 @@ from valuation.db.models import Ticker
 from valuation.data_access.repo import build_company_data
 
 
+def _format_run_option(run) -> str:
+    created_at = run.created_at
+    created_label = (
+        created_at.strftime("%d/%m %H:%M")
+        if created_at is not None
+        else "không rõ thời gian"
+    )
+    analyst = run.analyst or "Analyst"
+    return f"Vòng {run.id} - {analyst} ({created_label})"
+
+
 def load_macro_bulletin(force: bool = False):
     # Cache ra FILE với TTL 7 giờ (tồn tại qua các lần restart app) → không tốn token
     # gọi lại AI nếu trong 7 giờ đã có báo cáo.
@@ -47,7 +58,7 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
     # --- Bảng tin Vĩ mô (Macro News) ---
     with st.sidebar.expander("📰 Bản tin Vĩ mô & Nhận định", expanded=True):
         # Nút này BUỘC tạo mới (bỏ qua mốc 7 giờ) — chỉ khi user chủ động bấm.
-        if st.button("🔄 Làm mới tin tức", use_container_width=True):
+        if st.button("🔄 Làm mới tin tức", width="stretch"):
             with st.spinner("AI đang tổng hợp tin..."):
                 load_macro_bulletin(force=True)
             st.rerun()
@@ -87,7 +98,7 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
         st.sidebar.success(f"🟢 Dữ liệu mới nhất (Cập nhật {freshness.days_since_price} ngày trước)", icon="✅")
 
     col1, col2 = st.sidebar.columns(2)
-    if col1.button(f"Tải mới {ticker}", use_container_width=True, help="Kéo dữ liệu giá, BCTC và báo cáo khuyến nghị CTCK mới nhất cho mã này."):
+    if col1.button(f"Tải mới {ticker}", width="stretch", help="Kéo dữ liệu giá, BCTC và báo cáo khuyến nghị CTCK mới nhất cho mã này."):
         with st.spinner(f"Đang tải dữ liệu mới cho {ticker}..."):
             from valuation.ingest.pipeline import run_ingest
             from valuation.ingest.weekly_updater import _CONSENSUS_SOURCES
@@ -108,18 +119,25 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
             except Exception as e:
                 st.sidebar.error(f"Lỗi khi cập nhật {ticker}: {e}")
 
-    if col2.button("Quét VN100 Hàng Tuần", use_container_width=True, help="Tự động kiểm tra BCTC & Báo cáo định giá CTCK mới nhất cho toàn bộ rổ VN100"):
+    if col2.button("Quét VN100 Hàng Tuần", width="stretch", help="Tự động kiểm tra BCTC & Báo cáo định giá CTCK mới nhất cho toàn bộ rổ VN100"):
         import threading
+        from valuation.db.session import SessionLocalRead, SessionLocalWrite
         from valuation.ingest.weekly_updater import run_weekly_auto_update
         def _bg_update():
-            run_weekly_auto_update(db_read, db_write)
+            bg_read = SessionLocalRead()
+            bg_write = SessionLocalWrite()
+            try:
+                run_weekly_auto_update(bg_read, bg_write)
+            finally:
+                bg_read.close()
+                bg_write.close()
         threading.Thread(target=_bg_update, daemon=True).start()
         st.toast("🚀 Đã khởi chạy tiến trình quét tự động BCTC & Báo cáo định giá CTCK cho VN100 ngầm dưới nền!", icon="✅")
 
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
     # Nút bấm để load dữ liệu vào màn hình
-    if st.sidebar.button("📊 TẢI DỮ LIỆU ĐỊNH GIÁ", use_container_width=True, type="primary") or "company" not in st.session_state or st.session_state.get("current_ticker") != ticker or st.session_state.get("current_mode") != mode:
+    if st.sidebar.button("📊 TẢI DỮ LIỆU ĐỊNH GIÁ", width="stretch", type="primary") or "company" not in st.session_state or st.session_state.get("current_ticker") != ticker or st.session_state.get("current_mode") != mode:
         with st.spinner(f"Đang phân tích dữ liệu {ticker}..."):
             try:
                 company = build_company_data(db_read, ticker, mode=mode)
@@ -151,17 +169,14 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
             if past_runs:
                 st.sidebar.markdown("---")
                 st.sidebar.subheader("💾 Nạp kịch bản cũ")
-                run_options = [
-                    f"Vòng {r.id} - {r.analyst} ({r.created_at.strftime('%d/%m %H:%M')})"
-                    for r in past_runs
-                ]
+                run_options = [_format_run_option(r) for r in past_runs]
                 selected_run_option = st.sidebar.selectbox(
                     "Chọn kịch bản cũ để nạp:",
                     run_options,
                     key="select_past_run"
                 )
                 
-                if st.sidebar.button("Nạp kịch bản này", use_container_width=True):
+                if st.sidebar.button("Nạp kịch bản này", width="stretch"):
                     run_id = int(selected_run_option.split(" - ")[0].replace("Vòng ", ""))
                     run = next((r for r in past_runs if r.id == run_id), None)
                     
@@ -186,4 +201,3 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
                         st.rerun()
         except Exception as ex:
             st.sidebar.error(f"Lỗi khi load danh sách kịch bản: {ex}")
-

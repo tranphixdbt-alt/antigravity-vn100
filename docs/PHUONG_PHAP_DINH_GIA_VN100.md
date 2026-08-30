@@ -128,7 +128,7 @@
 | 74 | **SBT** | Công ty Cổ phần Thành Thành Công - Biên Hòa | Tiêu dùng | DCF/FCFF + So sánh EV/EBITDA — blend cố định 50% DCF + 50% EV/EBITDA (code, không đổi theo cấu hình) | ✅ Đầy đủ (không proxy) | Chưa |
 | 75 | **SHB** | Ngân hàng Thương mại Cổ phần Sài Gòn – Hà Nội | NH (Ngân hàng) | Thu nhập thặng dư (Residual Income) + So sánh P/B — blend 50% RI + 50% P/B (trọng số theo báo cáo CTCK đối chiếu) | ✅ Đầy đủ (không proxy) | Chưa |
 | 76 | **SIP** | Công ty Cổ phần Đầu tư Sài Gòn VRG | KCN (Khu công nghiệp) | RNAV — Revalued Net Asset Value (proxy) | ⚠️ Proxy (ước lượng từ giá trị sổ sách, gắn cờ VALUATION_PROXY) | Chưa |
-| 77 | **SSB** | Ngân hàng Thương mại Cổ phần Đông Nam Á | Banks | ❌ CHƯA CÓ trong cấu hình định tuyến (routing.json) — hệ thống không tự định giá được mã này. | ❌ Không có | — |
+| 77 | **SSB** | Ngân hàng Thương mại Cổ phần Đông Nam Á | NH (Ngân hàng) | Thu nhập thặng dư (Residual Income) + So sánh P/B — blend 50% RI + 50% P/B (trọng số theo báo cáo CTCK đối chiếu) | ✅ Đầy đủ (không proxy) | Chưa |
 | 78 | **SSI** | Công ty Cổ phần Chứng khoán SSI | CK (Chứng khoán) | So sánh P/B (Justified P/B theo ROE) | ✅ Đầy đủ (không proxy) | Chưa |
 | 79 | **STB** | Ngân hàng Thương mại Cổ phần Sài Gòn Tài Lộc | NH (Ngân hàng) | Thu nhập thặng dư (Residual Income) + So sánh P/B — blend 50% RI + 50% P/B (trọng số theo báo cáo CTCK đối chiếu) | ✅ Đầy đủ (không proxy) | Chưa |
 | 80 | **STK** | Công ty Cổ phần Sợi Thế Kỷ | Dệt may/TS | So sánh P/E (EPS chuẩn hóa trung vị 3 năm) | ✅ Đầy đủ (không proxy) | Chưa |
@@ -158,9 +158,7 @@
 
 ## 4. Mã thiếu cấu hình định tuyến
 
-Các mã sau **chưa có** trong `valuation/config/routing.json`, hệ thống **không tự định giá được**:
-
-- **SSB**
+Không còn mã VN100 nào thiếu cấu hình định tuyến trong `valuation/config/routing.json`.
 
 ---
 

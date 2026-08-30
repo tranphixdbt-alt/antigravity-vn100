@@ -119,8 +119,14 @@ def test_report_ai_notice_shown_only_when_ai_generated(db):
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         template = jinja2.Template(f.read())
     _, data, _ = _render_html("ACB", db)
-    data["narrative"] = {"thesis": "x", "overview": "x", "industry": "x",
-                         "risks": "x", "ai_generated": True}
+    data["narrative"] = {
+        "thesis": "x",
+        "overview": "x",
+        "industry": "x",
+        "corporate_actions": "x",
+        "risks": "x",
+        "ai_generated": True,
+    }
     html_ai = template.render(**data)
     assert "Nháp do AI tạo" in html_ai
 

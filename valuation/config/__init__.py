@@ -43,8 +43,8 @@ def get_macro_source_config() -> dict:
 
 class Settings(BaseSettings):
     vnstock_api_key: str = Field(default="")
-    database_url_readonly: str = Field(...)
-    database_url_write: str = Field(...)
+    database_url_readonly: str = Field(default="sqlite:///vn100_full.db")
+    database_url_write: str = Field(default="sqlite:///vn100_full.db")
     google_service_account_json: str = Field(default="")
     google_sheet_master_id: str = Field(default="")
     google_drive_folder_id: str = Field(default="")

@@ -36,6 +36,24 @@ rating_thresholds:
   hold_max: 0.20
   sell: 0.0
 
+# DeepSeek chỉ được gọi khi người dùng bấm nút kiểm chứng & sinh báo cáo.
+# Một lần bấm = tối đa một API call; Python làm kiểm tra số học trước, model
+# chỉ phản biện dữ liệu và viết nháp trong cùng một JSON response.
+deepseek_report:
+  fast_model: "deepseek-v4-flash"
+  pro_model: "deepseek-v4-pro"
+  cache_enabled: true
+  max_output_tokens: 4200
+  temperature: 0.2
+  consensus_max_reports: 8
+  consensus_summary_max_chars: 1200
+  consensus_fetch_timeout_sec: 12
+  consensus_window_days: 180
+  identity_tolerance_pct: 0.5
+  growth_warning_pct: 100.0
+  upside_warning_pct: 100.0
+  pro_warning_count: 2
+
 # ===================================================================
 # Band khuyến nghị 5 mức chuẩn CTCK/quỹ (SPEC MODULE 4.3) — dùng cho
 # báo cáo định giá. Ngưỡng upside (decimal), đọc từ trên xuống.
@@ -116,6 +134,24 @@ ddm:
   near_growth: 0.05          # tăng trưởng LN/cổ tức giai đoạn đầu (5 năm)
   terminal_growth: 0.03      # tăng trưởng vĩnh viễn
   power_dcf_weight: 0.6      # blend cho ngành điện: 60% DCF + 40% DDM
+
+# Sự kiện vốn/quyền cổ đông. Nguồn tổng hợp chỉ là lớp phát hiện; sự kiện có
+# source_tier=OFFICIAL mới được coi là đã đối chiếu VSDC/HOSE/HNX/IR.
+corporate_actions:
+  history_years: 5
+  future_days: 365
+  refresh_ttl_hours: 24
+  error_retry_minutes: 30
+  page_size: 200
+  request_interval_sec: 1.1
+  max_events_ai: 12
+  historical_impact_max_events: 12
+  example_holding_shares: 1000
+  price_impact_short_sessions: 5
+  price_impact_long_sessions: 20
+  reaction_materiality_pct: 2.0
+  attractive_dividend_yield_pct: 5.0
+  dilution_warning_pct: 10.0
 
 proxy_valuation:
   # D28 — proxy lệch quá mức này so THỊ GIÁ ⇒ NOT_RATED, không xuất bản số.
@@ -267,6 +303,12 @@ bank_terminal:
   target_pb_ceiling: 3.0
   # Lệch giữa payout ngụ ý bởi Gordon (1 - g/ROE) và payout dùng trong dự phóng.
   payout_consistency_tol: 0.30
+
+# Guardrail dự phóng ngân hàng: YoY một quý là tín hiệu hiện tại, không phải
+# tốc độ bền vững để ngoại suy nguyên vẹn suốt 5 năm.
+bank_forecast:
+  credit_growth_floor: 0.05
+  credit_growth_cap: 0.25
 
 # ===================================================================
 # D32 — Năm gốc dự phóng. Mặc định TRAILING = hành vi y hệt trước D32.

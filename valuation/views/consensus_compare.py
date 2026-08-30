@@ -9,7 +9,7 @@ Nội dung:
      đối chiếu mô hình nội bộ.
 
 Dữ liệu: consensus_history (64 CTCK — 24hmoney + Simplize + Vietcap) và
-consensus_synthesis (DeepSeek tổng hợp, chạy lại bằng import_synthesis).
+consensus_synthesis (được sinh trong lượt báo cáo DeepSeek duy nhất ở tab BCTC).
 """
 from __future__ import annotations
 
@@ -190,7 +190,7 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
 
     # ---- 2. Football field ------------------------------------------------
     st.subheader("📊 Giá mục tiêu từng CTCK vs Mô hình vs Thị giá")
-    st.plotly_chart(_football_field(data), use_container_width=True, theme=None)
+    st.plotly_chart(_football_field(data), width="stretch", theme=None)
 
     # ---- 3. Bảng chi tiết -------------------------------------------------
     st.subheader("📋 Chi tiết khuyến nghị từng CTCK (mới nhất/CTCK, 180 ngày)")
@@ -207,7 +207,7 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
                    subset=["Mô hình so với CTCK"])
               .map(lambda v: "color:#EF4444;" if isinstance(v, int) and v > 120 else "",
                    subset=["Tuổi (ngày)"]))
-    st.dataframe(styler, use_container_width=True, hide_index=True)
+    st.dataframe(styler, width="stretch", hide_index=True)
     st.caption("🔴 chênh >25% (mô hình thấp hơn) · 🟢 chênh >25% (mô hình cao hơn) · tuổi đỏ = báo cáo >120 ngày")
 
     # ---- 4. AI tổng hợp điểm chung / riêng --------------------------------
@@ -228,16 +228,9 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
             _panel("Điểm RIÊNG / khác biệt giữa CTCK", "⚖️", "#D97706", synth["diem_rieng"])
             _panel("Đối chiếu mô hình nội bộ", "🧭", "#7C3AED", synth["doi_chieu_noi_bo"])
     else:
-        st.info("Chưa có bản AI tổng hợp cho mã này.", icon="🤖")
-        if st.button("🪄 Sinh AI tổng hợp luận điểm CTCK", key="gen_consensus_synthesis"):
-            with st.spinner("AI đang tổng hợp luận điểm từ các báo cáo CTCK..."):
-                from valuation.engine.consensus_synthesis import import_synthesis
-                try:
-                    rec = import_synthesis(company.ticker)
-                    if rec:
-                        st.toast("Đã sinh bản AI tổng hợp!", icon="✅")
-                        st.rerun()
-                    else:
-                        st.warning("Không đủ dữ liệu báo cáo CTCK để tổng hợp.")
-                except Exception as e:
-                    st.error(f"Lỗi khi sinh AI tổng hợp: {e}")
+        st.info(
+            "Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
+            "sinh báo cáo qua DeepSeek** ở tab BCTC; cùng một lượt sẽ tạo luôn "
+            "phần tổng hợp CTCK tại đây.",
+            icon="🤖",
+        )

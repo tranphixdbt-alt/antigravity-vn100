@@ -7,10 +7,43 @@ Mục đích:
 - Tính shares outstanding từ Vốn điều lệ / mệnh giá
 - Tính các driver lịch sử (NIM, CIR, credit growth) từ dữ liệu thật
 """
-from typing import List, Optional, Tuple
+from datetime import date
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
+
+import yaml
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from valuation.db.models import FinancialsQuarterly, MacroSeries
+from valuation.db.models import FinancialsQuarterly, MacroSeries, PricesDaily
+
+
+_SHARES_EVENTS_FILE = (
+    Path(__file__).resolve().parents[2] / "config" / "corporate_actions.yaml"
+)
+
+
+def _load_shares_events() -> List[dict[str, Any]]:
+    if not _SHARES_EVENTS_FILE.exists():
+        return []
+    with _SHARES_EVENTS_FILE.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    return list(data.get("shares_outstanding_events") or [])
+
+
+def resolve_shares_override(
+    ticker: str, as_of_date: date, events: List[dict[str, Any]]
+) -> Optional[float]:
+    """Lấy số cổ phiếu từ corporate action gần nhất đã có hiệu lực."""
+    eligible: List[tuple[date, float]] = []
+    for event in events:
+        if str(event.get("ticker", "")).upper() != ticker.upper():
+            continue
+        effective_date = date.fromisoformat(str(event["effective_date"]))
+        if effective_date <= as_of_date:
+            eligible.append((effective_date, float(event["shares_outstanding"])))
+    if not eligible:
+        return None
+    return max(eligible, key=lambda item: item[0])[1]
 
 
 
@@ -156,12 +189,29 @@ def get_mid_cycle_average(
     return total_val / actual_years
 
 
-def get_shares_outstanding(db: Session, ticker: str) -> float:
+def get_shares_outstanding(
+    db: Session, ticker: str, as_of_date: Optional[date] = None
+) -> float:
     """
     Tính shares outstanding từ:
     1. Trực tiếp từ outstanding_shares_volume hay shares_outstanding_value (HPG, SSI)
     2. Vốn điều lệ / Vốn góp / paid_in_capital (VCB, FPT) chia cho mệnh giá (10,000 VND/cp).
     """
+    if as_of_date is None:
+        latest_price = (
+            db.query(PricesDaily.trade_date)
+            .filter(PricesDaily.ticker == ticker)
+            .order_by(PricesDaily.trade_date.desc())
+            .first()
+        )
+        as_of_date = latest_price[0] if latest_price else date.today()
+
+    verified_shares = resolve_shares_override(
+        ticker, as_of_date, _load_shares_events()
+    )
+    if verified_shares is not None:
+        return verified_shares
+
     direct_shares = get_latest_balance(db, ticker, ["outstanding_shares_volume", "shares_outstanding_value"])
     if direct_shares > 0:
         return direct_shares
@@ -654,4 +704,3 @@ def build_dgc_current_financials(db: Session, ticker: str = "DGC") -> dict:
         "shares_outstanding": get_shares_outstanding(db, ticker),
         "current_price": 0.0,
     }
-

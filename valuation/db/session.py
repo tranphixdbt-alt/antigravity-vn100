@@ -26,8 +26,8 @@ def _create_safe_engine(url: str, is_readonly: bool = False):
             pass
         return engine
     except Exception as e:
-        logger.warning(f"Không thể kết nối DB tại {url}: {e}. Tự động chuyển sang SQLite (sqlite:///vn100.db).")
-        sqlite_url = "sqlite:///vn100.db"
+        logger.warning(f"Không thể kết nối DB tại {url}: {e}. Tự động chuyển sang SQLite (sqlite:///vn100_full.db).")
+        sqlite_url = "sqlite:///vn100_full.db"
         sqlite_kwargs = {"connect_args": {"check_same_thread": False}, "pool_pre_ping": True}
         return create_engine(sqlite_url, **sqlite_kwargs)
 
@@ -70,4 +70,3 @@ def get_read_db():
         yield db
     finally:
         db.close()
-

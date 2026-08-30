@@ -2,9 +2,9 @@ import logging
 from typing import Any, Dict
 import pandas as pd
 from datetime import datetime
-from sqlalchemy.dialects.postgresql import insert
 from valuation.db.session import SessionLocalWrite
 from valuation.db.models import PricesDaily, FinancialsQuarterly, BackfillStatus, Ticker
+from valuation.db.upsert import dialect_insert
 from valuation.ingest.vnstock_client import vnstock_client
 from valuation.ingest.market_client import market_client
 from valuation.ingest.normalizer import normalize_daily_prices, unpivot_financials
@@ -31,7 +31,7 @@ def upsert_prices(df: pd.DataFrame, ticker: str):
     
     db = SessionLocalWrite()
     try:
-        stmt = insert(PricesDaily).values(records)
+        stmt = dialect_insert(db, PricesDaily).values(records)
         update_dict = {
             c.name: c for c in stmt.excluded 
             if c.name not in ['ticker', 'trade_date']
@@ -112,7 +112,7 @@ def upsert_market_flows(ticker: str, df_foreign: pd.DataFrame, df_prop: pd.DataF
 
     db = SessionLocalWrite()
     try:
-        stmt = insert(PricesDaily).values(records)
+        stmt = dialect_insert(db, PricesDaily).values(records)
         # CHỈ update các cột market-flow — giữ nguyên OHLCV đã có.
         update_dict = {col: getattr(stmt.excluded, col) for col in _MARKET_FLOW_COLUMNS}
         stmt = stmt.on_conflict_do_update(
@@ -151,7 +151,8 @@ def upsert_financials(df: pd.DataFrame, ticker: str):
             'line_item': str(row['line_item']),
             'value': val,
             'currency': str(row.get('currency', 'VND')),
-            'source': 'vnstock'
+            'source': str(row.get('source', 'vnstock')),
+            'published_at': row.get('published_at'),
         })
         
     db = SessionLocalWrite()
@@ -160,14 +161,15 @@ def upsert_financials(df: pd.DataFrame, ticker: str):
         batch_size = 500
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
-            stmt = insert(FinancialsQuarterly).values(batch)
-            update_dict = {
-                c.name: c for c in stmt.excluded 
-                if c.name not in ['ticker', 'fiscal_year', 'fiscal_quarter', 'is_consolidated', 'is_restated', 'statement', 'line_item']
-            }
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['ticker', 'fiscal_year', 'fiscal_quarter', 'is_consolidated', 'is_restated', 'statement', 'line_item'],
-                set_=update_dict
+            stmt = dialect_insert(db, FinancialsQuarterly).values(batch)
+            # Không ghi đè bản đã lưu: provider có thể trả số điều chỉnh nhưng
+            # không cho biết đó là restatement. Chỉ thêm kỳ/phiên bản mới; khi có
+            # filing xác nhận, ingest với is_restated=True để giữ cả hai bản.
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=[
+                    'ticker', 'fiscal_year', 'fiscal_quarter',
+                    'is_consolidated', 'is_restated', 'statement', 'line_item',
+                ]
             )
             db.execute(stmt)
         db.commit()
@@ -181,7 +183,7 @@ def upsert_financials(df: pd.DataFrame, ticker: str):
 def update_backfill_status(ticker: str, status: str, last_price_date=None, last_financial_period=None):
     db = SessionLocalWrite()
     try:
-        stmt = insert(BackfillStatus).values(
+        stmt = dialect_insert(db, BackfillStatus).values(
             ticker=ticker,
             status=status,
             last_price_date=last_price_date,
@@ -237,7 +239,13 @@ def _incremental_price_start(ticker: str) -> str:
         db.close()
 
 
-def run_ingest(ticker: str, data_types: list, incremental: bool = True):
+def run_ingest(
+    ticker: str,
+    data_types: list,
+    incremental: bool = True,
+    include_yearly: bool = True,
+    include_market_flows: bool = True,
+):
     """
     Orchestrator hàm lấy dữ liệu, chuẩn hóa và lưu DB.
     data_types: ['prices', 'financials']
@@ -251,7 +259,7 @@ def run_ingest(ticker: str, data_types: list, incremental: bool = True):
             overview = vnstock_client.get_company_overview(ticker)
             if not overview.empty:
                 info = overview.iloc[0]
-                db.execute(insert(Ticker).values(
+                db.execute(dialect_insert(db, Ticker).values(
                     ticker=ticker,
                     company_name=info.get('organ_name', ''),
                     exchange='',
@@ -274,13 +282,14 @@ def run_ingest(ticker: str, data_types: list, incremental: bool = True):
             df_norm = normalize_daily_prices(df_prices)
             upsert_prices(df_norm, ticker)
 
-            # Kéo thêm dòng tiền ngoại & tự doanh (cùng cửa sổ incremental)
-            try:
-                df_foreign = market_client.fetch_foreign_flow(ticker, start=price_start)
-                df_prop = market_client.fetch_proprietary_flow(ticker, start=price_start)
-                upsert_market_flows(ticker, df_foreign, df_prop)
-            except Exception as e:
-                logger.warning(f"Could not fetch market flows for {ticker}: {e}")
+            if include_market_flows:
+                # Kéo thêm dòng tiền ngoại & tự doanh (cùng cửa sổ incremental).
+                try:
+                    df_foreign = market_client.fetch_foreign_flow(ticker, start=price_start)
+                    df_prop = market_client.fetch_proprietary_flow(ticker, start=price_start)
+                    upsert_market_flows(ticker, df_foreign, df_prop)
+                except Exception as e:
+                    logger.warning(f"Could not fetch market flows for {ticker}: {e}")
                 
             if not df_prices.empty:
                 last_price = pd.to_datetime(df_prices.iloc[-1]['time']).date()
@@ -296,13 +305,15 @@ def run_ingest(ticker: str, data_types: list, incremental: bool = True):
                     logger.warning(f"Could not fetch quarterly {stmt_type} for {ticker}: {e}")
                     df_long_q = pd.DataFrame()
 
-                # Lấy dữ liệu năm (Yearly)
-                try:
-                    df_fin_y = vnstock_client.get_financials(ticker, stmt_type, period='year')
-                    df_long_y = unpivot_financials(df_fin_y, stmt_type)
-                    upsert_financials(df_long_y, ticker)
-                except Exception as e:
-                    logger.warning(f"Could not fetch yearly {stmt_type} for {ticker}: {e}")
+                if include_yearly:
+                    # Dữ liệu năm chỉ cần cho mã chưa có lịch sử; các mã hiện hữu
+                    # đã có Q0 và mỗi lần chạy chỉ cần cập nhật quý mới.
+                    try:
+                        df_fin_y = vnstock_client.get_financials(ticker, stmt_type, period='year')
+                        df_long_y = unpivot_financials(df_fin_y, stmt_type)
+                        upsert_financials(df_long_y, ticker)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch yearly {stmt_type} for {ticker}: {e}")
 
                 if not df_long_q.empty and not last_fin:
                     last_fin = f"{df_long_q['fiscal_year'].max()}-Q{df_long_q[df_long_q['fiscal_year']==df_long_q['fiscal_year'].max()]['fiscal_quarter'].max()}"

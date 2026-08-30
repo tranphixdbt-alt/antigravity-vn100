@@ -9,7 +9,6 @@ import plotly.graph_objects as go
 import datetime
 import os
 import jinja2
-import openai
 from typing import Union, Dict, Any
 from sqlalchemy.orm import Session
 
@@ -29,7 +28,8 @@ from valuation.report.charts import (
 from valuation.report.build_pdf import build_pdf_report
 from valuation.report.build_docx import build_docx_report
 from valuation.report.report_data import build_report_sections
-from valuation.report.ai_narrative import generate_report_narratives, _FALLBACK as NARRATIVE_FALLBACK
+from valuation.report.ai_narrative import _FALLBACK as NARRATIVE_FALLBACK
+from valuation.report.verified_summary import verified_summary_session_key
 from valuation.views.tradingview_chart import render_tradingview_widget
 
 PLOTLY_CONFIG = {
@@ -333,12 +333,10 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
             font=dict(color="#F8FAFC"), bgcolor="rgba(15, 23, 42, 0.9)", bordercolor="#334155", borderwidth=1
         )
     )
-    st.plotly_chart(fig_ff, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_ff, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
-    # 3.2. TradingView Technical Chart Widget (CÔNG CỤ VẼ KĨ THUẬT)
+    # 3.2. Biểu đồ kỹ thuật tương tác
     st.markdown("---")
-    st.subheader(f"📈 Biểu Đồ Kỹ Thuật & Công Cụ Vẽ TradingView ({company.ticker})")
-    st.caption("💡 Sử dụng thanh công cụ phía bên trái biểu đồ để vẽ đường xu hướng (Trendline), Fibonacci, đo khoảng giá, vẽ hình khối, và chèn các chỉ báo kỹ thuật (RSI, MACD, MA).")
     render_tradingview_widget(company.ticker, height=650, key_prefix="results_tab")
     st.markdown("---")
 
@@ -372,7 +370,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                 height=400,
                 margin=dict(l=40, r=40, t=60, b=40)
             )
-            st.plotly_chart(fig_wf, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+            st.plotly_chart(fig_wf, width="stretch", theme=None, config=PLOTLY_CONFIG)
         else:
             st.info("💡 Biểu đồ Waterfall không khả dụng cho phương pháp định giá hiện tại (không có dòng tiền chi tiết).")
 
@@ -413,7 +411,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         font=dict(color="#F8FAFC", family="Inter"),
         height=400
     )
-    st.plotly_chart(fig_heat, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_heat, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # --- BIỂU ĐỒ DỰ PHÓNG 5 NĂM ---
     _dark_theme_res = dict(
@@ -460,7 +458,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                     font=dict(color="#F8FAFC"), bgcolor="rgba(15, 23, 42, 0.9)", bordercolor="#334155", borderwidth=1
                 )
             )
-            st.plotly_chart(fig_forecast, use_container_width=True, theme=None)
+            st.plotly_chart(fig_forecast, width="stretch", theme=None)
 
         else:
             # Phi tài chính: cột Revenue + đường Net Income
@@ -488,7 +486,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                     font=dict(color="#F8FAFC"), bgcolor="rgba(15, 23, 42, 0.9)", bordercolor="#334155", borderwidth=1
                 )
             )
-            st.plotly_chart(fig_forecast, use_container_width=True, theme=None)
+            st.plotly_chart(fig_forecast, width="stretch", theme=None)
 
             # --- BIỂU ĐỒ FCFF WATERFALL (chỉ phi tài chính) ---
             # Lấy năm dự phóng gần nhất (năm 1) làm minh hoạ waterfall
@@ -519,7 +517,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                 yaxis_title="Tỷ đồng",
                 height=420, **_dark_theme_res,
             )
-            st.plotly_chart(fig_waterfall, use_container_width=True, theme=None)
+            st.plotly_chart(fig_waterfall, width="stretch", theme=None)
 
     # 5. Scenario Analysis
     st.subheader("🎭 Phân Tích Kịch Bản")
@@ -578,7 +576,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                         subset=["Quá hạn (>6T)"]
                     )
                     return styler
-                st.dataframe(apply_consensus_styling(df_con), use_container_width=True)
+                st.dataframe(apply_consensus_styling(df_con), width="stretch")
     else:
         st.info("Không tìm thấy dữ liệu consensus của các CTCK khác trong vòng 1 năm qua cho cổ phiếu này.")
     # Nút Lưu Kịch Bản (Append-only) & Xuất Báo Cáo
@@ -588,7 +586,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
     col_save, col_pdf, col_docx = st.columns(3)
     
     with col_save:
-        if st.button("Lưu kịch bản vào DB", use_container_width=True):
+        if st.button("Lưu kịch bản vào DB", width="stretch"):
             with st.spinner("Đang ghi dữ liệu vào PostgreSQL..."):
                 try:
                     ass_json = company.assumptions.model_dump()
@@ -693,14 +691,19 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
     except Exception as e:
         st.warning(f"Không thể tạo biểu đồ tài chính lịch sử: {e}")
 
-    # Nháp văn bản AI (luận điểm/tổng quan/ngành/rủi ro) — sinh 1 lần/mã, cache session.
-    _narr_key = f"report_narrative_{company.ticker}"
-    if st.button("🪄 Sinh nháp văn bản AI cho báo cáo (DeepSeek)", use_container_width=True):
-        with st.spinner("Đang sinh nháp luận điểm/tổng quan/ngành/rủi ro..."):
-            st.session_state[_narr_key] = generate_report_narratives(report_sections)
-    narrative = st.session_state.get(_narr_key, {**NARRATIVE_FALLBACK, "ai_generated": False})
+    # Không gọi DeepSeek tại tab này. Chỉ dùng lại kết quả đã sinh từ nút duy
+    # nhất ở tab BCTC để tránh phát sinh thêm chi phí API.
+    _verified = st.session_state.get(verified_summary_session_key(company.ticker), {})
+    _sections = _verified.get("report_sections") or {}
+    narrative = (
+        {**_sections, "ai_generated": True}
+        if _verified.get("ai_generated") and all(_sections.get(k) for k in NARRATIVE_FALLBACK)
+        else {**NARRATIVE_FALLBACK, "ai_generated": False}
+    )
     if narrative.get("ai_generated"):
-        st.caption("✍️ Văn bản AI đã sinh — sẽ được chèn vào báo cáo với dấu *Nháp cần review*.")
+        st.caption("Văn bản AI đã được kiểm chứng tại tab BCTC và sẽ được dùng lại, không gọi API thêm.")
+    else:
+        st.info("Chưa có nháp AI. Hãy dùng nút kiểm chứng và sinh báo cáo tại tab BCTC trước khi xuất.")
 
     import base64
     def get_b64(path):
@@ -764,7 +767,7 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                         data=fpdf.read(),
                         file_name=f"Bao_cao_dinh_gia_{company.ticker}.pdf",
                         mime="application/pdf",
-                        use_container_width=True
+                        width="stretch"
                     )
         else:
             st.error("Không tìm thấy tệp template.html!")
@@ -783,12 +786,12 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                     data=fdocx.read(),
                     file_name=f"Bao_cao_dinh_gia_{company.ticker}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
+                    width="stretch"
                 )
 
     st.markdown("---")
     st.subheader("☁️ Lưu trữ Đám mây (Google Sheets & Drive)")
-    if st.button("Lưu & Upload Báo cáo lên Đám mây", use_container_width=True):
+    if st.button("Lưu & Upload Báo cáo lên Đám mây", width="stretch"):
         with st.spinner("Đang đồng bộ dữ liệu..."):
             from valuation.output.gsheets_exporter import update_single_ticker_to_gsheets
             from valuation.output.gdrive_exporter import upload_report_to_drive
@@ -800,7 +803,9 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
                 blended_fv=blended_fv,
                 greeks={},
                 qc_flags=[],
-                db=db_write
+                db=db_write,
+                ai_insight=_sections.get("thesis") or None,
+                allow_ai_call=False,
             )
             
             # 2. Upload Drive

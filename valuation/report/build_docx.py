@@ -4,9 +4,11 @@ Word Builder — tạo báo cáo định giá .docx theo khuôn 11 phần chuẩ
 sửa trực tiếp trước khi phát hành.
 """
 import os
+import logging
 from typing import Any, Dict, List
 
 AI_NOTICE = "⚠ Nháp do AI tạo — cần analyst review trước khi phát hành."
+logger = logging.getLogger(__name__)
 
 
 def build_docx_report(
@@ -158,6 +160,8 @@ def build_docx_report(
         add_narrative("overview")
         add_section("4. Bối cảnh ngành")
         add_narrative("industry")
+        add_section("4A. Cổ tức, tăng vốn & quyền cổ đông")
+        add_narrative("corporate_actions")
 
         # ==== 6. TÀI CHÍNH LỊCH SỬ ====
         add_section("5. Phân tích tài chính lịch sử")
@@ -299,8 +303,8 @@ def build_docx_report(
         fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.save(output_path)
-        print(f"Word report created successfully at: {output_path}")
+        logger.info("Word report created at %s", output_path)
         return True
     except Exception as e:
-        print(f"Error creating Word report: {e}")
+        logger.warning("Không tạo được Word report: %s", e)
         return False

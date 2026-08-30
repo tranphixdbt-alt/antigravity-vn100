@@ -32,6 +32,9 @@ class IncomeStatement(BaseModel):
 class BalanceSheet(BaseModel):
     year: int
     cash_and_equivalents: float = Field(..., description="Tiền và tương đương tiền (tỷ đồng)")
+    short_term_financial_investments: float = Field(
+        0.0, description="Đầu tư tài chính ngắn hạn có thể dùng trong cầu nối EV (tỷ đồng)"
+    )
     receivables: float = Field(..., description="Phải thu khách hàng (tỷ đồng)")
     inventory: float = Field(..., description="Hàng tồn kho (tỷ đồng)")
     other_current_assets: float = Field(..., description="Tài sản ngắn hạn khác (tỷ đồng)")
@@ -44,6 +47,9 @@ class BalanceSheet(BaseModel):
     long_term_debt: float = Field(..., description="Nợ vay dài hạn (tỷ đồng)")
     other_long_term_liabilities: float = Field(..., description="Nợ dài hạn khác (tỷ đồng)")
     total_equity: float = Field(..., description="Vốn chủ sở hữu (tỷ đồng)")
+    minority_interest: float = Field(
+        0.0, description="Lợi ích cổ đông không kiểm soát (tỷ đồng)"
+    )
 
     @property
     def total_liabilities(self) -> float:

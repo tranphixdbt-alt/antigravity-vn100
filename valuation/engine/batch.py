@@ -14,6 +14,14 @@ from valuation.data_access.repo import get_latest_price, build_company_data
 from valuation.config import load_defaults
 
 
+_NOT_RATEABLE_FLAGS = {
+    "NEGATIVE_EQUITY_VALUE_DCF",
+    "NEGATIVE_EQUITY_VALUE_EV_EBITDA",
+    "PROXY_IMPLAUSIBLE",
+    "NOT_RATED",
+}
+
+
 def _collect_flags(model, result: Dict[str, Any]) -> List[str]:
     flags = list(getattr(model, "valuation_warnings", []) or [])
     for f in result.get("flags", []) or []:
@@ -42,8 +50,25 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
         res = valuate(company, macro_env=macro_env)
 
         fv = float(res["blended_fair_value_per_share"])
+        flags = list(res.get("flags", []) or [])
+        if fv <= 0 or _NOT_RATEABLE_FLAGS.intersection(flags):
+            if "NOT_RATEABLE" not in flags:
+                flags.append("NOT_RATEABLE")
+            return {
+                **base,
+                "fair_value": None,
+                "upside": None,
+                "recommendation": "KHÔNG XẾP HẠNG",
+                "flags": flags,
+            }
         upside = (fv / price - 1.0) if price else None
-        return {**base, "fair_value": fv, "upside": upside, "flags": res.get("flags", [])}
+        return {
+            **base,
+            "fair_value": fv,
+            "upside": upside,
+            "recommendation": res.get("recommendation", "THEO DÕI"),
+            "flags": flags,
+        }
     except Exception as e:  # 1 mã lỗi không phá batch
         return {**base, "error": f"{type(e).__name__}: {str(e)[:80]}"}
 
@@ -57,6 +82,10 @@ def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None)
     is_cyclical = any(k in (group or "") for k in _CYCLICAL_KW)
     
     if is_cyclical and method in ("EV_EBITDA", "PE") and len(company.historical_is) > 0:
+        # Chuẩn hóa chu kỳ chỉ là biến đổi nội bộ của model. Không sửa đối tượng
+        # caller vì báo cáo/scenario có thể tái sử dụng cùng Company và ra Base
+        # khác nhau tùy thứ tự gọi.
+        company = company.model_copy(deep=True)
         # Tính giá trị trung bình 5 năm từ lịch sử
         hist_ni = [x.net_income for x in company.historical_is if x.net_income > 0]
         if method == "PE" and hist_ni:
@@ -120,6 +149,6 @@ def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None)
 def value_all(db: Session, tickers: List[str] = None, macro_env=None) -> List[Dict[str, Any]]:
     """Định giá hàng loạt. Mặc định toàn bộ mã có trong bảng routing (VN100)."""
     if tickers is None:
-        from valuation.engine.sector_router import _router
-        tickers = sorted(_router().routing_data.keys())
+        from valuation.ingest.universe import get_vn100_symbols
+        tickers = get_vn100_symbols()
     return [value_ticker(db, t, macro_env=macro_env) for t in tickers]

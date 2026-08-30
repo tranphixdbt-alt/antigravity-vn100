@@ -10,9 +10,13 @@ from valuation.models.financials import Company
 from valuation.models.financials_bank import CompanyBank
 from valuation.engine.forecast_bank import forecast_bank_financials
 from valuation.engine.forecast import forecast_company_financials
-import os
-import openai
-from datetime import datetime
+from valuation.report.verified_summary import (
+    collect_consensus_context,
+    generate_verified_summary_cached,
+    persist_consensus_synthesis,
+    report_markdown,
+    verified_summary_session_key,
+)
 
 PLOTLY_CONFIG = {
     "modeBarButtonsToAdd": [
@@ -25,82 +29,6 @@ PLOTLY_CONFIG = {
     ],
     "displaylogo": False,
 }
-
-def generate_ai_narrative(ticker: str, company_name: str, blended_fv: float, current_price: float, upside: float, rec: str, company: Union[Company, CompanyBank] = None) -> str:
-    """
-    Sử dụng DeepSeek API để sinh báo cáo tóm tắt 500-1000 từ.
-    """
-    api_key = os.getenv("DEEPSEEK_API_KEY")
-    if not api_key:
-        return "Lỗi: Không tìm thấy DEEPSEEK_API_KEY trong file .env."
-        
-    client = openai.OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com"
-    )
-    
-    # Sửa lỗi: Check NoneType cho cost_of_equity và terminal_growth_rate
-    coe = getattr(company.assumptions, "cost_of_equity", None) if company else None
-    wacc_str = f"{coe * 100:.2f}% (COE)" if coe is not None else "Theo mô hình định giá"
-    
-    g = getattr(company.assumptions, "terminal_growth_rate", None) if company else None
-    g_str = f"{g * 100:.2f}%" if g is not None else "N/A"
-    
-    current_year = datetime.now().year
-    
-    prompt = f"""
-Bạn là một Chuyên gia Phân tích Đầu tư Cấp cao (Senior Equity Analyst) kiêm Giám sát Dữ liệu (Data Supervisor). 
-Hãy viết một Báo Cáo Phân Tích Cổ Phiếu khách quan, trung thực và mang tính phản biện cao cho mã {ticker} ({company_name}) dựa trên dữ liệu định giá dưới đây.
-
-LƯU Ý QUAN TRỌNG VỀ THỜI GIAN:
-- Hiện tại đang là năm {current_year}. Tuyệt đối sử dụng bối cảnh vĩ mô và dữ liệu thị trường mới nhất của năm {current_year} (hoặc dự phóng {current_year+1}) khi đưa thêm dẫn chứng bên ngoài. Không lấy số liệu cũ của 2024.
-
-QUY ĐỊNH VỀ VĂN PHONG VÀ BẢN CHẤT:
-1. Độ dài yêu cầu: Khoảng 800-1200 từ. Đảm bảo phân tích đủ sâu, chi tiết.
-2. Văn phong: Khách quan, trung lập, điềm tĩnh và khoa học. Tuyệt đối KHÔNG dùng ngôn từ phóng đại, sáo rỗng hay tô hồng (KHÔNG dùng các từ như "tốt nhất", "hoàn hảo", "tuyệt vời", "hấp dẫn nhất").
-3. Đối tượng độc giả: Viết diễn giải một cách cực kỳ dễ hiểu để nhà đầu tư F0 cũng hiểu được cốt lõi vấn đề.
-4. Giám sát Dữ liệu (Phản biện): Đóng vai trò là Giám sát Dữ liệu, bạn phải "soi" kỹ các con số đầu vào. Nếu phát hiện chỉ số định giá bất thường, quá lạc quan, quá lệch hoặc phi lý (Ví dụ: Upside lên đến hàng trăm phần trăm, tốc độ tăng trưởng phi thực tế), bạn PHẢI phản biện thẳng thắn, nghi ngờ tính chính xác của giả định ngay trong báo cáo thay vì chấp nhận số liệu mù quáng.
-5. Hình thức: Dùng gạch đầu dòng và bôi đậm những keyword quan trọng.
-
-CẤU TRÚC VÀ NỘI DUNG BẮT BUỘC:
-
-Phần 1: Tóm tắt Đầu tư & Tổng quan (Executive Summary)
-- Đưa ra Kết luận: {rec} dựa trên Upside ({upside:+.2f}%). Trình bày điềm tĩnh, không hô hào.
-- Nêu rõ Giá mục tiêu: {blended_fv:,.0f} VND so với thị giá {current_price:,.0f} VND.
-- Giới thiệu nhanh vị thế thực sự của doanh nghiệp (không tô hồng).
-
-Phần 2: Luận điểm Vĩ mô, Ngành & So Sánh Đối Thủ Cạnh Tranh
-- Phân tích bối cảnh vĩ mô đang hỗ trợ hay cản trở doanh nghiệp.
-- So sánh trực tiếp với các đối thủ cạnh tranh cùng ngành và các đối thủ đang có định giá tốt. Trình bày dưới dạng các luận điểm đối chiếu định lượng (VD: so sánh NIM, ROE, CASA, P/E, P/B...). Chỉ rõ điểm mạnh và điểm yếu cốt lõi của {ticker} so với đối thủ.
-
-Phần 3: Chiến lược Doanh nghiệp & Biến động Tài chính
-- Chiến lược công bố trong 6 tháng gần nhất và tác động thực tế (tích cực/tiêu cực).
-- Giải thích bằng ngôn từ đơn giản: Các biến động tài chính của doanh nghiệp là hệ quả từ Vĩ mô, Ngành hay Yếu tố nội tại. 
-
-Phần 4: Giải mã Động lực Định giá (Valuation Drivers)
-- Bóc tách khoa học: Giả định nào xuất phát từ Vĩ mô (VD: Chi phí vốn COE {wacc_str}), giả định nào từ Ngành/Chiến lược (VD: Tăng trưởng dài hạn g {g_str}), giả định nào từ dữ liệu lịch sử. Trình bày để F0 cũng hiểu.
-
-Phần 5: Rủi ro Đầu tư & Monitoring Dashboard (Chỉ báo theo dõi)
-- Đánh giá thẳng thắn các Rủi ro đầu tư lớn nhất hiện tại (không né tránh).
-- Lập một Bảng Monitoring Dashboard (Chỉ báo theo dõi): Liệt kê các chỉ báo vĩ mô/ngành/doanh nghiệp mà nhà đầu tư cần theo dõi sát sao sau khi giải ngân.
-"""
-    
-    try:
-        response = client.chat.completions.create(
-            # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash" vì
-            # tốn token "suy nghĩ" ngẫu nhiên, đôi khi cắt cụt nội dung (xem
-            # valuation/analysis/ai_insight.py).
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "Bạn là Senior Equity Analyst kiêm Data Supervisor. Bạn viết báo cáo phân tích khách quan, mang tính phản biện cao, tuyệt đối không dùng ngôn từ phóng đại. Bạn phải soi xét số liệu và phản biện nếu định giá có sự bất thường (Upside phi lý). Luôn sử dụng dữ liệu vĩ mô cập nhật nhất (hiện tại là năm " + str(current_year) + ")."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=4000,
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Lỗi khi gọi AI sinh luận điểm: {e}"
 
 def apply_financial_styling(df: pd.DataFrame) -> Any:
     """
@@ -195,7 +123,14 @@ def auto_balance_non_bank_projections(proj_list: List[Dict[str, Any]], tax_rate:
         balanced_list.append(row)
     return balanced_list
 
-def render_input_financials(company: Union[Company, CompanyBank], blended_fv: float = 0.0, upside: float = 0.0, rec: str = ""):
+def render_input_financials(
+    company: Union[Company, CompanyBank],
+    blended_fv: float = 0.0,
+    upside: float = 0.0,
+    rec: str = "",
+    db: Any = None,
+    corporate_actions_context: Any = None,
+):
     """
     Render giao diện xem BCTC Lịch sử (Đã khóa) và Dự phóng (Cho sửa đổi).
     """
@@ -206,33 +141,127 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     st.markdown(f"**Chế độ Năm gốc đang chọn:** `{base_year_mode}` | **Năm gốc:** `{company.historical_is[-1].year}`")
     st.markdown("---")
 
-    # Hiển thị AI Narrative ngay đầu trang
-    st.subheader("🤖 Tóm tắt Đầu tư & Khuyến nghị (Executive Summary by AI)")
-    
-    ai_state_key = f"ai_narrative_{company.ticker}"
-    if st.button("Sinh báo cáo tóm tắt qua DeepSeek", use_container_width=True):
-        with st.spinner("Đang gọi AI tổng hợp báo cáo 500-1000 từ..."):
-            ai_text = generate_ai_narrative(
+    # DeepSeek chỉ được gọi bên trong nhánh button này. Một response tạo toàn bộ
+    # nội dung AI cho BCTC, PDF/Word, CTCK và sự kiện doanh nghiệp.
+    st.subheader("Kiểm chứng dữ liệu & Tóm tắt đầu tư")
+    st.caption(
+        "Dữ liệu không đổi: dùng lại báo cáo đã lưu, không gọi API. "
+        "Dữ liệu thay đổi: tự động gọi DeepSeek đúng một lần."
+    )
+    force_ai = st.toggle(
+        "Buộc DeepSeek viết lại dù dữ liệu không đổi",
+        value=False,
+        help="Chỉ bật khi bạn thật sự muốn một bản viết mới; thao tác này tốn một lượt API.",
+    )
+    ai_state_key = verified_summary_session_key(company.ticker)
+    if st.button(
+        "Kiểm chứng dữ liệu & sinh báo cáo qua DeepSeek",
+        width="stretch",
+        help="Một lần bấm tạo kiểm chứng, báo cáo PDF/Word, tổng hợp CTCK và phân tích sự kiện bằng tối đa một API call.",
+    ):
+        with st.spinner("Đang kiểm tra BCTC và sinh toàn bộ nội dung báo cáo trong một lượt..."):
+            if corporate_actions_context is None and db is not None:
+                from valuation.data_access.corporate_actions import (
+                    corporate_actions_context as load_corporate_actions_context,
+                )
+
+                corporate_actions_context = load_corporate_actions_context(
+                    db,
+                    ticker=company.ticker,
+                    current_price_vnd=company.current_price,
+                    shares_outstanding=company.shares_outstanding * 1_000_000.0,
+                )
+            consensus_context = collect_consensus_context(
                 ticker=company.ticker,
-                company_name=company.name,
+                blended_fv=blended_fv,
+                current_price=company.current_price,
+                db=db,
+            )
+            generated = generate_verified_summary_cached(
+                company=company,
                 blended_fv=blended_fv,
                 current_price=company.current_price,
                 upside=upside,
-                rec=rec,
-                company=company
+                recommendation=rec,
+                consensus_context=consensus_context,
+                corporate_actions_context=corporate_actions_context,
+                force=force_ai,
             )
-            st.session_state[ai_state_key] = ai_text
+            generated["consensus_collection_warning"] = consensus_context.get(
+                "collection_warning"
+            )
+            generated["consensus_available"] = consensus_context.get("available", False)
+            generated["consensus_saved"] = False
+            if generated.get("ai_generated") and db is not None:
+                try:
+                    generated["consensus_saved"] = persist_consensus_synthesis(
+                        result=generated,
+                        context=consensus_context,
+                        ticker=company.ticker,
+                        db=db,
+                    )
+                except Exception as exc:
+                    generated["consensus_persist_error"] = str(exc)
+            st.session_state[ai_state_key] = generated
 
-    if ai_state_key in st.session_state:
-        st.markdown(
-            f"""
-            > [!WARNING]
-            > **NHÁP DO AI — CẦN ANALYST REVIEW VÀ CHỈNH SỬA LẠI**
-            > *(Lưu ý: Báo cáo này sử dụng Giá mục tiêu Base case mặc định. Để chỉnh sửa Kịch bản hay P/E chủ quan, vui lòng sang Tab 3).*
-            
-            {st.session_state[ai_state_key]}
-            """
-        )
+    result = st.session_state.get(ai_state_key)
+    if result:
+        status = result.get("status", "WARNING")
+        if status == "OK":
+            st.success("Kiểm chứng nội bộ đạt: chưa phát hiện sai lệch số học hoặc bất thường trọng yếu.")
+        elif status == "ERROR":
+            st.error("Phát hiện lỗi dữ liệu trọng yếu. Không nên sử dụng báo cáo để ra quyết định trước khi đối chiếu filing gốc.")
+        else:
+            st.warning("Dữ liệu có điểm cần kiểm tra thêm trước khi sử dụng kết quả định giá.")
+
+        for item in result.get("python_issues", []):
+            st.warning(f"`{item['code']}` — {item['message']}")
+        for item in result.get("ai_issues", []):
+            message = (
+                f"DeepSeek nghi vấn `{item['metric']}` ({item['period']}): "
+                f"{item['finding']} Hành động: {item['action']}"
+            )
+            if item.get("severity") == "error":
+                st.error(message)
+            else:
+                st.warning(message)
+
+        if result.get("error"):
+            st.error(result["error"])
+        if result.get("ai_generated"):
+            if result.get("cache_hit"):
+                st.info(
+                    "Dữ liệu không thay đổi nên hệ thống dùng lại báo cáo đã lưu. "
+                    "Lần này không phát sinh API call."
+                )
+            completed = [
+                "kiểm chứng dữ liệu",
+                "tóm tắt đầu tư",
+                "phân tích sự kiện doanh nghiệp",
+                "nội dung PDF",
+            ]
+            if result.get("consensus_saved"):
+                completed.append("tổng hợp CTCK")
+            st.success("Đã hoàn tất: " + " · ".join(completed))
+            if not result.get("consensus_available"):
+                st.info(
+                    "Chưa có dữ liệu CTCK đủ dùng; các phần báo cáo còn lại vẫn đã được tạo.",
+                    icon="ℹ️",
+                )
+            if result.get("consensus_collection_warning"):
+                st.warning(result["consensus_collection_warning"])
+            if result.get("consensus_persist_error"):
+                st.warning(
+                    "Đã sinh tổng hợp CTCK nhưng chưa lưu được vào kho dữ liệu: "
+                    + result["consensus_persist_error"]
+                )
+            st.caption(
+                f"Model: {result.get('model')} · "
+                f"Input: {result.get('input_tokens', 'N/A')} token · "
+                f"Output: {result.get('output_tokens', 'N/A')} token"
+            )
+            st.markdown("**NHÁP DO AI — CẦN ANALYST REVIEW TRƯỚC KHI PHÁT HÀNH**")
+            st.markdown(report_markdown(result))
     st.markdown("---")
 
     # 1. Khởi tạo projections trong session state nếu chưa có
@@ -320,7 +349,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     fig_overview.update_yaxes(title_text=f"{rev_name} (Tỷ VNĐ)", secondary_y=False, showgrid=True, gridcolor='#334155')
     fig_overview.update_yaxes(title_text="Lợi nhuận (Tỷ VNĐ)", secondary_y=True, showgrid=False)
     
-    st.plotly_chart(fig_overview, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_overview, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # ----------------------------------------------------
     # PHÂN ĐOẠN 1: BÁO CÁO KẾT QUẢ KINH DOANH (IS)
@@ -358,7 +387,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     df_is_hist = pd.DataFrame(is_hist_data).set_index("Năm")
     
     st.caption("🔴 Phần Lịch sử (Đã xác thực và khóa lại):")
-    st.dataframe(apply_financial_styling(df_is_hist), use_container_width=True)
+    st.dataframe(apply_financial_styling(df_is_hist), width="stretch")
 
     # --- BIỂU ĐỒ 1: Xu hướng IS lịch sử ---
     _dark_theme = dict(
@@ -429,7 +458,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
             barmode="group", height=420, **_dark_theme,
         )
 
-    st.plotly_chart(fig_is_trend, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_is_trend, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # 1.2. Dữ liệu dự phóng IS
     is_proj_data = []
@@ -465,7 +494,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     # Cho phép chỉnh sửa bảng dự phóng
     edited_is_proj = st.data_editor(
         df_is_proj, 
-        use_container_width=True, 
+        width="stretch",
         disabled=["Tổng thu nhập hoạt động (TOI)", "Lợi nhuận trước dự phòng (PPOP)", "Lợi nhuận trước thuế (LNTT)", "Lợi nhuận sau thuế (LNST)", "Lợi nhuận gộp", "EBIT", "nopat", "fcff"], 
         key="is_proj_editor"
     )
@@ -509,7 +538,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     df_bs_hist = pd.DataFrame(bs_hist_data).set_index("Năm")
     
     st.caption("🔴 Phần Lịch sử (Đã xác thực và khóa lại):")
-    st.dataframe(apply_financial_styling(df_bs_hist), use_container_width=True)
+    st.dataframe(apply_financial_styling(df_bs_hist), width="stretch")
 
     # --- BIỂU ĐỒ 2: Cấu trúc Bảng cân đối kế toán (Stacked Bar) ---
     if is_bank:
@@ -581,7 +610,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
             )
         )
 
-    st.plotly_chart(fig_bs_comp, use_container_width=True, theme=None, config=PLOTLY_CONFIG)
+    st.plotly_chart(fig_bs_comp, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # 2.2. Dữ liệu dự phóng BS
     bs_proj_data = []
@@ -622,7 +651,7 @@ def render_input_financials(company: Union[Company, CompanyBank], blended_fv: fl
     st.caption("🟢 Phần Dự phóng (Cho phép hiệu chỉnh):")
     edited_bs_proj = st.data_editor(
         df_bs_proj, 
-        use_container_width=True, 
+        width="stretch",
         disabled=["Tài sản sinh lời khác", "Nợ phải trả khác", "earning_assets"] if is_bank else [],
         key="bs_proj_editor"
     )

@@ -1,5 +1,6 @@
 import os
 import time
+import hashlib
 import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
@@ -16,28 +17,48 @@ _MACRO_CACHE_TTL_SECONDS = 7 * 3600  # 7 giờ
 
 
 def get_macro_bulletin_cached(force: bool = False) -> str:
-    """Trả bản tin vĩ mô. CHỈ gọi AI (tốn token) khi bản lưu cũ hơn 7 giờ hoặc force=True.
+    """Chỉ gọi AI khi danh sách tin đã thay đổi, không chỉ vì cache hết giờ.
 
-    Nếu trong 7 giờ đã có báo cáo → dùng lại bản lưu, không tạo mới.
+    Trong TTL dùng ngay bản lưu. Hết TTL, tải RSS để so dấu vân tay; nếu tin vẫn
+    giống hệt thì gia hạn cache mà không gọi DeepSeek.
     """
     now = time.time()
-    if not force and _MACRO_CACHE_FILE.exists():
+    data = {}
+    if _MACRO_CACHE_FILE.exists():
         try:
             data = json.loads(_MACRO_CACHE_FILE.read_text(encoding="utf-8"))
             age = now - float(data.get("ts", 0))
-            if age < _MACRO_CACHE_TTL_SECONDS and data.get("text"):
+            if not force and age < _MACRO_CACHE_TTL_SECONDS and data.get("text"):
                 return data["text"]
         except Exception as e:
             logger.warning(f"Không đọc được cache bản tin vĩ mô: {e}")
 
-    # Hết hạn hoặc chưa có → tạo mới (gọi AI)
-    text = generate_macro_bulletin()
+    news_text = fetch_rss_news()
+    if not news_text:
+        if data.get("text"):
+            return data["text"]
+        return "⚠️ Không thể lấy được bản tin Vĩ mô lúc này. Vui lòng thử lại sau."
+    source_hash = hashlib.sha256(news_text.encode("utf-8")).hexdigest()
+    if data.get("text") and data.get("source_hash") == source_hash:
+        data["ts"] = now
+        try:
+            _MACRO_CACHE_FILE.write_text(
+                json.dumps(data, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception as e:
+            logger.warning(f"Không gia hạn được cache bản tin vĩ mô: {e}")
+        return data["text"]
+
+    text = generate_macro_bulletin(news_text=news_text)
 
     # Chỉ lưu khi tạo thành công (không lưu thông báo lỗi để lần sau còn thử lại)
     if text and not text.startswith("⚠️"):
         try:
             _MACRO_CACHE_FILE.write_text(
-                json.dumps({"ts": now, "text": text}, ensure_ascii=False),
+                json.dumps(
+                    {"ts": now, "text": text, "source_hash": source_hash},
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
         except Exception as e:
@@ -104,7 +125,7 @@ def get_openai_client() -> OpenAI | None:
         return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     return OpenAI(api_key=api_key)
 
-def generate_macro_bulletin() -> str:
+def generate_macro_bulletin(news_text: str | None = None) -> str:
     # Kiểm tra key TRƯỚC khi tải RSS để khỏi tốn request mạng vô ích.
     client = get_openai_client()
     if client is None:
@@ -114,7 +135,7 @@ def generate_macro_bulletin() -> str:
             "chạy bình thường."
         )
 
-    news_text = fetch_rss_news()
+    news_text = news_text or fetch_rss_news()
     if not news_text:
         return "⚠️ Không thể lấy được bản tin Vĩ mô lúc này. Vui lòng thử lại sau."
 

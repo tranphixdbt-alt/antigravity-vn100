@@ -15,11 +15,11 @@ import datetime
 from dataclasses import dataclass
 from typing import Iterable
 
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from valuation.config import get_macro_series_registry
 from valuation.db.models import MacroSeries
+from valuation.db.upsert import dialect_insert
 
 
 @dataclass(frozen=True)
@@ -75,9 +75,14 @@ def upsert_macro_series(
     if not rows:
         return 0
 
-    stmt = pg_insert(MacroSeries).values(rows)
+    stmt = dialect_insert(db, MacroSeries).values(rows)
+    conflict_kwargs = (
+        {"index_elements": ["indicator_code", "date"]}
+        if db.get_bind().dialect.name == "sqlite"
+        else {"constraint": "uq_macro_series_code_date"}
+    )
     stmt = stmt.on_conflict_do_update(
-        constraint="uq_macro_series_code_date",
+        **conflict_kwargs,
         set_={"value": stmt.excluded.value, "source": stmt.excluded.source},
     )
     db.execute(stmt)

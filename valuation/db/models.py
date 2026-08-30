@@ -72,6 +72,53 @@ class BackfillStatus(Base):
     status = Column(String)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+
+class CorporateAction(Base):
+    """Sự kiện vốn/quyền cổ đông có truy vết và giữ nguyên lịch sử nguồn."""
+
+    __tablename__ = "corporate_actions"
+
+    ticker = Column(String, ForeignKey("tickers.ticker"), primary_key=True)
+    source_site = Column(String, primary_key=True)
+    source_event_id = Column(String, primary_key=True)
+    event_type = Column(String, nullable=False)
+    event_code = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    announcement_date = Column(Date, nullable=True)
+    ex_right_date = Column(Date, nullable=True)
+    record_date = Column(Date, nullable=True)
+    payment_date = Column(Date, nullable=True)
+    listing_date = Column(Date, nullable=True)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    exercise_ratio = Column(Numeric, nullable=True)
+    cash_amount_vnd_per_share = Column(Numeric, nullable=True)
+    issue_price_vnd = Column(Numeric, nullable=True)
+    shares_issued = Column(Numeric, nullable=True)
+    shares_after = Column(Numeric, nullable=True)
+    source_url = Column(String, nullable=True)
+    source_tier = Column(String, nullable=False, default="AGGREGATOR")
+    raw_payload = Column(JSON, nullable=True)
+    content_hash = Column(String(64), nullable=False)
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CorporateActionSync(Base):
+    """Checkpoint giúp chỉ kiểm tra nguồn khi dữ liệu của mã đã quá TTL."""
+
+    __tablename__ = "corporate_action_sync"
+
+    ticker = Column(String, ForeignKey("tickers.ticker"), primary_key=True)
+    source_site = Column(String, primary_key=True)
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
+    last_success_at = Column(DateTime(timezone=True), nullable=True)
+    latest_announcement_date = Column(Date, nullable=True)
+    status = Column(String, nullable=False, default="PENDING")
+    rows_seen = Column(Integer, nullable=False, default=0)
+    last_error = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 class ValuationOutput(Base):
     __tablename__ = "valuation_outputs"
     

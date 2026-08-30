@@ -1391,3 +1391,36 @@ build được, dấu AI chỉ hiện khi ai_generated). PDF mẫu:
 **Quyết định:** `engine/bank.py` (legacy dict API) và `engine/models/bank_general.py` (Pydantic) là hai implementation riêng. B3 chỉ applied vào `bank.py`. `bank_general.py` dùng ROE dự phóng năm 5 — chấp nhận được vì projection model sẽ converge về sustainable ROE.
 
 **Lý do:** Không touch `bank_general.py` để tránh phá Streamlit UI đang dùng nó. Tech debt cần xử lý sau.
+
+---
+
+## 2026-08-30 — DeepSeek chỉ chạy từ nút kiểm chứng và sinh báo cáo
+
+**Quyết định:** Tab BCTC có một nút duy nhất `Kiểm chứng dữ liệu & sinh báo
+cáo qua DeepSeek`. Một lần bấm thực hiện tối đa một API call. Python chạy các
+identity check, kiểm tra trường bắt buộc, growth/upside bất thường trước; sau đó
+chọn `deepseek-v4-flash` cho ca thường hoặc `deepseek-v4-pro` khi có lỗi/cờ
+trọng yếu. Cả hai chạy non-thinking để JSON ổn định và tiết kiệm token.
+
+**Ranh giới:** DeepSeek chỉ phản biện dữ liệu đang có và sinh bản nháp; không tự
+sửa hoặc ghi DB. Khi không có filing gốc trong payload, AI chỉ được ghi `nghi
+vấn`, không được khẳng định đã đối chiếu nguồn chính thức hay bịa số thay thế.
+
+**Tái sử dụng:** Kết quả được cache theo ticker trong Streamlit session. Tab kết
+quả/PDF chỉ đọc lại bốn phần narrative đã cache, không gọi DeepSeek lần hai.
+
+**Files:** `valuation/report/verified_summary.py`,
+`valuation/views/input_financials.py`, `valuation/views/results.py`,
+`config/defaults.yaml`, `tests/test_verified_summary.py`.
+
+### Mở rộng một nút cho toàn bộ nội dung AI
+
+**Quyết định:** Nút duy nhất ở tab BCTC sinh đồng thời bốn phần narrative dùng
+cho màn hình/PDF và phần tổng hợp đa-CTCK trong cùng một JSON. Bản tổng hợp CTCK
+được upsert theo ticker vào bảng `consensus_synthesis`; tab So sánh CTCK chỉ đọc,
+không còn nút gọi DeepSeek riêng.
+
+**Giới hạn chi phí:** Mỗi lần bấm vẫn tối đa một API call. Ngữ cảnh CTCK giới hạn
+8 báo cáo và 1.200 ký tự tóm tắt mỗi báo cáo. Nếu không tải được tóm tắt công
+khai, hệ thống dùng dữ liệu mục tiêu/khuyến nghị đã lưu và hiển thị cảnh báo,
+không bịa luận điểm định tính.
