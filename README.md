@@ -55,15 +55,24 @@ Các key quan trọng:
 
 ## Đẩy lên GitHub
 
-Vì repo hiện chưa có remote GitHub, tạo repo trống trên GitHub rồi chạy:
+Repo chính của dự án:
+
+```text
+https://github.com/tranphixdbt-alt/antigravity-vn100.git
+```
+
+Khi cần cập nhật bản đang chạy lên GitHub, xem thêm
+`docs/GITHUB_UPDATE_WORKFLOW.md`.
+
+Lệnh push bản portable lên `main`:
 
 ```bash
-git remote add origin https://github.com/<user>/<repo>.git
+git remote add origin https://github.com/tranphixdbt-alt/antigravity-vn100.git
 git add README.md .env.example .gitignore Chay_Dinh_Gia_VN100.command scripts/ensure_portable_db.py vn100_full.db.gz
 git add streamlit_app.py valuation tests config docs requirements.txt requirements-integrations.txt
 git status
 git commit -m "Đóng gói bản chạy portable VN100"
-git push -u origin feat/hieu-chuan-dinh-gia-vn100
+git push origin HEAD:main
 ```
 
 Trước khi commit, luôn kiểm tra `git status` để chắc `.env`, `venv/`, `build/`, `dist/`, `backups/`, `logs/` và `*.db` không bị đưa lên.
