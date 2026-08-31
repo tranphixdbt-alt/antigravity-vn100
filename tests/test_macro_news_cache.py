@@ -27,3 +27,19 @@ def test_macro_cache_calls_ai_only_when_news_content_changes(tmp_path, monkeypat
     assert calls == ["Tin A", "Tin B"]
     saved = json.loads(cache_file.read_text(encoding="utf-8"))
     assert saved["source_hash"]
+
+
+def test_display_never_calls_network_even_when_cache_is_old(tmp_path, monkeypatch):
+    import json
+    from valuation.data_access import macro_news
+
+    path = tmp_path / "macro.json"
+    monkeypatch.setattr(macro_news, "_MACRO_CACHE_FILE", path)
+
+    def forbidden():
+        raise AssertionError("Hiển thị không được tải RSS hoặc gọi AI")
+
+    monkeypatch.setattr(macro_news, "fetch_rss_news", forbidden)
+    assert "Chưa có" in macro_news.get_macro_bulletin_cached()
+    path.write_text(json.dumps({"ts": 1, "text": "Bản cũ"}))
+    assert macro_news.get_macro_bulletin_cached() == "Bản cũ"

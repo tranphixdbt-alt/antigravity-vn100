@@ -20,8 +20,7 @@ def _format_run_option(run) -> str:
 
 
 def load_macro_bulletin(force: bool = False):
-    # Cache ra FILE với TTL 7 giờ (tồn tại qua các lần restart app) → không tốn token
-    # gọi lại AI nếu trong 7 giờ đã có báo cáo.
+    # Đọc bản lưu; chỉ nút làm mới được phép gọi AI khi nguồn thay đổi.
     from valuation.data_access.macro_news import get_macro_bulletin_cached
 
     return get_macro_bulletin_cached(force=force)
@@ -66,23 +65,21 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
 
     # --- Bảng tin Vĩ mô (Macro News) ---
     with st.sidebar.expander("Bản tin vĩ mô & nhận định", expanded=True):
-        # Nút này BUỘC tạo mới (bỏ qua mốc 7 giờ) — chỉ khi user chủ động bấm.
+        # Chỉ kiểm tra nguồn/AI khi người dùng chủ động bấm.
         if st.button("Làm mới tin tức", width="stretch"):
             with st.spinner("AI đang tổng hợp tin..."):
                 load_macro_bulletin(force=True)
             st.rerun()
 
-        # Render bình thường: đọc bản lưu (không tốn token nếu còn trong 7 giờ).
+        # Render bình thường không tải nguồn hoặc gọi AI.
         from valuation.data_access.macro_news import get_macro_cache_age_hours
 
         _age = get_macro_cache_age_hours()
         if _age is None:
-            # Chưa có bản tin nào → tạo lần đầu
-            with st.spinner("AI đang tổng hợp tin..."):
-                macro_text = load_macro_bulletin()
+            macro_text = load_macro_bulletin()
         else:
             macro_text = load_macro_bulletin()
-            st.caption(f"🕒 Cập nhật {_age:.1f} giờ trước (tự làm mới sau 7 giờ)")
+            st.caption(f"Cập nhật {_age:.1f} giờ trước · Bản đã lưu")
         st.markdown(macro_text)
 
     # --- Nâng cấp Vĩ mô ---

@@ -13,25 +13,20 @@ logger = logging.getLogger(__name__)
 # Bản tin vĩ mô được lưu ra file kèm timestamp để tồn tại QUA CÁC LẦN RESTART app
 # (st.cache_data chỉ nằm trong RAM, mất khi restart → tốn token gọi lại AI mỗi lần).
 _MACRO_CACHE_FILE = Path(__file__).resolve().parents[2] / ".macro_bulletin_cache.json"
-_MACRO_CACHE_TTL_SECONDS = 7 * 3600  # 7 giờ
 
 
 def get_macro_bulletin_cached(force: bool = False) -> str:
-    """Chỉ gọi AI khi danh sách tin đã thay đổi, không chỉ vì cache hết giờ.
-
-    Trong TTL dùng ngay bản lưu. Hết TTL, tải RSS để so dấu vân tay; nếu tin vẫn
-    giống hệt thì gia hạn cache mà không gọi DeepSeek.
-    """
+    """Đọc thường không gọi mạng/AI; chỉ nút làm mới kiểm tra tin thay đổi."""
     now = time.time()
     data = {}
     if _MACRO_CACHE_FILE.exists():
         try:
             data = json.loads(_MACRO_CACHE_FILE.read_text(encoding="utf-8"))
-            age = now - float(data.get("ts", 0))
-            if not force and age < _MACRO_CACHE_TTL_SECONDS and data.get("text"):
-                return data["text"]
         except Exception as e:
             logger.warning(f"Không đọc được cache bản tin vĩ mô: {e}")
+
+    if not force:
+        return data.get("text") or "Chưa có bản tin vĩ mô được lưu."
 
     news_text = fetch_rss_news()
     if not news_text:
@@ -40,7 +35,7 @@ def get_macro_bulletin_cached(force: bool = False) -> str:
         return "⚠️ Không thể lấy được bản tin Vĩ mô lúc này. Vui lòng thử lại sau."
     source_hash = hashlib.sha256(news_text.encode("utf-8")).hexdigest()
     if data.get("text") and data.get("source_hash") == source_hash:
-        data["ts"] = now
+        data["checked_at"] = now
         try:
             _MACRO_CACHE_FILE.write_text(
                 json.dumps(data, ensure_ascii=False), encoding="utf-8"

@@ -49,6 +49,13 @@ python -m streamlit run streamlit_app.py --server.port 8502 --server.headless tr
 - Khi chạy lần đầu, file này được giải nén thành `vn100_full.db`.
 - `vn100_full.db` không commit trực tiếp vì file lớn hơn 100 MB, GitHub thường chặn file đơn lẻ quá lớn.
 
+## Xếp hạng VN100 & tích sản
+
+Tab mới tách hai chiến lược Thận trọng/Tăng trưởng, có lịch sử định giá và xuất Excel.
+Nhận định DeepSeek dùng một yêu cầu cho cả hai nhóm khi nội dung thay đổi. Bản portable
+hiển thị snapshot đã lưu mà không cần key. Lịch thứ Ba 09:30 chỉ được cài trên host
+chủ dự án, không tự chạy trên máy khách. Hướng dẫn: [VN100 & tích sản](docs/VN100_TICH_SAN.md).
+
 ## API key
 
 Repo không chứa key thật. Nếu muốn dùng dữ liệu live, Google Sheets/Drive, Discord hoặc DeepSeek, sao chép:

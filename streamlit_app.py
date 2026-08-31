@@ -377,12 +377,13 @@ try:
                 "updated": 0,
             }
 
-        financials_tab, valuation_tab, consensus_tab, corporate_actions_tab = st.tabs(
+        financials_tab, valuation_tab, consensus_tab, corporate_actions_tab, ranking_tab = st.tabs(
             [
                 "Báo cáo tài chính",
                 "Định giá & dự phóng",
                 "So sánh CTCK",
                 "Cổ tức & quyền mua",
+                "VN100 & tích sản",
             ]
         )
 
@@ -412,6 +413,11 @@ try:
                 refresh_result=corporate_refresh,
             )
 
+        with ranking_tab:
+            from valuation.views.vn100_ranking import render_vn100_ranking
+
+            render_vn100_ranking()
+
         # Tab kết quả có phần chuẩn bị biểu đồ/xuất báo cáo tĩnh khá nặng, nên
         # render sau hai tab tham chiếu để người dùng mở tab CTCK/cổ tức nhanh hơn.
         with valuation_tab:
@@ -421,6 +427,10 @@ try:
             "👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.",
             icon="ℹ️",
         )
+        from valuation.views.vn100_ranking import render_vn100_ranking
+
+        with st.tabs(["VN100 & tích sản"])[0]:
+            render_vn100_ranking()
 
 except Exception as e:
     st.error(f"Đã xảy ra lỗi hệ thống: {e}")
