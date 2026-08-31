@@ -281,7 +281,7 @@ try:
         if rec == "NOT_RATED":
             rec_color, bg_color, text_color = "#64748B", "#F8FAFC", "#334155"
         elif rec == "BUY":
-            rec_color, bg_color, text_color = "#10B981", "#F0FDF4", "#166534"
+            rec_color, bg_color, text_color = "#00B74F", "#F1FBF5", "#00843D"
         elif rec in ["HOLD", "TRIM"]:
             rec_color, bg_color, text_color = "#F59E0B", "#FFFBEB", "#92400E"
         else:
@@ -297,8 +297,8 @@ try:
                 "Không công bố giá mục tiêu</div>"
             )
         else:
-            _headline = f"{rec} · Giá MT {blended_fv:,.0f} VND"
-            _right = f"<div class='ag-summary-upside'>Upside {upside:+.1f}%</div>"
+            _headline = f"{rec} · Giá mục tiêu {blended_fv:,.0f} VND"
+            _right = f"<div class='ag-summary-upside'>So với thị giá: {upside:+.1f}%</div>"
 
         render_summary_banner(
             ticker=scenario_company.ticker,
@@ -379,11 +379,11 @@ try:
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             [
-                "📊 Báo cáo Tài chính Lịch sử & Dự phóng",
-                "⚙️ Giả định & Tham số Dự phóng",
-                "🏆 Kết quả Định giá & Quan điểm",
-                "🏦 So sánh CTCK",
-                "💰 Cổ tức, tăng vốn & quyền",
+                "Báo cáo tài chính",
+                "Giả định & dự phóng",
+                "Định giá & quan điểm",
+                "So sánh CTCK",
+                "Cổ tức & quyền mua",
             ]
         )
 

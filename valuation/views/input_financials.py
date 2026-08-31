@@ -176,6 +176,7 @@ def render_input_financials(
     ai_state_key = verified_summary_session_key(company.ticker)
     if st.button(
         "Kiểm chứng dữ liệu & sinh báo cáo qua DeepSeek",
+        type="primary",
         width="stretch",
         help="Một lần bấm tạo kiểm chứng, báo cáo PDF/Word, tổng hợp CTCK và phân tích sự kiện bằng tối đa một API call.",
     ):
