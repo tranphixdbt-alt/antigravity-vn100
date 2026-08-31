@@ -17,6 +17,19 @@
 
 Launcher sẽ tự tạo môi trường Python tại `~/.venv`, cài thư viện từ `requirements.txt`, giải nén `vn100_full.db.gz` thành `vn100_full.db` nếu cần, rồi chạy app.
 
+## Cách chạy nhanh trên Windows
+
+1. Cài Python 3.11+ nếu máy chưa có. Khi cài, tick `Add python.exe to PATH`.
+2. Tải repo về máy và giải nén ZIP.
+3. Nhấp đúp `Chay_Dinh_Gia_VN100_Windows.bat`.
+4. Mở `http://localhost:8502`.
+
+Launcher Windows sẽ tự tạo môi trường Python tại `%USERPROFILE%\.venv`, cài thư
+viện từ `requirements.txt`, giải nén `vn100_full.db.gz` thành `vn100_full.db` nếu
+cần, rồi chạy app.
+
+Hướng dẫn gửi khách hàng: `docs/HUONG_DAN_GUI_KHACH_HANG.md`.
+
 ## Cách chạy bằng terminal
 
 ```bash

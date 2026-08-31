@@ -47,6 +47,12 @@ main
 File này là database portable đã nén. Khi người khác tải repo về, launcher
 `Chay_Dinh_Gia_VN100.command` sẽ tự giải nén thành `vn100_full.db` nếu cần.
 
+## Launcher khách hàng
+
+- macOS: `Chay_Dinh_Gia_VN100.command`
+- Windows: `Chay_Dinh_Gia_VN100_Windows.bat`
+- Hướng dẫn gửi khách hàng: `docs/HUONG_DAN_GUI_KHACH_HANG.md`
+
 ## Lưu ý quyền GitHub
 
 Nếu push lỗi:
