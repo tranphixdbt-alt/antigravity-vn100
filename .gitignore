@@ -41,6 +41,7 @@ scratch/
 test_output.txt
 .macro_bulletin_cache.json
 .deepseek_report_cache/
+.vn100_ranking/
 VN100_Valuation_Results.csv
 compare_table.md
 .streamlit/secrets.toml
