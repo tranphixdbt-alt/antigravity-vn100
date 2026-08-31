@@ -365,9 +365,6 @@ try:
         with tab2:
             render_input_assumptions(company)
 
-        with tab3:
-            render_valuation_results(company, db_write)
-
         with tab4:
             from valuation.views.consensus_compare import render_consensus_compare
             render_consensus_compare(company, blended_fv, db_write)
@@ -378,6 +375,11 @@ try:
                 db_write,
                 refresh_result=corporate_refresh,
             )
+
+        # Tab kết quả có phần chuẩn bị biểu đồ/xuất báo cáo tĩnh khá nặng, nên
+        # render sau hai tab tham chiếu để người dùng mở tab CTCK/cổ tức nhanh hơn.
+        with tab3:
+            render_valuation_results(company, db_write)
     else:
         st.info("👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.", icon="ℹ️")
 
