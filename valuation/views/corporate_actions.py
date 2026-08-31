@@ -1,4 +1,5 @@
 """Tab cổ tức, tăng vốn và quyền cổ đông."""
+
 from __future__ import annotations
 
 import datetime
@@ -20,7 +21,6 @@ from valuation.config import load_defaults
 from valuation.data_access.corporate_actions import load_corporate_actions
 from valuation.db.models import PricesDaily
 from valuation.ingest.corporate_actions import refresh_corporate_actions
-
 
 _EVENT_LABELS = {
     "CASH_DIVIDEND": "Cổ tức tiền mặt",
@@ -510,7 +510,9 @@ def _benefit_summary(row: Any) -> str:
         if row.cash_amount_vnd_per_share is not None
         else None
     )
-    issue_price = float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
+    issue_price = (
+        float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
+    )
     if row.event_type == "CASH_DIVIDEND" and cash is not None:
         return f"{_fmt_vnd(cash)} VND/cổ phiếu"
     if (
@@ -660,15 +662,13 @@ def render_corporate_actions(
     )
 
     with st.expander("Hiểu nhanh các con số trong phần này"):
-        st.markdown(
-            """
+        st.markdown("""
 - **Giá trong ngày chia quyền**: giá trước sự kiện và giá khi cổ tức hoặc quyền mua đã được tách ra.
 - **Bạn nhận thêm**: tiền mặt, cổ phiếu mới hoặc quyền được mua cổ phiếu.
 - **Tổng tài sản sau khi cộng quyền lợi**: ước tính bạn thực sự tăng hay giảm bao nhiêu sau khi cộng phần nhận thêm.
 - **Sau khoảng 1 tuần/1 tháng**: giá tăng hay giảm tiếp so với ngày chia quyền. Đây chỉ là diễn biến giá, không khẳng định sự kiện là nguyên nhân duy nhất.
 - **Lợi nhuận trên mỗi cổ phiếu (EPS)**: phần lợi nhuận tương ứng với một cổ phiếu. Khi số cổ phiếu tăng nhanh hơn lợi nhuận, phần này sẽ giảm.
-            """
-        )
+            """)
 
     _section_head(
         "Sự kiện đã công bố trong 12 tháng tới",
@@ -681,16 +681,16 @@ def render_corporate_actions(
         )
     else:
         for row in sorted(upcoming_rows, key=_anchor):
-            ratio = float(row.exercise_ratio) if row.exercise_ratio is not None else None
+            ratio = (
+                float(row.exercise_ratio) if row.exercise_ratio is not None else None
+            )
             cash = (
                 float(row.cash_amount_vnd_per_share)
                 if row.cash_amount_vnd_per_share is not None
                 else None
             )
             issue_price = (
-                float(row.issue_price_vnd)
-                if row.issue_price_vnd is not None
-                else None
+                float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
             )
             analysis = analyze_corporate_action(
                 event_type=row.event_type,
@@ -835,9 +835,7 @@ def render_corporate_actions(
         story = explain_historical_price_impact(
             event_type=row.event_type,
             impact=impact,
-            reaction_materiality_pct=float(
-                cfg.get("reaction_materiality_pct", 2.0)
-            ),
+            reaction_materiality_pct=float(cfg.get("reaction_materiality_pct", 2.0)),
         )
         impact_items.append((row, impact, story))
         if len(impact_items) >= max_history:
@@ -865,9 +863,7 @@ def render_corporate_actions(
                         impact.get("shareholder_wealth_change_pct")
                     ),
                     "Sau 1 tuần": _fmt_pct(impact.get("return_after_5_sessions_pct")),
-                    "Sau 1 tháng": _fmt_pct(
-                        impact.get("return_after_20_sessions_pct")
-                    ),
+                    "Sau 1 tháng": _fmt_pct(impact.get("return_after_20_sessions_pct")),
                     "Kết luận": story["reaction_label"],
                 }
             )

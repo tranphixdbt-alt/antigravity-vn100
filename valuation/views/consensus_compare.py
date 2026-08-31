@@ -11,6 +11,7 @@ Nội dung:
 Dữ liệu: consensus_history (64 CTCK — 24hmoney + Simplize + Vietcap) và
 consensus_synthesis (được sinh trong lượt báo cáo DeepSeek duy nhất ở tab BCTC).
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, Union
@@ -25,10 +26,10 @@ from valuation.models.financials_bank import CompanyBank
 from valuation.report.report_data import build_consensus_comparison
 
 # Bảng màu đồng bộ giao diện báo cáo
-_C_MODEL = "#1F4E78"     # xanh navy — mô hình VN100
-_C_PRICE = "#EF4444"     # đỏ — thị giá
-_C_BROKER = "#94A3B8"    # xám xanh — CTCK
-_C_MEDIAN = "#F59E0B"    # cam — median CTCK
+_C_MODEL = "#1F4E78"  # xanh navy — mô hình VN100
+_C_PRICE = "#EF4444"  # đỏ — thị giá
+_C_BROKER = "#94A3B8"  # xám xanh — CTCK
+_C_MEDIAN = "#F59E0B"  # cam — median CTCK
 
 
 def _fmt_vnd(v: Optional[float]) -> str:
@@ -38,35 +39,63 @@ def _fmt_vnd(v: Optional[float]) -> str:
 def _football_field(data: Dict[str, Any]) -> go.Figure:
     """Bar ngang: giá mục tiêu từng CTCK; vline FV mô hình / thị giá / median."""
     rows = data["broker_rows"]
-    brokers = [r["broker"] for r in rows][::-1]          # đảo để cao nhất nằm trên
+    brokers = [r["broker"] for r in rows][::-1]  # đảo để cao nhất nằm trên
     tps = [r["target_price"] for r in rows][::-1]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=brokers, x=tps, orientation="h",
-        marker=dict(color=_C_BROKER, opacity=0.85),
-        text=[_fmt_vnd(v) for v in tps], textposition="outside",
-        hovertemplate="%{y}: %{x:,.0f} VND<extra></extra>",
-        name="Giá mục tiêu CTCK",
-    ))
+    fig.add_trace(
+        go.Bar(
+            y=brokers,
+            x=tps,
+            orientation="h",
+            marker=dict(color=_C_BROKER, opacity=0.85),
+            text=[_fmt_vnd(v) for v in tps],
+            textposition="outside",
+            hovertemplate="%{y}: %{x:,.0f} VND<extra></extra>",
+            name="Giá mục tiêu CTCK",
+        )
+    )
 
     def _vline(x, color, label, dash):
         fig.add_vline(x=x, line_width=2, line_dash=dash, line_color=color)
-        fig.add_annotation(x=x, y=1.06, yref="paper", showarrow=False,
-                           text=f"<b>{label}</b>", font=dict(color=color, size=12))
+        fig.add_annotation(
+            x=x,
+            y=1.06,
+            yref="paper",
+            showarrow=False,
+            text=f"<b>{label}</b>",
+            font=dict(color=color, size=12),
+        )
 
-    _vline(data["our_target"], _C_MODEL, f"Mô hình {_fmt_vnd(data['our_target'])}", "solid")
+    _vline(
+        data["our_target"], _C_MODEL, f"Mô hình {_fmt_vnd(data['our_target'])}", "solid"
+    )
     if data.get("current_price"):
-        _vline(data["current_price"], _C_PRICE, f"Thị giá {_fmt_vnd(data['current_price'])}", "dash")
-    _vline(data["consensus_median"], _C_MEDIAN, f"Median {_fmt_vnd(data['consensus_median'])}", "dot")
+        _vline(
+            data["current_price"],
+            _C_PRICE,
+            f"Thị giá {_fmt_vnd(data['current_price'])}",
+            "dash",
+        )
+    _vline(
+        data["consensus_median"],
+        _C_MEDIAN,
+        f"Median {_fmt_vnd(data['consensus_median'])}",
+        "dot",
+    )
 
     fig.update_layout(
         height=max(320, 60 + 42 * len(brokers)),
         margin=dict(l=10, r=90, t=60, b=10),
-        xaxis=dict(title="VND/cổ phiếu", tickformat=",.0f", showgrid=True,
-                   gridcolor="rgba(148,163,184,0.25)"),
+        xaxis=dict(
+            title="VND/cổ phiếu",
+            tickformat=",.0f",
+            showgrid=True,
+            gridcolor="rgba(148,163,184,0.25)",
+        ),
         yaxis=dict(title=None),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
     )
     return fig
@@ -105,54 +134,79 @@ def _render_calibration(data: dict, dev: float) -> None:
 
     if not status:  # không lấy được registry -> giữ cảnh báo cũ
         if data.get("flag_high"):
-            st.warning(f"Mô hình lệch **{dev:+.1%}** so với trung vị CTCK (>25%) — rà soát giả định.",
-                       icon="🚨")
+            st.warning(
+                f"Mô hình lệch **{dev:+.1%}** so với trung vị CTCK (>25%) — rà soát giả định.",
+                icon="🚨",
+            )
         return
 
     if cal.get("band_status") == "IN_BAND":
-        st.success(f"Mô hình lệch **{dev:+.1%}** — nằm trong ngưỡng chấp nhận {band_txt} "
-                   f"so với đồng thuận CTCK.", icon="✅")
+        st.success(
+            f"Mô hình lệch **{dev:+.1%}** — nằm trong ngưỡng chấp nhận {band_txt} "
+            f"so với đồng thuận CTCK.",
+            icon="✅",
+        )
         return
 
     if status == "OK_JUSTIFIED":
-        st.info(f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **lệch có chủ ý, "
-                f"đã được giải trình**:", icon="🧭")
+        st.info(
+            f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **lệch có chủ ý, "
+            f"đã được giải trình**:",
+            icon="🧭",
+        )
         st.markdown(f"> {cal.get('thesis')}")
         ev = cal.get("evidence") or []
         if ev:
             st.caption("Bằng chứng: " + " · ".join(ev))
         if cal.get("decision_ref"):
-            st.caption(f"Tham chiếu quyết định: {cal['decision_ref']} · "
-                       f"rà soát lần cuối {cal.get('reviewed_on')}")
+            st.caption(
+                f"Tham chiếu quyết định: {cal['decision_ref']} · "
+                f"rà soát lần cuối {cal.get('reviewed_on')}"
+            )
     elif status == "KNOWN_DEFECT":
-        st.error(f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **đây là LỖI ĐÃ BIẾT** "
-                 f"của phương pháp định giá cho mã này, đang trong hàng đợi sửa. "
-                 f"Đừng dùng con số định giá này để ra quyết định.", icon="🛠️")
+        st.error(
+            f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **đây là LỖI ĐÃ BIẾT** "
+            f"của phương pháp định giá cho mã này, đang trong hàng đợi sửa. "
+            f"Đừng dùng con số định giá này để ra quyết định.",
+            icon="🛠️",
+        )
         if cal.get("decision_ref"):
             st.caption(f"Tham chiếu: {cal['decision_ref']}")
     elif status == "DATA_BLOCKED":
-        st.warning(f"Chưa đủ dữ liệu để kết luận mô hình đúng hay sai: {cal.get('thesis')}",
-                   icon="📭")
+        st.warning(
+            f"Chưa đủ dữ liệu để kết luận mô hình đúng hay sai: {cal.get('thesis')}",
+            icon="📭",
+        )
     elif status == "STALE_JUSTIFICATION":
-        st.warning(f"Mô hình lệch **{dev:+.1%}** — có luận điểm giải trình nhưng **đã quá hạn "
-                   f"rà soát** ({cal.get('reviewed_on')}). Cần xem lại còn đúng không.", icon="🕒")
+        st.warning(
+            f"Mô hình lệch **{dev:+.1%}** — có luận điểm giải trình nhưng **đã quá hạn "
+            f"rà soát** ({cal.get('reviewed_on')}). Cần xem lại còn đúng không.",
+            icon="🕒",
+        )
     else:  # MISSING_JUSTIFICATION
-        st.warning(f"Mô hình lệch **{dev:+.1%}**, vượt ngưỡng {band_txt} so với đồng thuận CTCK "
-                   f"và **chưa có luận điểm giải trình**. Theo quy ước hiệu chuẩn, cần hoặc "
-                   f"giải trình được, hoặc coi là lỗi giả định và sửa.", icon="⚠️")
+        st.warning(
+            f"Mô hình lệch **{dev:+.1%}**, vượt ngưỡng {band_txt} so với đồng thuận CTCK "
+            f"và **chưa có luận điểm giải trình**. Theo quy ước hiệu chuẩn, cần hoặc "
+            f"giải trình được, hoặc coi là lỗi giả định và sửa.",
+            icon="⚠️",
+        )
 
 
-def render_consensus_compare(company: Union[Company, CompanyBank],
-                             blended_fv: float, db: Session) -> None:
+def render_consensus_compare(
+    company: Union[Company, CompanyBank], blended_fv: float, db: Session
+) -> None:
     """Render tab So sánh CTCK cho 1 mã."""
-    st.header("🏦 So sánh với định giá các Công ty Chứng khoán")
+    st.header("So sánh với định giá công ty chứng khoán")
 
-    data = build_consensus_comparison(company.ticker, blended_fv, db,
-                                      current_price=company.current_price)
+    data = build_consensus_comparison(
+        company.ticker, blended_fv, db, current_price=company.current_price
+    )
     if not data or not data.get("broker_rows"):
         st.info(
             "Chưa có dữ liệu khuyến nghị CTCK trong 180 ngày cho mã này. "
-            "Bấm nút **'Tải mới " + company.ticker + "'** hoặc **'Quét VN100 Hàng Tuần'** "
+            "Bấm nút **'Tải mới "
+            + company.ticker
+            + "'** hoặc **'Quét VN100 Hàng Tuần'** "
             "ở sidebar để thu thập báo cáo CTCK (Simplize/24hmoney) cho mã này.",
             icon="ℹ️",
         )
@@ -162,14 +216,21 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
     dev = data["deviation"]
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 FV mô hình VN100", f"{_fmt_vnd(data['our_target'])} đ")
-    c2.metric("🏦 Median CTCK", f"{_fmt_vnd(data['consensus_median'])} đ",
-              help=f"Trung vị {data['n_reports']} CTCK trong 180 ngày "
-                   f"(từ {data.get('n_reports_raw', data['n_reports'])} báo cáo, "
-                   f"mỗi CTCK tính báo cáo mới nhất)")
-    c3.metric("↔️ Mô hình vs CTCK", f"{dev:+.1%}",
-              delta=f"{dev:+.1%}", delta_color="normal")
-    c4.metric("📄 Số CTCK theo dõi", f"{data['n_brokers']}",
-              help=f"Dải giá mục tiêu: {_fmt_vnd(data['range_min'])} – {_fmt_vnd(data['range_max'])} đ")
+    c2.metric(
+        "🏦 Median CTCK",
+        f"{_fmt_vnd(data['consensus_median'])} đ",
+        help=f"Trung vị {data['n_reports']} CTCK trong 180 ngày "
+        f"(từ {data.get('n_reports_raw', data['n_reports'])} báo cáo, "
+        f"mỗi CTCK tính báo cáo mới nhất)",
+    )
+    c3.metric(
+        "↔️ Mô hình vs CTCK", f"{dev:+.1%}", delta=f"{dev:+.1%}", delta_color="normal"
+    )
+    c4.metric(
+        "📄 Số CTCK theo dõi",
+        f"{data['n_brokers']}",
+        help=f"Dải giá mục tiêu: {_fmt_vnd(data['range_min'])} – {_fmt_vnd(data['range_max'])} đ",
+    )
 
     # Đồng thuận quá mỏng: median chỉ phản ánh ý kiến 1 CTCK, không phải thị trường.
     if data.get("consensus_thin"):
@@ -189,29 +250,53 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
     _render_calibration(data, dev)
 
     # ---- 2. Football field ------------------------------------------------
-    st.subheader("📊 Giá mục tiêu từng CTCK vs Mô hình vs Thị giá")
+    st.subheader("Giá mục tiêu CTCK, mô hình và thị giá")
     st.plotly_chart(_football_field(data), width="stretch", theme=None)
 
     # ---- 3. Bảng chi tiết -------------------------------------------------
-    st.subheader("📋 Chi tiết khuyến nghị từng CTCK (mới nhất/CTCK, 180 ngày)")
+    st.subheader("Chi tiết khuyến nghị từng CTCK")
     df = pd.DataFrame(data["broker_rows"])
-    df = df.rename(columns={
-        "broker": "CTCK", "report_date": "Ngày BC", "target_price": "Giá mục tiêu (đ)",
-        "rating": "Khuyến nghị", "vs_model": "Mô hình so với CTCK", "age_days": "Tuổi (ngày)",
-    })
-    styler = (df.style
-              .format({"Giá mục tiêu (đ)": lambda v: _fmt_vnd(v),
-                       "Mô hình so với CTCK": "{:+.1%}"})
-              .map(lambda v: "color:#EF4444;font-weight:600;" if isinstance(v, float) and v < -0.25
-                   else ("color:#16A34A;font-weight:600;" if isinstance(v, float) and v > 0.25 else ""),
-                   subset=["Mô hình so với CTCK"])
-              .map(lambda v: "color:#EF4444;" if isinstance(v, int) and v > 120 else "",
-                   subset=["Tuổi (ngày)"]))
+    df = df.rename(
+        columns={
+            "broker": "CTCK",
+            "report_date": "Ngày BC",
+            "target_price": "Giá mục tiêu (đ)",
+            "rating": "Khuyến nghị",
+            "vs_model": "Mô hình so với CTCK",
+            "age_days": "Tuổi (ngày)",
+        }
+    )
+    styler = (
+        df.style.format(
+            {
+                "Giá mục tiêu (đ)": lambda v: _fmt_vnd(v),
+                "Mô hình so với CTCK": "{:+.1%}",
+            }
+        )
+        .map(
+            lambda v: (
+                "color:#EF4444;font-weight:600;"
+                if isinstance(v, float) and v < -0.25
+                else (
+                    "color:#16A34A;font-weight:600;"
+                    if isinstance(v, float) and v > 0.25
+                    else ""
+                )
+            ),
+            subset=["Mô hình so với CTCK"],
+        )
+        .map(
+            lambda v: "color:#EF4444;" if isinstance(v, int) and v > 120 else "",
+            subset=["Tuổi (ngày)"],
+        )
+    )
     st.dataframe(styler, width="stretch", hide_index=True)
-    st.caption("🔴 chênh >25% (mô hình thấp hơn) · 🟢 chênh >25% (mô hình cao hơn) · tuổi đỏ = báo cáo >120 ngày")
+    st.caption(
+        "🔴 chênh >25% (mô hình thấp hơn) · 🟢 chênh >25% (mô hình cao hơn) · tuổi đỏ = báo cáo >120 ngày"
+    )
 
     # ---- 4. AI tổng hợp điểm chung / riêng --------------------------------
-    st.subheader("🤖 AI tổng hợp luận điểm các CTCK")
+    st.subheader("Tổng hợp luận điểm CTCK")
     synth = data.get("synthesis")
     if synth:
         gen_at = synth.get("generated_at")
@@ -222,11 +307,22 @@ def render_consensus_compare(company: Union[Company, CompanyBank],
         )
         col_l, col_r = st.columns(2)
         with col_l:
-            _panel("Điểm CHUNG các CTCK đồng thuận", "🤝", "#16A34A", synth["diem_chung"])
-            _panel("Điểm MẤU CHỐT / thị trường dễ bỏ sót", "💡", "#1D4ED8", synth["diem_mau_chot"])
+            _panel(
+                "Điểm CHUNG các CTCK đồng thuận", "🤝", "#16A34A", synth["diem_chung"]
+            )
+            _panel(
+                "Điểm MẤU CHỐT / thị trường dễ bỏ sót",
+                "💡",
+                "#1D4ED8",
+                synth["diem_mau_chot"],
+            )
         with col_r:
-            _panel("Điểm RIÊNG / khác biệt giữa CTCK", "⚖️", "#D97706", synth["diem_rieng"])
-            _panel("Đối chiếu mô hình nội bộ", "🧭", "#7C3AED", synth["doi_chieu_noi_bo"])
+            _panel(
+                "Điểm RIÊNG / khác biệt giữa CTCK", "⚖️", "#D97706", synth["diem_rieng"]
+            )
+            _panel(
+                "Đối chiếu mô hình nội bộ", "🧭", "#7C3AED", synth["doi_chieu_noi_bo"]
+            )
     else:
         st.info(
             "Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
