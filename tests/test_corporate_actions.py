@@ -1,4 +1,5 @@
 import datetime
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -23,6 +24,7 @@ from valuation.db.models import (
 )
 from valuation.db.session import Base
 from valuation.ingest.corporate_actions import normalize_vci_event, upsert_corporate_actions
+from valuation.views.corporate_actions import _historical_impact_rows
 
 
 @pytest.fixture()
@@ -254,6 +256,85 @@ def test_historical_stock_dividend_adjusts_for_extra_shares():
     )
     assert "20 cổ phiếu" in story["wealth_explanation"]
     assert story["reaction_label"] == "TỔNG TÀI SẢN GẦN NHƯ KHÔNG ĐỔI"
+
+
+def test_historical_share_grant_does_not_double_count_adjusted_price_series():
+    prices = [
+        {"date": datetime.date(2025, 10, 28), "close": 16_100},
+        *[
+            {
+                "date": datetime.date(2025, 10, 29) + datetime.timedelta(days=i),
+                "close": 17_200 - i * 50,
+            }
+            for i in range(21)
+        ],
+    ]
+
+    impact = analyze_historical_price_impact(
+        prices=prices,
+        event_date=datetime.date(2025, 10, 29),
+        event_type="STOCK_BONUS_COMBO",
+        exercise_ratio=0.615,
+    )
+
+    assert impact["price_series_adjusted"] is True
+    assert impact["estimated_unadjusted_price_before_vnd"] == pytest.approx(
+        16_100 * 1.615
+    )
+    assert impact["shareholder_wealth_change_pct"] == pytest.approx(
+        17_200 / 16_100 * 100 - 100
+    )
+    assert impact["shareholder_wealth_change_pct"] != pytest.approx(
+        17_200 * 1.615 / 16_100 * 100 - 100
+    )
+
+    story = explain_historical_price_impact(
+        event_type="STOCK_BONUS_COMBO",
+        impact=impact,
+        reaction_materiality_pct=2.0,
+    )
+    assert "không cộng thêm cổ phiếu lần nữa" in story["wealth_explanation"]
+    assert "mốc đã chia xong" in story["follow_through"]
+
+
+def test_historical_impact_rows_combines_same_day_share_grants():
+    common = {
+        "ticker": "BSR",
+        "source_site": "VCI",
+        "event_code": "ISS",
+        "announcement_date": datetime.date(2025, 10, 15),
+        "ex_right_date": datetime.date(2025, 10, 29),
+        "record_date": datetime.date(2025, 10, 30),
+        "payment_date": None,
+        "listing_date": datetime.date(2025, 12, 8),
+        "cash_amount_vnd_per_share": None,
+        "issue_price_vnd": None,
+        "shares_after": None,
+        "source_url": None,
+        "source_tier": "AGGREGATOR",
+    }
+    rows = [
+        SimpleNamespace(
+            **common,
+            source_event_id="stock",
+            event_type="STOCK_DIVIDEND",
+            title="Trả cổ tức bằng cổ phiếu tỉ lệ 30.0%",
+            exercise_ratio=0.30,
+        ),
+        SimpleNamespace(
+            **common,
+            source_event_id="bonus",
+            event_type="BONUS_SHARE",
+            title="Cổ phiếu thưởng tỉ lệ 31.5%",
+            exercise_ratio=0.315,
+        ),
+    ]
+
+    combined = _historical_impact_rows(rows)
+
+    assert len(combined) == 1
+    assert combined[0].event_type == "STOCK_BONUS_COMBO"
+    assert combined[0].exercise_ratio == pytest.approx(0.615)
 
 
 def test_upcoming_explanation_uses_plain_language_and_holding_example():

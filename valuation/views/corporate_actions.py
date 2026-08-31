@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+from types import SimpleNamespace
 from typing import Any, Dict
 
 import pandas as pd
@@ -24,6 +25,7 @@ _EVENT_LABELS = {
     "CASH_DIVIDEND": "Cổ tức tiền mặt",
     "STOCK_DIVIDEND": "Cổ tức cổ phiếu",
     "BONUS_SHARE": "Cổ phiếu thưởng",
+    "STOCK_BONUS_COMBO": "Cổ tức cổ phiếu + cổ phiếu thưởng",
     "RIGHTS_ISSUE": "Quyền mua",
     "ESOP": "ESOP/CBCNV",
     "PRIVATE_PLACEMENT": "Phát hành riêng lẻ",
@@ -39,11 +41,14 @@ _PRICE_IMPACT_TYPES = {
     "CASH_DIVIDEND",
     "STOCK_DIVIDEND",
     "BONUS_SHARE",
+    "STOCK_BONUS_COMBO",
     "RIGHTS_ISSUE",
     "ESOP",
     "PRIVATE_PLACEMENT",
     "SHARE_ISSUE",
 }
+
+_SHARE_GRANT_TYPES = {"STOCK_DIVIDEND", "BONUS_SHARE"}
 
 
 def _anchor(row: Any) -> Any:
@@ -86,12 +91,69 @@ def _benefit_summary(row: Any) -> str:
     issue_price = float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
     if row.event_type == "CASH_DIVIDEND" and cash is not None:
         return f"{_fmt_vnd(cash)} VND/cổ phiếu"
-    if row.event_type in {"STOCK_DIVIDEND", "BONUS_SHARE"} and ratio is not None:
+    if row.event_type in {"STOCK_DIVIDEND", "BONUS_SHARE", "STOCK_BONUS_COMBO"} and ratio is not None:
         return f"Thêm {ratio * 100:g} cổ phiếu/100 cổ phiếu"
     if row.event_type == "RIGHTS_ISSUE" and ratio is not None:
         text = f"Được mua {ratio * 100:g} cổ phiếu/100 cổ phiếu"
         return f"{text}, giá {_fmt_vnd(issue_price)} VND" if issue_price else text
     return "Chưa đủ thông tin"
+
+
+def _historical_impact_rows(rows: list[Any]) -> list[Any]:
+    """Gộp các quyền nhận cổ phiếu cùng ngày để không double-count khi phân tích."""
+    grouped: dict[tuple[Any, Any, Any, Any], list[Any]] = {}
+    passthrough: list[Any] = []
+    for row in rows:
+        if row.event_type not in _SHARE_GRANT_TYPES:
+            passthrough.append(row)
+            continue
+        key = (_anchor(row), row.record_date, row.listing_date, row.source_site)
+        grouped.setdefault(key, []).append(row)
+
+    combined: list[Any] = []
+    for items in grouped.values():
+        if len(items) == 1:
+            combined.append(items[0])
+            continue
+        first = items[0]
+        ratio = sum(
+            float(item.exercise_ratio)
+            for item in items
+            if item.exercise_ratio is not None
+        )
+        titles = " + ".join(str(item.title) for item in items)
+        combined.append(
+            SimpleNamespace(
+                ticker=first.ticker,
+                source_site=first.source_site,
+                source_event_id="+".join(str(item.source_event_id) for item in items),
+                event_type="STOCK_BONUS_COMBO",
+                event_code=first.event_code,
+                title=titles,
+                announcement_date=min(
+                    (
+                        item.announcement_date
+                        for item in items
+                        if item.announcement_date is not None
+                    ),
+                    default=first.announcement_date,
+                ),
+                ex_right_date=first.ex_right_date,
+                record_date=first.record_date,
+                payment_date=first.payment_date,
+                listing_date=first.listing_date,
+                exercise_ratio=ratio or None,
+                cash_amount_vnd_per_share=None,
+                issue_price_vnd=None,
+                shares_after=first.shares_after,
+                source_url=first.source_url,
+                source_tier=first.source_tier,
+            )
+        )
+
+    out = passthrough + combined
+    out.sort(key=lambda row: _anchor(row) or datetime.date.min, reverse=True)
+    return out
 
 
 def render_corporate_actions(
@@ -290,7 +352,7 @@ def render_corporate_actions(
     ]
     max_history = int(cfg.get("historical_impact_max_events", 12))
     impact_items = []
-    for row in historical_rows:
+    for row in _historical_impact_rows(historical_rows):
         if row.event_type not in _PRICE_IMPACT_TYPES:
             continue
         ratio = float(row.exercise_ratio) if row.exercise_ratio is not None else None

@@ -5,9 +5,14 @@ import datetime
 from typing import Any, Dict, Iterable, Optional
 
 
-_SHARE_DILUTION_TYPES = {
+_SHARE_GRANT_TYPES = {
     "STOCK_DIVIDEND",
     "BONUS_SHARE",
+    "STOCK_BONUS_COMBO",
+}
+
+_SHARE_DILUTION_TYPES = {
+    *_SHARE_GRANT_TYPES,
     "RIGHTS_ISSUE",
     "ESOP",
     "PRIVATE_PLACEMENT",
@@ -64,7 +69,7 @@ def analyze_corporate_action(
     out["shares_after"] = shares * (1.0 + ratio)
     out["eps_dilution_pct_before_new_profit"] = (1.0 / (1.0 + ratio) - 1.0) * 100.0
 
-    if event_type in {"STOCK_DIVIDEND", "BONUS_SHARE"}:
+    if event_type in _SHARE_GRANT_TYPES:
         if price <= 0:
             out["data_warning"] = "Thiếu thị giá để tính giá tham chiếu lý thuyết."
             return out
@@ -161,6 +166,7 @@ def analyze_historical_price_impact(
     issue_price_vnd: Optional[float] = None,
     short_sessions: int = 5,
     long_sessions: int = 20,
+    adjusted_series_suspicion_pct: float = 20.0,
 ) -> Dict[str, Any]:
     """Đo phản ứng giá quanh sự kiện và tách phần điều chỉnh cơ học.
 
@@ -209,14 +215,28 @@ def analyze_historical_price_impact(
 
     wealth_change = None
     event_type = str(event_type or "").upper()
+    market_reaction = _pct(price_event, theoretical) if theoretical is not None else None
+    price_series_adjusted = False
+    estimated_unadjusted_price_before = None
     if event_type == "CASH_DIVIDEND" and cash_amount_vnd_per_share is not None:
         wealth_change = _pct(
             price_event + float(cash_amount_vnd_per_share), price_before
         )
-    elif event_type in {"STOCK_DIVIDEND", "BONUS_SHARE"} and exercise_ratio:
-        wealth_change = _pct(
-            price_event * (1.0 + float(exercise_ratio)), price_before
-        )
+    elif event_type in _SHARE_GRANT_TYPES and exercise_ratio:
+        ratio = float(exercise_ratio)
+        if (
+            market_reaction is not None
+            and market_reaction > adjusted_series_suspicion_pct
+        ):
+            # Một số nguồn đã đưa giá trước ngày GDKHQ về cùng mặt bằng sau chia.
+            # Khi đó không cộng thêm cổ phiếu lần nữa, nếu không sẽ double-count.
+            price_series_adjusted = True
+            estimated_unadjusted_price_before = price_before * (1.0 + ratio)
+            theoretical = price_before
+            market_reaction = _pct(price_event, theoretical)
+            wealth_change = _pct(price_event, price_before)
+        else:
+            wealth_change = _pct(price_event * (1.0 + ratio), price_before)
     elif event_type == "RIGHTS_ISSUE" and mechanical.get(
         "right_value_vnd_per_old_share"
     ) is not None:
@@ -240,12 +260,12 @@ def analyze_historical_price_impact(
         "price_event_vnd": price_event,
         "raw_event_return_pct": _pct(price_event, price_before),
         "theoretical_ex_price_vnd": theoretical,
+        "price_series_adjusted": price_series_adjusted,
+        "estimated_unadjusted_price_before_vnd": estimated_unadjusted_price_before,
         "mechanical_adjustment_pct": (
             _pct(theoretical, price_before) if theoretical is not None else None
         ),
-        "market_reaction_vs_theoretical_pct": (
-            _pct(price_event, theoretical) if theoretical is not None else None
-        ),
+        "market_reaction_vs_theoretical_pct": market_reaction,
         "shareholder_wealth_change_pct": wealth_change,
         "exercise_ratio": exercise_ratio,
         "cash_amount_vnd_per_share": cash_amount_vnd_per_share,
@@ -303,11 +323,26 @@ def explain_historical_price_impact(
         movement = f"giảm {_fmt_number_vi(abs(price_change))} VND"
     else:
         movement = "không đổi"
-    price_text = (
-        f"Trước ngày chia quyền, giá là {_fmt_number_vi(price_before)} VND. "
-        f"Trong ngày chia quyền, giá là {_fmt_number_vi(price_event)} VND, "
-        f"{movement} ({raw:+.1f}%)."
-    )
+    if impact.get("price_series_adjusted"):
+        estimated_raw = impact.get("estimated_unadjusted_price_before_vnd")
+        raw_note = (
+            f", tương đương khoảng {_fmt_number_vi(float(estimated_raw))} VND "
+            "nếu quy ngược về giá trước khi chia"
+            if estimated_raw is not None
+            else ""
+        )
+        price_text = (
+            "Dữ liệu giá trước sự kiện đã được điều chỉnh về cùng mặt bằng sau chia: "
+            f"{_fmt_number_vi(price_before)} VND{raw_note}. Trong ngày chia quyền, "
+            f"giá là {_fmt_number_vi(price_event)} VND, {movement} ({raw:+.1f}%) "
+            "so với mốc đã điều chỉnh."
+        )
+    else:
+        price_text = (
+            f"Trước ngày chia quyền, giá là {_fmt_number_vi(price_before)} VND. "
+            f"Trong ngày chia quyền, giá là {_fmt_number_vi(price_event)} VND, "
+            f"{movement} ({raw:+.1f}%)."
+        )
 
     event_type = str(event_type or "").upper()
     if wealth is None:
@@ -321,12 +356,20 @@ def explain_historical_price_impact(
             f"Bạn nhận thêm {_fmt_number_vi(cash)} VND tiền mặt cho mỗi cổ phiếu. "
             f"Sau khi cộng khoản tiền này, tổng tài sản thay đổi {float(wealth):+.1f}%."
         )
-    elif event_type in {"STOCK_DIVIDEND", "BONUS_SHARE"}:
+    elif event_type in _SHARE_GRANT_TYPES:
         ratio = float(impact.get("exercise_ratio") or 0.0) * 100.0
-        wealth_text = (
-            f"Cứ 100 cổ phiếu đang có, bạn nhận thêm khoảng {ratio:g} cổ phiếu. "
-            f"Sau khi cộng số cổ phiếu mới, tổng tài sản thay đổi {float(wealth):+.1f}%."
-        )
+        if impact.get("price_series_adjusted"):
+            wealth_text = (
+                f"Cứ 100 cổ phiếu đang có, bạn nhận thêm khoảng {ratio:g} cổ phiếu. "
+                "Vì dữ liệu giá đã điều chỉnh quyền, hệ thống không cộng thêm cổ phiếu "
+                f"lần nữa. So trên cùng mặt bằng sau chia, tổng tài sản thay đổi "
+                f"{float(wealth):+.1f}%."
+            )
+        else:
+            wealth_text = (
+                f"Cứ 100 cổ phiếu đang có, bạn nhận thêm khoảng {ratio:g} cổ phiếu. "
+                f"Sau khi cộng số cổ phiếu mới, tổng tài sản thay đổi {float(wealth):+.1f}%."
+            )
     else:
         ratio = float(impact.get("exercise_ratio") or 0.0) * 100.0
         issue_price = impact.get("issue_price_vnd")
@@ -347,7 +390,9 @@ def explain_historical_price_impact(
     if long_return is not None:
         pieces.append(f"sau khoảng 1 tháng {float(long_return):+.1f}%")
     follow = (
-        "So với giá trong ngày chia quyền: " + ", ".join(pieces) + "."
+        "So với giá trong ngày chia quyền, tức mốc đã chia xong: "
+        + ", ".join(pieces)
+        + "."
         if pieces
         else "Chưa đủ dữ liệu để xem giá thay đổi thế nào sau sự kiện."
     )
@@ -393,7 +438,7 @@ def explain_upcoming_action(
             "simple_verdict": "Cổ tức là tiền thật nhận về, nhưng không phải tiền miễn phí vì giá cổ phiếu điều chỉnh tương ứng.",
         }
 
-    if event_type in {"STOCK_DIVIDEND", "BONUS_SHARE"}:
+    if event_type in _SHARE_GRANT_TYPES:
         new_shares = holding * ratio
         total = holding + new_shares
         return {
