@@ -377,17 +377,16 @@ try:
                 "updated": 0,
             }
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        financials_tab, valuation_tab, consensus_tab, corporate_actions_tab = st.tabs(
             [
                 "Báo cáo tài chính",
-                "Giả định & dự phóng",
-                "Định giá & quan điểm",
+                "Định giá & dự phóng",
                 "So sánh CTCK",
                 "Cổ tức & quyền mua",
             ]
         )
 
-        with tab1:
+        with financials_tab:
             render_input_financials(
                 company,
                 blended_fv=blended_fv,
@@ -397,15 +396,16 @@ try:
                 corporate_actions_context=None,
             )
 
-        with tab2:
-            render_input_assumptions(company)
+        with valuation_tab:
+            with st.expander("Giả định & tham số dự phóng", expanded=False):
+                render_input_assumptions(company)
 
-        with tab4:
+        with consensus_tab:
             from valuation.views.consensus_compare import render_consensus_compare
 
             render_consensus_compare(company, blended_fv, db_write)
 
-        with tab5:
+        with corporate_actions_tab:
             render_corporate_actions(
                 company,
                 db_write,
@@ -414,7 +414,7 @@ try:
 
         # Tab kết quả có phần chuẩn bị biểu đồ/xuất báo cáo tĩnh khá nặng, nên
         # render sau hai tab tham chiếu để người dùng mở tab CTCK/cổ tức nhanh hơn.
-        with tab3:
+        with valuation_tab:
             render_valuation_results(company, db_write)
     else:
         st.info(
