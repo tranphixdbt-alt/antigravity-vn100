@@ -17,24 +17,22 @@ def upsert_prices(df: pd.DataFrame, ticker: str):
     
     # Chuẩn bị records
     records = []
+    price_columns = [c for c in ('open', 'high', 'low', 'close', 'volume', 'value', 'adj_close') if c in df.columns]
     for _, row in df.iterrows():
         records.append({
             'ticker': ticker,
             'trade_date': row['time'].date() if isinstance(row['time'], pd.Timestamp) else pd.to_datetime(row['time']).date(),
-            'open': row.get('open'),
-            'high': row.get('high'),
-            'low': row.get('low'),
-            'close': row.get('close'),
-            'volume': row.get('volume'),
+            **{c: row[c] if pd.notna(row[c]) else None for c in price_columns},
             'price_unit': row.get('price_unit', 'VND')
         })
     
     db = SessionLocalWrite()
     try:
         stmt = dialect_insert(db, PricesDaily).values(records)
+        from sqlalchemy import func
         update_dict = {
-            c.name: c for c in stmt.excluded 
-            if c.name not in ['ticker', 'trade_date']
+            c: func.coalesce(getattr(stmt.excluded, c), getattr(PricesDaily, c))
+            for c in [*price_columns, 'price_unit']
         }
         stmt = stmt.on_conflict_do_update(
             index_elements=['ticker', 'trade_date'],
@@ -114,7 +112,11 @@ def upsert_market_flows(ticker: str, df_foreign: pd.DataFrame, df_prop: pd.DataF
     try:
         stmt = dialect_insert(db, PricesDaily).values(records)
         # CHỈ update các cột market-flow — giữ nguyên OHLCV đã có.
-        update_dict = {col: getattr(stmt.excluded, col) for col in _MARKET_FLOW_COLUMNS}
+        from sqlalchemy import func
+        update_dict = {
+            col: func.coalesce(getattr(stmt.excluded, col), getattr(PricesDaily, col))
+            for col in _MARKET_FLOW_COLUMNS
+        }
         stmt = stmt.on_conflict_do_update(
             index_elements=['ticker', 'trade_date'],
             set_=update_dict

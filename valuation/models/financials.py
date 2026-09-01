@@ -31,6 +31,7 @@ class IncomeStatement(BaseModel):
 
 class BalanceSheet(BaseModel):
     year: int
+    reported_total_liabilities: Optional[float] = Field(None, description="Tổng nợ phải trả từ BCTC, không phải số dư ép cân đối (tỷ đồng)")
     cash_and_equivalents: float = Field(..., description="Tiền và tương đương tiền (tỷ đồng)")
     short_term_financial_investments: float = Field(
         0.0, description="Đầu tư tài chính ngắn hạn có thể dùng trong cầu nối EV (tỷ đồng)"
@@ -53,6 +54,8 @@ class BalanceSheet(BaseModel):
 
     @property
     def total_liabilities(self) -> float:
+        if self.reported_total_liabilities is not None:
+            return self.reported_total_liabilities
         return (self.short_term_debt + self.accounts_payable + self.other_current_liabilities +
                 self.long_term_debt + self.other_long_term_liabilities)
 
@@ -173,12 +176,14 @@ class Company(BaseModel):
             curr_cf = cf_match[0]
             
             delta_cash = curr_bs.cash_and_equivalents - prev_bs.cash_and_equivalents
-            total_cf = curr_cf.cfo + curr_cf.capex + curr_cf.cf_other
+            total_cf = curr_cf.cfo - curr_cf.capex + curr_cf.cf_other
             
             diff_cash = abs(delta_cash - total_cf)
             if diff_cash > 1.0 and curr_cf.cf_other == 0.0:
-                # Tự động bù phần thiếu vào cf_other để cân bằng Cash Flow
-                curr_cf.cf_other = delta_cash - (curr_cf.cfo + curr_cf.capex)
+                warnings.append(
+                    f"Năm {curr_cf.year}: chưa có đầy đủ lưu chuyển đầu tư/tài chính "
+                    "để đối chiếu biến động tiền; không tự tạo khoản bù."
+                )
                 
-        self.warnings.extend(warnings)
+        self.warnings = list(dict.fromkeys(self.warnings + warnings))
         return self

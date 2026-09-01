@@ -447,7 +447,7 @@ def render_input_financials(
 
     df_is_hist = pd.DataFrame(is_hist_data).set_index("Năm")
 
-    st.caption("🔴 Phần Lịch sử (Đã xác thực và khóa lại):")
+    st.caption("Số liệu lịch sử từ kho dữ liệu; trạng thái kiểm chứng được ghi riêng, không đồng nghĩa đã kiểm toán lại.")
     st.dataframe(apply_financial_styling(df_is_hist), width="stretch")
 
     # --- BIỂU ĐỒ 1: Xu hướng IS lịch sử ---
@@ -657,7 +657,7 @@ def render_input_financials(
 
     df_bs_hist = pd.DataFrame(bs_hist_data).set_index("Năm")
 
-    st.caption("🔴 Phần Lịch sử (Đã xác thực và khóa lại):")
+    st.caption("Số liệu lịch sử từ kho dữ liệu; chưa đồng nghĩa đã đối chiếu BCTC gốc.")
     st.dataframe(apply_financial_styling(df_bs_hist), width="stretch")
 
     # --- BIỂU ĐỒ 2: Cấu trúc Bảng cân đối kế toán (Stacked Bar) ---

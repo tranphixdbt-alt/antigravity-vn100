@@ -38,6 +38,28 @@ def _review_flags(upside_pct: float) -> list:
     return []
 
 
+def _apply_publication_gate(company, result: Dict[str, Any]) -> Dict[str, Any]:
+    """Giữ số chẩn đoán nội bộ nhưng chặn phát hành khi đầu vào/mô hình lỗi."""
+    from valuation.report.verified_summary import run_deterministic_checks
+
+    result = dict(result)
+    value = result["blended_fair_value_per_share"]
+    upside = (value / company.current_price - 1) * 100 if company.current_price > 0 else 0
+    checks = run_deterministic_checks(company, blended_fv=value, upside=upside)
+    flags = set(result.get("flags", []))
+    blocked = any(c["severity"] == "error" for c in checks) or bool(
+        flags & {"VALUATION_PROXY", "NOT_RATED", "PROXY_IMPLAUSIBLE"}
+    ) or result.get("not_rated", False)
+    result["data_checks"] = checks
+    result["publication_allowed"] = not blocked
+    if blocked:
+        result["not_rated"] = True
+        result["recommendation"] = "NOT_RATED"
+        result["decision"] = {**result.get("decision", {}), "recommendation": "NOT_RATED"}
+        result["flags"] = sorted(flags | {"DATA_REVIEW_REQUIRED", "NOT_RATED"})
+    return result
+
+
 def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: MacroEnvironment = None) -> Dict[str, Any]:
     """
     Định giá 1 doanh nghiệp bằng engine chuẩn (Base case).
@@ -79,7 +101,7 @@ def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: M
         )
         decision = decision_engine.make_decision()
         
-        return {
+        return _apply_publication_gate(company, {
             "blended_fair_value_per_share": blended_fv,
             "intrinsic_fv": intrinsic_fv,
             "relative_fv": relative_fv,
@@ -89,7 +111,7 @@ def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: M
             "projections": projections,
             "flags": _review_flags(decision["upside"]) + list(getattr(company, "data_flags", []) or []),
             "decision": decision
-        }
+        })
 
     # Phi tài chính: dispatch theo method (đủ PE/PB/EV_EBITDA/RNAV/SOTP/DCF, giữ flags)
     from valuation.engine.batch import _dispatch_nonfin, _collect_flags
@@ -122,7 +144,7 @@ def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: M
     )
     decision = decision_engine.make_decision()
 
-    return {
+    return _apply_publication_gate(company, {
         "not_rated": not_rated,
         "blended_fair_value_per_share": blended_fv,
         "intrinsic_fv": blended_fv,
@@ -135,4 +157,4 @@ def valuate(company: Union[Company, CompanyBank], projections=None, macro_env: M
         "land_bank_npv": land_bank["land_bank_npv"],
         "decision": decision,
         "projections": res.get("forecasts", None)
-    }
+    })

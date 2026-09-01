@@ -164,11 +164,17 @@ def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) ->
                         db, ticker, now.date(), cfg, evidence.get(ticker, {})
                     )
             except (Exception, SystemExit) as exc:
+                from valuation.config import settings
+
+                detail = str(exc)
+                for secret in (settings.vnstock_api_key, settings.deepseek_api_key):
+                    if secret:
+                        detail = detail.replace(secret, "[redacted]")
                 row = {
                     "ticker": ticker,
                     "name": ticker,
                     "sector": "Chưa rõ",
-                    "error": f"Không tạo được hồ sơ ({type(exc).__name__})",
+                    "error": f"Không tạo được hồ sơ ({type(exc).__name__}): {detail[:350]}",
                     "flags": [],
                 }
             row.setdefault("blockers", []).extend(ticker_errors)

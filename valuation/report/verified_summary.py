@@ -22,7 +22,7 @@ from valuation.models.financials_bank import CompanyBank
 _STATUS_RANK = {"OK": 0, "WARNING": 1, "ERROR": 2}
 _REPORT_KEYS = ("thesis", "overview", "industry", "risks", "corporate_actions")
 _CONSENSUS_LIST_KEYS = ("diem_chung", "diem_rieng", "diem_mau_chot")
-_CACHE_VERSION = "v4"
+_CACHE_VERSION = "v5"
 _REPORT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".deepseek_report_cache"
 _REPORT_CACHE_LOCK = threading.Lock()
 
@@ -293,7 +293,10 @@ def run_deterministic_checks(
         )
 
     for flag in list(getattr(company, "data_flags", []) or []):
-        issues.append(_issue(str(flag), "warning", f"Cờ chất lượng dữ liệu: {flag}."))
+        severity = "error" if str(flag).startswith((
+            "MISSING_FINANCIAL_INPUT:", "SOURCE_CONFLICT:", "SOURCE_AUDIT_MISSING", "SOURCE_AUDIT_STALE"
+        )) else "warning"
+        issues.append(_issue(str(flag), severity, f"Cờ chất lượng dữ liệu: {flag}."))
     for warning in list(getattr(company, "warnings", []) or []):
         issues.append(_issue("MODEL_WARNING", "warning", str(warning)))
 
@@ -336,7 +339,16 @@ def run_deterministic_checks(
         growth_values = ((row.year, row.total_operating_income) for row in statements)
         growth_label = "Tổng thu nhập hoạt động"
     else:
+        from valuation.engine.sector_router import route
+
+        group = (route(company.ticker) or {}).get("group")
+        financial_sector = group in {"CK", "BH", "Chứng khoán", "Bảo hiểm"} or getattr(company, "sector", "") in {"Securities", "Insurance", "Financial Services"}
+        if financial_sector:
+            issues.append(_issue("FINANCIAL_SECTOR_LAYOUT", "warning",
+                                 "BCTC tài chính có cấu trúc riêng; không áp đẳng thức giá vốn/EBIT của doanh nghiệp sản xuất. Cần đối chiếu lợi nhuận, vốn chủ và thuyết minh chuyên ngành."))
         for row in statements:
+            if financial_sector:
+                continue
             _identity_issue(
                 issues,
                 code="GROSS_PROFIT_MISMATCH",
@@ -393,6 +405,7 @@ def _compact_payload(
         for key, value in assumptions.items()
         if key not in {"rnav_projects", "sotp_segments", "land_bank_projects"}
     }
+    blocked = recommendation == "NOT_RATED" or any(x["severity"] == "error" for x in deterministic_issues)
     return {
         "ticker": company.ticker,
         "company_name": company.name,
@@ -400,9 +413,10 @@ def _compact_payload(
         "company_type": "bank" if is_bank else "non_bank",
         "unit_financials": "billion_VND",
         "current_price_vnd": current_price,
-        "target_price_vnd": blended_fv,
-        "upside_pct": upside,
-        "recommendation": recommendation,
+        "target_price_vnd": None if blocked else blended_fv,
+        "upside_pct": None if blocked else upside,
+        "recommendation": "NOT_RATED" if blocked else recommendation,
+        "publication_allowed": not blocked,
         "shares_outstanding_million": company.shares_outstanding,
         "income_statements": income_rows,
         "balance_sheets": balance_rows,

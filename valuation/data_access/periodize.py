@@ -93,7 +93,12 @@ def periodize_quarters_to_annual(
         # Ưu tiên lấy dữ liệu đã được tính sẵn cho cả năm (Q0)
         df_fy = df_quarterly[(df_quarterly["fiscal_year"] == target_year) & (df_quarterly["fiscal_quarter"] == 0)]
         if not df_fy.empty:
-            result = {}
+            # Q0 có thể chỉ chứa một báo cáo: vẫn giữ các chỉ tiêu đủ bốn quý
+            # của báo cáo khác, rồi ưu tiên số cả năm được công bố.
+            result = periodize_quarters_to_annual(
+                df_quarterly[df_quarterly["fiscal_quarter"] != 0],
+                target_year, mode="FY",
+            )
             df_fy = df_fy.copy()
             df_fy["_restated_rank"] = (
                 df_fy["is_restated"].fillna(False).astype(bool).astype(int)
@@ -129,21 +134,22 @@ def periodize_quarters_to_annual(
             df_fy = pd.DataFrame(rows)
             for _, r in df_fy.iterrows():
                 val = r["value"]
-                result[r["line_item"]] = float(val) if val is not None and not pd.isna(val) else 0.0
+                if val is not None and not pd.isna(val):
+                    result[r["line_item"]] = float(val)
             return result
             
         # Fallback: Lấy cả 4 quý của năm target_year
         df_target = df_quarterly[df_quarterly["fiscal_year"] == target_year]
         # Bỏ qua Q0 nếu có
         df_target = df_target[df_target["fiscal_quarter"] > 0]
-        quarters_in_period = [(target_year, q) for q in sorted(df_target["fiscal_quarter"].unique())]
-        if not quarters_in_period:
+        quarters_in_period = [(target_year, q) for q in range(1, 5)]
+        if df_target.empty:
             return {}
-        latest_yr, latest_q = target_year, max(q for _, q in quarters_in_period)
+        latest_yr, latest_q = target_year, 4
     else:  # TTM
         # Nếu không truyền latest_quarter, tìm quý lớn nhất của target_year có trong df
         if latest_quarter is None:
-            sub_year = df_quarterly[df_quarterly["fiscal_year"] == target_year]
+            sub_year = df_quarterly[(df_quarterly["fiscal_year"] == target_year) & (df_quarterly["fiscal_quarter"] > 0)]
             if not sub_year.empty:
                 latest_q = sub_year["fiscal_quarter"].max()
             else:
@@ -164,12 +170,8 @@ def periodize_quarters_to_annual(
                 cy -= 1
 
     # Tạo tập hợp dữ liệu trong kỳ
-    df_period = df_quarterly[
-        df_quarterly.apply(
-            lambda r: (int(r["fiscal_year"]), int(r["fiscal_quarter"])) in quarters_in_period, 
-            axis=1
-        )
-    ]
+    period_index = pd.MultiIndex.from_frame(df_quarterly[["fiscal_year", "fiscal_quarter"]])
+    df_period = df_quarterly[period_index.isin(quarters_in_period)]
     
     if df_period.empty:
         return {}
@@ -177,11 +179,6 @@ def periodize_quarters_to_annual(
     result = {}
     # Lấy danh sách các khoản mục
     line_items = df_period["line_item"].unique()
-
-    # Xác định số lượng quý thực tế tìm thấy trong period để làm trọng số cho Flow items
-    # (Nếu thiếu quý thì annualize lên)
-    actual_quarters_count = len(df_period[["fiscal_year", "fiscal_quarter"]].drop_duplicates())
-    weight = 4.0 / actual_quarters_count if actual_quarters_count > 0 else 1.0
 
     for item in line_items:
         df_item = df_period[df_period["line_item"] == item]
@@ -232,18 +229,12 @@ def periodize_quarters_to_annual(
         )
 
         if is_stock_item(item, statement=statement):
-            # Stock item: lấy giá trị của quý mới nhất trong kỳ
-            # Sắp xếp theo year, quarter giảm dần
-            df_sorted = df_item.sort_values(
-                by=["fiscal_year", "fiscal_quarter"], 
-                ascending=[False, False]
-            )
-            val = df_sorted.iloc[0]["value"]
-            result[item] = float(val) if val is not None else 0.0
+            latest = df_item[(df_item["fiscal_year"] == latest_yr) & (df_item["fiscal_quarter"] == latest_q)]
+            if not latest.empty and pd.notna(latest.iloc[0]["value"]):
+                result[item] = float(latest.iloc[0]["value"])
         else:
-            # Flow item: cộng tổng 4 quý
-            total = df_item["value"].sum()
-            # Nếu thiếu quý, nhân trọng số annualize
-            result[item] = float(total) * weight if total is not None else 0.0
+            # Thiếu một quý của chính chỉ tiêu này thì chưa có FY/TTM thật.
+            if len(df_item) == 4 and df_item["value"].notna().all():
+                result[item] = float(df_item["value"].sum())
 
     return result

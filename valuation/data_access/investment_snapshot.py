@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from valuation.analysis.investment_ranking import finite
+from valuation.config import PROJECT_ROOT
 from valuation.data_access.repo import build_company_data
 from valuation.db.models import FinancialsQuarterly, PricesDaily, Ticker
 from valuation.engine.sector_router import route
@@ -19,6 +20,8 @@ from valuation.engine.valuate import valuate
 from valuation.models.financials_bank import CompanyBank
 from valuation.models.macro_env import MacroEnvironment
 from valuation.report.verified_summary import run_deterministic_checks
+from valuation.ingest.sponsor_data import sponsor_market_metrics
+from valuation.services.ranking_store import read_json
 
 
 def fingerprint(value: Any) -> str:
@@ -161,11 +164,11 @@ def build_ranking_row(
     row["publication_coverage_pct"] = (
         round(100 * len(known_dates) / len(rows), 1) if rows else 0
     )
-    if (
-        not known_dates
-        or (as_of - max(known_dates)).days > cfg["financial_max_age_days"]
-    ):
-        row["blockers"].append("BCTC cũ hoặc chưa rõ ngày công bố")
+    current_dates = [x.published_at for x in rows if x.published_at and (x.fiscal_year, x.fiscal_quarter) == period]
+    if not current_dates:
+        row["blockers"].append("Kỳ BCTC mới nhất chưa có ngày công bố được lưu; chưa xác minh độ mới")
+    elif (as_of - max(current_dates)).days > cfg["financial_max_age_days"]:
+        row["blockers"].append("Ngày công bố kỳ BCTC mới nhất đã quá hạn kiểm tra")
     if len(known_dates) != len(rows):
         row["blockers"].append("Chưa đủ ngày công bố để kiểm chứng toàn bộ lịch sử")
     if any(not x.is_consolidated or x.currency != "VND" for x in rows):
@@ -216,6 +219,20 @@ def build_ranking_row(
         metrics["flow_ratio"] = sum(float(x.foreign_net_val) for x in prices) / sum(
             values
         )
+    if len(values) != 20 or metrics.get("flow_ratio") is None:
+        cache = PROJECT_ROOT / ".vn100_ranking/sponsor" / ticker
+        stats, foreign = read_json(cache / "stats.json"), read_json(cache / "foreign.json")
+        # Nguồn tải sau ngày định giá không được đưa vào kiểm thử lịch sử.
+        usable = all(p and p.get("checked_at", "9999")[:10] <= as_of.isoformat() for p in (stats, foreign))
+        supplement = sponsor_market_metrics(stats, foreign, [x.trade_date for x in prices]) if usable else {}
+        if supplement:
+            if len(values) != 20:
+                metrics["avg_traded_value"] = supplement["avg_traded_value"]
+                row["liquidity_ok"] = supplement["avg_traded_value"] >= cfg["scales"]["min_traded_value_vnd"]
+            if metrics.get("flow_ratio") is None:
+                metrics["flow_ratio"] = supplement["foreign_flow_ratio"]
+            row["market_metrics_source"] = "vnstock_data/Market"
+            row["market_metrics_checked_at"] = stats["checked_at"]
     validated = verified_evidence(evidence, as_of, row["input_hash"], cfg)
     row["evidence"] = validated
     row["governance_verified"] = validated.get("governance_clear") is True

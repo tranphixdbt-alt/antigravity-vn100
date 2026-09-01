@@ -1,17 +1,11 @@
 import pandas as pd
 import logging
+import importlib.util
+import os
 
 logger = logging.getLogger(__name__)
 
-try:
-    from vnstock_data import Market
-    HAS_VNSTOCK_DATA = True
-except ImportError:
-    HAS_VNSTOCK_DATA = False
-    logger.info(
-        "Không có thư viện optional 'vnstock_data'; dùng dữ liệu đã lưu trong DB "
-        "và trả fallback rỗng khi cập nhật mới dòng tiền."
-    )
+HAS_VNSTOCK_DATA = importlib.util.find_spec("vnstock_data") is not None
 
 class MarketFlowClient:
     """
@@ -19,10 +13,15 @@ class MarketFlowClient:
     Nếu chưa cài đặt vnstock_data, trả về DataFrame rỗng có schema chuẩn.
     """
     def __init__(self):
-        if HAS_VNSTOCK_DATA:
+        self.mkt = None
+
+    def _market(self):
+        if self.mkt is None:
+            from valuation.config import settings
+            os.environ["VNSTOCK_API_KEY"] = settings.vnstock_api_key
+            from vnstock_data import Market
             self.mkt = Market()
-        else:
-            self.mkt = None
+        return self.mkt
 
     def fetch_foreign_flow(self, ticker: str, start: str, end: str = None) -> pd.DataFrame:
         """
@@ -36,13 +35,13 @@ class MarketFlowClient:
             
         try:
             # Tham khảo schema từ docs
-            df = self.mkt.equity(ticker).foreign_flow(start=start, end=end, interval='1D')
+            df = self._market().equity(ticker).foreign_flow(start=start, end=end, interval='1D')
             if df is not None and not df.empty:
                 df['time'] = pd.to_datetime(df['time']).dt.date
             return df
         except Exception as e:
             logger.error(f"Lỗi khi lấy foreign_flow cho {ticker}: {e}")
-            return pd.DataFrame()
+            raise
 
     def fetch_proprietary_flow(self, ticker: str, start: str, end: str = None) -> pd.DataFrame:
         """
@@ -54,12 +53,12 @@ class MarketFlowClient:
             return pd.DataFrame(columns=['time', 'buy_vol', 'buy_val', 'sell_vol', 'sell_val', 'net_vol', 'net_val'])
             
         try:
-            df = self.mkt.equity(ticker).proprietary_flow(start=start, end=end, interval='1D')
+            df = self._market().equity(ticker).proprietary_flow(start=start, end=end, interval='1D')
             if df is not None and not df.empty:
                 df['time'] = pd.to_datetime(df['time']).dt.date
             return df
         except Exception as e:
             logger.error(f"Lỗi khi lấy proprietary_flow cho {ticker}: {e}")
-            return pd.DataFrame()
+            raise
 
 market_client = MarketFlowClient()

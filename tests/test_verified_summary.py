@@ -409,4 +409,4 @@ def test_error_escalates_single_call_to_pro_model():
 
 
 def test_session_key_is_stable_per_ticker():
-    assert verified_summary_session_key("acb") == "verified_ai_summary_v4_ACB"
+    assert verified_summary_session_key("acb") == "verified_ai_summary_v5_ACB"

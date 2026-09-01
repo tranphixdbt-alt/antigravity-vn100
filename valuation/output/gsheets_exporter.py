@@ -570,6 +570,8 @@ _METHOD_LABEL = {
 
 def _confidence_label(result: dict, flags: list[str]) -> str:
     flag_set = set(flags)
+    if result.get("status") == "PARTIAL" and "VALUATION_PROXY" in flag_set:
+        return "Proxy - không khuyến nghị"
     if result.get("fair_value") is None or "NOT_RATEABLE" in flag_set:
         return "Không định giá"
     if result.get("status") == "PARTIAL":

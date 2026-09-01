@@ -268,6 +268,10 @@ try:
             )
             decision = _res.get("decision", {})
 
+        # Ghi đè của analyst không được bỏ qua lỗi đầu vào trọng yếu.
+        if not _res.get("publication_allowed", True):
+            rec = "NOT_RATED"
+
         # Hiển thị các cảnh báo Model Integrity (nếu có)
         if scenario_company.warnings:
             st.warning("⚠️ **Cảnh báo tính toàn vẹn mô hình (Model Integrity):**")
@@ -312,12 +316,13 @@ try:
         )
         if rec == "NOT_RATED":
             st.warning(
-                "Mô hình **không đủ cơ sở** để định giá mã này (phương pháp proxy cho ra "
-                "kết quả lệch phi lý so thị giá). Hệ thống cố ý **không công bố giá mục "
-                "tiêu và không đưa khuyến nghị** thay vì đưa ra một con số không đáng tin. "
-                "Xem cờ định giá bên dưới để biết cần bổ sung dữ liệu gì.",
+                "Chưa công bố giá mục tiêu: dữ liệu đầu vào chưa đạt kiểm tra "
+                "hoặc mô hình còn thiếu dữ liệu chuyên ngành.",
                 icon="🚫",
             )
+            for issue in _res.get("data_checks", []):
+                if issue["severity"] == "error":
+                    st.error(issue["message"])
 
         # Hard Gates & Governance Section
         violations = decision.get("hard_gates_violations", [])
@@ -404,7 +409,10 @@ try:
         with consensus_tab:
             from valuation.views.consensus_compare import render_consensus_compare
 
-            render_consensus_compare(company, blended_fv, db_write)
+            if _res.get("publication_allowed", True):
+                render_consensus_compare(company, blended_fv, db_write)
+            else:
+                st.warning("Chưa so sánh giá mục tiêu khi dữ liệu định giá còn lỗi trọng yếu.")
 
         with corporate_actions_tab:
             render_corporate_actions(

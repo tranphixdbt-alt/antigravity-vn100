@@ -280,6 +280,13 @@ def render_valuation_results(company: Union[Company, CompanyBank], db_write: Ses
         st.error(f"Lỗi khi chạy định giá: {e}")
         return
 
+    if not _res.get("publication_allowed", True):
+        st.warning("Chưa xuất báo cáo đầu tư hoặc giá mục tiêu: dữ liệu/mô hình chưa đủ cơ sở.")
+        for issue in _res.get("data_checks", []):
+            if issue["severity"] == "error":
+                st.error(issue["message"])
+        return
+
     # 2. Render Kênh Khuyến Nghị (Premium Card Layout)
     rec_color = (
         "#10B981"

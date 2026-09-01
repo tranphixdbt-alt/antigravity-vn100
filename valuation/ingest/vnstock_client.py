@@ -2,10 +2,6 @@ import logging
 import time
 
 import pandas as pd
-from vnstock.api.listing import Listing
-from vnstock.api.quote import Quote
-from vnstock.api.financial import Finance
-from vnstock.api.company import Company
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +40,7 @@ class VnstockClient:
 
     def get_company_overview(self, symbol: str) -> pd.DataFrame:
         """Lấy thông tin tổng quan công ty"""
+        from vnstock.api.company import Company
         # Bọc cả khởi tạo (Company(...)) lẫn gọi method trong retry: vnai có
         # thể raise SystemExit ngay lúc khởi tạo, không chỉ lúc gọi .overview().
         return _call_with_rate_limit_retry(
@@ -57,6 +54,7 @@ class VnstockClient:
         period: 'quarter' hoặc 'year'
         """
         def _fetch():
+            from vnstock.api.financial import Finance
             finance = Finance(source=self.source, symbol=symbol, period=period, get_all=True)
             if statement_type == "BS":
                 return finance.balance_sheet()
@@ -71,6 +69,7 @@ class VnstockClient:
 
     def get_historical_prices(self, symbol: str, start_date: str) -> pd.DataFrame:
         """Lấy giá lịch sử từ ngày start_date (YYYY-MM-DD)"""
+        from vnstock.api.quote import Quote
         return _call_with_rate_limit_retry(
             lambda: Quote(source=self.source, symbol=symbol).history(start=start_date)
         )
@@ -96,6 +95,7 @@ class VnstockClient:
 
     def get_vn100_symbols(self) -> pd.Series:
         """Lấy danh sách mã VN100"""
+        from vnstock.api.listing import Listing
         return _call_with_rate_limit_retry(
             lambda: Listing(source=self.source).symbols_by_group('VN100')
         )

@@ -1,12 +1,13 @@
 """
 Repository module — Truy vấn dữ liệu tài chính từ PostgreSQL, chuẩn hóa đơn vị và kỳ báo cáo.
 """
-from typing import List, Dict, Any, Union, Tuple
+from typing import List, Dict, Any, Union, Tuple, overload
+import math
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from valuation.db.models import Ticker, FinancialsQuarterly, PricesDaily, MacroSeries
-from valuation.data_access.units import to_billion_vnd, clean_value
+from valuation.data_access.units import to_billion_vnd
 from valuation.data_access.periodize import periodize_quarters_to_annual, get_latest_quarters_for_ticker
 from valuation.models.financials import IncomeStatement, BalanceSheet, CashFlow, Company, Assumptions
 from valuation.models.financials_bank import IncomeStatementBank, BalanceSheetBank, CompanyBank, AssumptionsBank
@@ -14,7 +15,7 @@ from valuation.engine.ttm_helper import estimate_vcb_beta, get_latest_tpcp_10y
 
 # Từ khóa matching cho Phi tài chính
 NON_FIN_KEYWORDS = {
-    "revenue": ["net_revenue_from_goods_and_services_rendered", "net_sales", "Doanh thu thuần", "Doanh thu hoạt động"],
+    "revenue": ["net_revenue_from_goods_and_services_rendered", "net_sales", "net_sales_from_insurance_business", "Doanh thu thuần", "Doanh thu hoạt động"],
     "cogs": [
         "cost_of_goods_sold",
         "cost_of_sales",
@@ -25,15 +26,15 @@ NON_FIN_KEYWORDS = {
     "gross_profit": ["gross_profit", "Lợi nhuận gộp"],
     # OPEX tách 2 cấu phần để CỘNG (không dùng chung 1 key — xem build_company_data).
     "selling_expenses": ["selling_expenses", "Chi phí bán hàng"],
-    "ga_expenses": ["general_and_admin_expenses", "Chi phí quản lý doanh nghiệp", "Chi phí quản lý"],
+    "ga_expenses": ["general_and_admin_expenses", "general_and_administrative_expenses", "Chi phí quản lý doanh nghiệp", "Chi phí quản lý"],
     "opex_total": ["operating_expenses", "operating_expense", "Chi phí hoạt động"],
     "operating_profit": ["operating_profit_loss", "Lợi nhuận từ hoạt động kinh doanh", "Lợi nhuận thuần từ hoạt động kinh doanh"],
-    "interest_expense": ["interest_expenses", "interest_expense", "Chi phí lãi vay"],
-    "tax": ["corporate_income_tax", "tax_rate_value", "Chi phí thuế TNDN hiện hành", "Thuế thu nhập doanh nghiệp"],
+    "interest_expense": ["interest_expenses", "interests_expenses", "interest_expense", "Chi phí lãi vay"],
+    "tax": ["corporate_income_tax_expenses", "corporate_income_tax_for_the_year", "corporate_income_tax", "tax_rate_value", "Chi phí thuế TNDN hiện hành", "Thuế thu nhập doanh nghiệp"],
     # net_profit_attributable... + profit_after_tax cho ngành bảo hiểm (BVH) — IS bảo
     # hiểm KHÔNG có net_profit_loss_after_tax; nếu thiếu, fallback ebit×0.8 lấy nhầm
     # doanh thu phí (ROE phi lý). Đặt SAU key chuẩn để DN thường vẫn match key đầu.
-    "net_income": ["net_profit_loss_after_tax", "net_profit_attributable_to_shareholders_of_the_group", "profit_after_tax", "net_income", "Lợi nhuận sau thuế"],
+    "net_income": ["net_profit_loss_after_tax", "profit_after_tax", "net_profit_attributable_to_shareholders_of_the_group", "net_income", "Lợi nhuận sau thuế"],
     
     "cash": ["cash_and_cash_equivalents", "Tiền và các khoản tương đương tiền"],
     "short_term_financial_investments": [
@@ -41,13 +42,13 @@ NON_FIN_KEYWORDS = {
         "short_term_investments",
         "Đầu tư tài chính ngắn hạn",
     ],
-    "receivables": ["short_term_trade_receivables", "short_term_receivables", "Phải thu ngắn hạn của khách hàng", "Các khoản phải thu"],
-    "inventory": ["inventories", "inventory", "Hàng tồn kho"],
+    "receivables": ["short_term_trade_receivables", "trade_accounts_receivable", "short_term_receivables", "Phải thu ngắn hạn của khách hàng", "Các khoản phải thu"],
+    "inventory": ["inventories_net", "inventories", "inventory", "Hàng tồn kho"],
     "fixed_assets": ["tangible_fixed_assets", "fixed_assets", "Tài sản cố định", "Tài sản cố định hữu hình"],
     "total_assets": ["total_assets", "Tổng tài sản", "TỔNG TÀI SẢN"],
     "st_debt": ["short_term_borrowings", "short_term_debt", "Vay và nợ thuê tài chính ngắn hạn", "Vay ngắn hạn"],
     "lt_debt": ["long_term_borrowings", "long_term_debt", "Vay và nợ thuê tài chính dài hạn", "Vay dài hạn"],
-    "accounts_payable": ["short_term_trade_payables", "accounts_payable", "Phải trả người bán ngắn hạn", "Phải trả người bán"],
+    "accounts_payable": ["short_term_trade_payables", "trade_accounts_payable", "accounts_payable", "Phải trả người bán ngắn hạn", "Phải trả người bán"],
     "total_equity": ["owners_equity", "shareholders_equity", "capital_and_reserves", "Vốn chủ sở hữu"],
     "minority_interest": [
         "minority_interests",
@@ -117,23 +118,98 @@ def _quarterly_revenues(db: Session, ticker: str) -> List[float]:
     return out
 
 
-def _match_value(data: Dict[str, float], keywords: List[str], fallback: float = 0.0) -> float:
-    """Tìm giá trị khớp với từ khóa trong dict dữ liệu."""
+@overload
+def _match_value(data: dict, keywords: List[str], fallback: float = 0.0) -> float: ...
+
+@overload
+def _match_value(data: dict, keywords: List[str], fallback: None) -> float | None: ...
+
+def _match_value(data: dict, keywords: List[str], fallback: float | None = 0.0) -> float | None:
+    """Chỉ dùng alias chính xác; không bắt nhầm chỉ tiêu tổng/con hoặc legacy."""
     for kw in keywords:
         kw_lower = kw.lower()
         for k, v in data.items():
             if k.lower().strip() == kw_lower:
-                return clean_value(v)
-        # Sau exact match mới dùng startswith để không bắt nhầm các dòng legacy
-        # như minority_interests_before_2015 khi cần minority_interests hiện hành.
-        for k, v in data.items():
-            if k.lower().startswith(kw_lower):
-                return clean_value(v)
-        # Fallback contains
-        for k, v in data.items():
-            if kw_lower in k.lower():
-                return clean_value(v)
+                if v is not None and pd.notna(v):
+                    return float(v)
     return fallback
+
+
+def _required_value(data: dict, aliases: list[str], field: str) -> float:
+    value = _match_value(data, aliases, fallback=None)
+    if value is None or not math.isfinite(value):
+        raise ValueError(f"MISSING_FINANCIAL_INPUT: {field}; thiếu chỉ tiêu hoặc chưa đủ bốn quý")
+    return value
+
+
+def _balance_residuals(data: dict, *, cash: float, receivables: float, inventory: float,
+                       fixed: float, short_debt: float, payable: float, long_debt: float) -> dict[str, float | None]:
+    """Phần còn lại của từng tổng mục báo cáo, không tự phân bổ 50/50."""
+    groups = {
+        "other_current_assets": (["current_assets"], cash + receivables + inventory),
+        "other_long_term_assets": (["long_term_assets", "non_current_assets"], fixed),
+        "other_current_liabilities": (["current_liabilities"], short_debt + payable),
+        "other_long_term_liabilities": (["long_term_liabilities", "non_current_liabilities"], long_debt),
+    }
+    result = {}
+    for field, (aliases, known) in groups.items():
+        subtotal = _match_value(data, aliases, fallback=None)
+        result[field] = None if subtotal is None else subtotal - known
+    return result
+
+
+def _source_audit_flags(audit: dict | None, ticker: str, mapping_version: str) -> list[str]:
+    if not audit:
+        return ["SOURCE_AUDIT_MISSING"]
+    if audit.get("mapping_version") != mapping_version:
+        return ["SOURCE_AUDIT_STALE"]
+    row = next((item for item in audit.get("rows", []) if item.get("ticker") == ticker), None)
+    if not row:
+        return ["SOURCE_AUDIT_MISSING"]
+    flags = []
+    if row.get("source_contract_errors", 0):
+        flags.append(f"SOURCE_CONTRACT_ERROR:{row['source_contract_errors']}")
+    if row.get("CRITICAL_CONFLICT", 0):
+        flags.append(f"SOURCE_CONFLICT:{row['CRITICAL_CONFLICT']}")
+    return flags
+
+
+def _nonfinancial_income_values(data: dict, *, financial_sector: bool = False) -> dict[str, float]:
+    """Số lịch sử theo alias nguồn, không ước tính lợi nhuận để lấp số thiếu."""
+    ni = _required_value(data, NON_FIN_KEYWORDS["net_income"], "net_income")
+    rev = _required_value(data, NON_FIN_KEYWORDS["revenue"], "revenue")
+    cogs = abs(_match_value(data, NON_FIN_KEYWORDS["cogs"]))
+    gp = _match_value(data, NON_FIN_KEYWORDS["gross_profit"], fallback=None)
+    selling = abs(_match_value(data, NON_FIN_KEYWORDS["selling_expenses"]))
+    ga = _match_value(data, NON_FIN_KEYWORDS["ga_expenses"], fallback=None)
+    if financial_sector:
+        # CTCK dùng chi phí hoạt động để đối chiếu lợi nhuận gộp; không gọi đây
+        # là giá vốn sản xuất. Mô hình P/B không sử dụng EBIT lõi này.
+        cost = _match_value(data, NON_FIN_KEYWORDS["opex_total"], fallback=None)
+        if cost is not None:
+            cogs = abs(cost)
+        gp = gp if gp is not None else _match_value(data, ["gross_insurance_operating_profit"])
+    elif _match_value(data, NON_FIN_KEYWORDS["cogs"], fallback=None) is None:
+        raise ValueError("MISSING_FINANCIAL_INPUT: cogs")
+    if gp is None:
+        gp = rev - cogs
+    if ga is not None:
+        opex = selling + abs(ga)
+    else:
+        opex = abs(_required_value(data, NON_FIN_KEYWORDS["opex_total"], "opex")) if not financial_sector else selling
+    tax = _match_value(data, NON_FIN_KEYWORDS["tax"], fallback=None)
+    if tax is None:
+        current_tax = _match_value(data, ["business_income_tax_current"], fallback=None)
+        deferred_tax = _match_value(data, ["business_income_tax_deferred"], fallback=None)
+        if current_tax is None and deferred_tax is None:
+            if not financial_sector:
+                raise ValueError("MISSING_FINANCIAL_INPUT: tax")
+            tax = 0.0
+        else:
+            tax = (current_tax or 0.0) + (deferred_tax or 0.0)
+    return {"revenue": rev, "cogs": cogs, "gross_profit": gp, "opex": opex,
+            "ebit": gp - opex, "interest_expense": abs(_match_value(data, NON_FIN_KEYWORDS["interest_expense"])),
+            "tax": abs(tax), "net_income": ni}
 
 def get_historical_years(db: Session, ticker: str) -> List[int]:
     """Lấy danh sách các năm có dữ liệu BCTC (bỏ qua năm rỗng)."""
@@ -230,7 +306,11 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
     shares = get_shares_outstanding_repo(db, ticker)
 
     # 1. Truy vấn toàn bộ dữ liệu quý của ticker
-    records = db.query(FinancialsQuarterly).filter(FinancialsQuarterly.ticker == ticker).all()
+    records = db.query(FinancialsQuarterly).filter(
+        FinancialsQuarterly.ticker == ticker,
+        FinancialsQuarterly.is_consolidated.is_(True),
+        FinancialsQuarterly.currency == "VND",
+    ).all()
     fin_data = [{
         "fiscal_year": r.fiscal_year,
         "fiscal_quarter": r.fiscal_quarter,
@@ -238,12 +318,12 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
         "statement": r.statement,
         "is_restated": r.is_restated,
         "published_at": r.published_at,
-        "value": float(r.value) if r.value is not None else 0.0
+        "value": float(r.value) if r.value is not None else None
     } for r in records]
     df_fin = pd.DataFrame(fin_data)
 
     # Lấy danh sách các năm
-    years = get_historical_years(db, ticker)
+    years = sorted({r.fiscal_year for r in records})
     if not years:
         raise ValueError(f"Không có dữ liệu tài chính cho {ticker}")
 
@@ -255,6 +335,19 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
     historical_is = []
     historical_bs = []
     historical_cf = []
+    extraction_flags = []
+    from valuation.engine.sector_router import route
+    sector_plan = route(ticker) or {}
+    financial_sector = sector_plan.get("group") in {"CK", "BH", "Chứng khoán", "Bảo hiểm"} or meta.sector in {"Insurance", "Securities", "Financial Services"}
+    try:
+        from valuation.config import PROJECT_ROOT
+        from valuation.ingest.taxonomy import taxonomy_mapping
+        from valuation.services.ranking_store import read_json
+
+        audit = read_json(PROJECT_ROOT / "data/source_quality_status.json", {})
+        extraction_flags.extend(_source_audit_flags(audit, ticker, taxonomy_mapping()["version"]))
+    except (OSError, ValueError, TypeError):
+        extraction_flags.append("SOURCE_AUDIT_MISSING")
 
     # 2. Quy đổi dữ liệu quý -> năm cho từng năm lịch sử
     for y in years:
@@ -268,27 +361,31 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
         if not annual_data:
             continue
 
+        keywords = BANK_KEYWORDS if is_bank else NON_FIN_KEYWORDS
+        for field in ("net_income", "total_assets", "total_equity"):
+            try:
+                _required_value(annual_data, keywords[field], field)
+            except ValueError as exc:
+                raise ValueError(f"{ticker} {y}: {exc}") from exc
+
         if is_bank:
             # Match dữ liệu bank
-            nii = _match_value(annual_data, BANK_KEYWORDS["net_interest_income"])
-            toi = _match_value(annual_data, BANK_KEYWORDS["total_operating_income"])
-            opex = abs(_match_value(annual_data, BANK_KEYWORDS["operating_expenses"]))
-            prov = abs(_match_value(annual_data, BANK_KEYWORDS["provision_expense"]))
-            pbt = _match_value(annual_data, BANK_KEYWORDS["pretax_income"])
-            ni = _match_value(annual_data, BANK_KEYWORDS["net_income"])
+            nii = _required_value(annual_data, BANK_KEYWORDS["net_interest_income"], "net_interest_income")
+            toi = _required_value(annual_data, BANK_KEYWORDS["total_operating_income"], "total_operating_income")
+            opex = abs(_required_value(annual_data, BANK_KEYWORDS["operating_expenses"], "operating_expenses"))
+            prov = abs(_required_value(annual_data, BANK_KEYWORDS["provision_expense"], "provision_expense"))
+            ni = _required_value(annual_data, BANK_KEYWORDS["net_income"], "net_income")
             
-            loans = _match_value(annual_data, BANK_KEYWORDS["customer_loans"])
-            deposits = _match_value(annual_data, BANK_KEYWORDS["customer_deposits"])
-            assets = _match_value(annual_data, BANK_KEYWORDS["total_assets"])
-            equity = _match_value(annual_data, BANK_KEYWORDS["total_equity"])
+            loans = _required_value(annual_data, BANK_KEYWORDS["customer_loans"], "customer_loans")
+            deposits = _required_value(annual_data, BANK_KEYWORDS["customer_deposits"], "customer_deposits")
+            assets = _required_value(annual_data, BANK_KEYWORDS["total_assets"], "total_assets")
+            equity = _required_value(annual_data, BANK_KEYWORDS["total_equity"], "total_equity")
             
             # Tính toán gián tiếp nếu thiếu trường
             non_interest_income = toi - nii
             ppop = toi - opex
-            if pbt == 0:
-                pbt = ppop - prov
-            if ni == 0:
-                ni = pbt * 0.8
+            # Số 0 có thể là số báo cáo thật, không thay bằng lợi nhuận ước tính.
+            pbt = _required_value(annual_data, BANK_KEYWORDS["pretax_income"], "pretax_income")
                 
             other_earning_assets = max(0.0, assets - loans)
             other_liabilities = max(0.0, assets - deposits - equity)
@@ -316,38 +413,19 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 total_equity=to_billion_vnd(equity)
             ))
         else:
-            # Match dữ liệu phi tài chính
-            rev = _match_value(annual_data, NON_FIN_KEYWORDS["revenue"])
-            cogs = abs(_match_value(annual_data, NON_FIN_KEYWORDS["cogs"]))
-            gp = _match_value(annual_data, NON_FIN_KEYWORDS["gross_profit"])
-            # OPEX = chi phí bán hàng + QLDN (PHẢI cộng cả 2). _match_value chỉ trả
-            # 1 dòng khớp đầu → nếu dùng chung 1 key sẽ bắt mỗi selling_expenses,
-            # bỏ sót G&A → EBIT bị thổi phồng (~2pp margin) cho mọi mã phi TC.
-            sell_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["selling_expenses"]))
-            ga_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["ga_expenses"]))
-            opex = sell_exp + ga_exp
-            if opex == 0:  # fallback: dòng chi phí hoạt động gộp (nếu không tách được)
-                opex = abs(_match_value(annual_data, NON_FIN_KEYWORDS["opex_total"]))
-            ebit_reported = _match_value(annual_data, NON_FIN_KEYWORDS["operating_profit"])
-            int_exp = abs(_match_value(annual_data, NON_FIN_KEYWORDS["interest_expense"]))
-            tax = abs(_match_value(annual_data, NON_FIN_KEYWORDS["tax"]))
-            ni = _match_value(annual_data, NON_FIN_KEYWORDS["net_income"])
-
-            # EBIT LÕI = gross_profit - opex. KHÔNG dùng operating_profit_loss làm
-            # chính: với holding (vd REE) nó gồm lãi liên kết + lãi tài chính KHÔNG
-            # co giãn theo doanh thu → chiếu doanh thu × biên sẽ thổi phồng. Chỉ
-            # fallback về reported khi core <= 0 (thường do thiếu line opex).
-            if gp == 0:
-                gp = rev - cogs
-            ebit_core = gp - opex
-            if ebit_core > 0:
-                ebit = ebit_core
-            elif ebit_reported != 0:
-                ebit = ebit_reported
-            else:
-                ebit = ebit_core
-            if ni == 0:
-                ni = (ebit - int_exp) * 0.8
+            income = _nonfinancial_income_values(annual_data, financial_sector=financial_sector)
+            rev, cogs, gp, opex, ebit, int_exp, tax, ni = (
+                income[k] for k in ("revenue", "cogs", "gross_profit", "opex", "ebit", "interest_expense", "tax", "net_income")
+            )
+            if not financial_sector:
+                for field in ("cash", "st_debt", "lt_debt", "receivables", "inventory", "accounts_payable", "cfo", "capex", "depreciation"):
+                    if _match_value(annual_data, NON_FIN_KEYWORDS[field], fallback=None) is None:
+                        extraction_flags.append(f"MISSING_FINANCIAL_INPUT:{y}:{field}")
+            elif _match_value(annual_data, NON_FIN_KEYWORDS["tax"], fallback=None) is None and all(
+                _match_value(annual_data, [item], fallback=None) is None
+                for item in ("business_income_tax_current", "business_income_tax_deferred")
+            ):
+                extraction_flags.append(f"MISSING_DISPLAY_INPUT:{y}:tax")
 
             cash = _match_value(annual_data, NON_FIN_KEYWORDS["cash"])
             short_term_financial_investments = _match_value(
@@ -365,31 +443,16 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 annual_data, NON_FIN_KEYWORDS["minority_interest"]
             )
             
-            # Đảm bảo Cân đối kế toán: Tổng Tài Sản = Nợ Phải Trả + Vốn Chủ Sở Hữu
-            # Suy ra: Nợ Phải Trả mục tiêu = assets - equity
-            target_liab = max(0.0, assets - equity)
-            
-            # Phân bổ tài sản còn lại
-            known_assets = cash + rec + inv + fixed
-            rem_assets = assets - known_assets
-            if rem_assets >= 0:
-                other_curr_assets = rem_assets * 0.5
-                other_lt_assets = rem_assets * 0.5
-            else:
-                other_curr_assets = 0.0
-                other_lt_assets = 0.0
-                
-            # Phân bổ nợ phải trả còn lại
-            known_liab = st_debt + pay + lt_debt
-            rem_liab = target_liab - known_liab
-            if rem_liab >= 0:
-                other_curr_liab = rem_liab * 0.5
-                other_lt_liab = rem_liab * 0.5
-            else:
-                # Nếu known_liab đã lớn hơn target_liab (thường do lỗi dữ liệu)
-                # Ép các khoản nợ khác về 0 và chấp nhận lệch hoặc tự động điều chỉnh st_debt/lt_debt
-                other_curr_liab = 0.0
-                other_lt_liab = 0.0
+            residuals = _balance_residuals(annual_data, cash=cash, receivables=rec,
+                inventory=inv, fixed=fixed, short_debt=st_debt, payable=pay, long_debt=lt_debt)
+            for field, value in residuals.items():
+                if value is None:
+                    prefix = "MISSING_DISPLAY_INPUT" if financial_sector else "MISSING_FINANCIAL_INPUT"
+                    extraction_flags.append(f"{prefix}:{y}:{field}")
+            other_curr_assets = residuals["other_current_assets"] or 0.0
+            other_lt_assets = residuals["other_long_term_assets"] or 0.0
+            other_curr_liab = residuals["other_current_liabilities"] or 0.0
+            other_lt_liab = residuals["other_long_term_liabilities"] or 0.0
                 
             # Giữ nguyên vốn chủ sở hữu báo cáo. Nếu các cấu phần không khớp,
             # Pydantic sẽ phát cảnh báo cân đối; không được che lỗi bằng cách dựng
@@ -431,6 +494,11 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
                 other_long_term_liabilities=to_billion_vnd(other_lt_liab),
                 total_equity=to_billion_vnd(equity),
                 minority_interest=to_billion_vnd(minority_interest),
+                reported_total_liabilities=(
+                    to_billion_vnd(value)
+                    if (value := _match_value(annual_data, ["liabilities", "total_liabilities"], fallback=None)) is not None
+                    else None
+                ),
             ))
             
             historical_cf.append(CashFlow(
@@ -529,6 +597,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
 
         from valuation.data_access.freshness import data_freshness_flags
         data_flags = data_freshness_flags(db, ticker)
+        data_flags.extend(extraction_flags)
         if credit_growth_capped:
             data_flags.append("CREDIT_GROWTH_CAPPED")
         return CompanyBank(
@@ -765,7 +834,7 @@ def build_company_data(db: Session, ticker: str, mode: str = "TTM", fetch_live: 
             historical_bs=historical_bs,
             historical_cf=historical_cf,
             assumptions=assumptions,
-            data_flags=data_freshness_flags(db, ticker)
+            data_flags=data_freshness_flags(db, ticker) + extraction_flags
         )
 
 
