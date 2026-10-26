@@ -1,0 +1,9 @@
+[Unit]
+Description=VN100 - kéo dòng tiền 18:00 thứ 2-6 (giờ Việt Nam), sau giờ tự doanh chốt số 17:30
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 18:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+
+[Install]
+WantedBy=timers.target

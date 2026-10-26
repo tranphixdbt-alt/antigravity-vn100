@@ -1,0 +1,12 @@
+[Unit]
+Description=VN100 - bản tóm tắt tuần cho vòng học (scripts/weekly_learning_digest.py, không gọi AI)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python scripts/weekly_learning_digest.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:__APP_DIR__/logs/weekly_digest.log
+StandardError=append:__APP_DIR__/logs/weekly_digest.log

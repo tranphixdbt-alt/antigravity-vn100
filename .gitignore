@@ -42,6 +42,10 @@ test_output.txt
 .macro_bulletin_cache.json
 .deepseek_report_cache/
 .vn100_ranking/
+.data_update/
+.flow_update/
+.daily_report/
+.assistant/
 VN100_Valuation_Results.csv
 compare_table.md
 .streamlit/secrets.toml
@@ -59,3 +63,14 @@ vn100_backup.sql
 # Báo cáo PDF CTCK tải nội bộ (bản quyền — không commit/phát tán)
 reports_pdf/
 *.pdf
+reports/broker_pdfs/
+# Bảng định giá xuất ra có tiêu đề/link báo cáo CTCK — chỉ lưu nội bộ
+reports/*.xlsx
+
+# Bản chép dự án gửi repo công khai ngo-tuankiet/EA_dinhGiaP — không đưa vào repo này
+EA_dinhGiaP/
+
+# Claude Code: cấu hình máy và worktree tạm của từng phiên — không đưa lên git (skill trong .claude/skills thì có)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/launch.json

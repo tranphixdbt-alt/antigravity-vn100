@@ -1,0 +1,21 @@
+[Unit]
+Description=VN100 - app Streamlit (chỉ nghe 127.0.0.1:8506; ra ngoài qua Caddy có mật khẩu — docs/DEPLOY_VPS.md)
+After=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStartPre=__APP_DIR__/.venv/bin/python scripts/ensure_portable_db.py
+ExecStart=__APP_DIR__/.venv/bin/python -m streamlit run streamlit_app.py
+Environment=STREAMLIT_SERVER_ADDRESS=127.0.0.1
+Environment=STREAMLIT_SERVER_PORT=8506
+Environment=STREAMLIT_SERVER_HEADLESS=true
+Environment=STREAMLIT_SERVER_DISCONNECTED_SESSION_TTL=1800
+Environment=STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=none
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:__APP_DIR__/logs/streamlit.log
+StandardError=append:__APP_DIR__/logs/streamlit.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=VN100 - kéo dòng tiền khớp/thỏa thuận VCI vào flow_daily (scripts/update_flow_daily.py, D73)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python scripts/update_flow_daily.py
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:__APP_DIR__/logs/flow_daily.log
+StandardError=append:__APP_DIR__/logs/flow_daily.log

@@ -1,25 +1,31 @@
-beautifulsoup4
-fastapi
-httpx
-jinja2
-numpy
-openai
-openpyxl
-pandas
-plotly
-pydantic
-pydantic-settings
-python-dotenv
-python-docx
-PyYAML
-reportlab
-gspread
-gspread-dataframe
-SQLAlchemy
-streamlit
-tzdata
-uvicorn
-vnai>=2.5.7
-vnii>=0.2.5
-vnstock>=4.0.6
-vnstock_data>=3.2.8
+# Ghim đúng phiên bản đang chạy trên máy chủ dự án (Mac, 26/10/2026) để VPS chạy giống hệt.
+# vnstock/vnai/vnii/vnstock_data là dòng 4.x (KHÔNG dùng vnstock 5.x: khác import, đăng nhập). Cài từ index vnstocks.com,
+# vnstock_data bằng bộ cài gói tài trợ. Muốn nâng cấp: thử trên máy trước, chạy pytest, rồi mới sửa số ở đây.
+beautifulsoup4==4.15.0
+fastapi==0.141.1
+httpx==0.28.1
+jinja2==3.1.6
+numpy==2.3.5
+openai==3.6.0
+openpyxl==3.1.5
+pandas==2.3.3
+plotly==7.0.0
+kaleido==1.5.0  # Plotly xuất ảnh tĩnh cho PDF/Word; cần Chrome (VPS: kaleido_get_chrome)
+playwright==1.64.0  # Xuất PDF báo cáo (HTML → PDF) bằng Chrome; VPS: playwright install chromium
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+discord.py==2.7.1  # bot Discord (scripts/discord_bot.py) — trước đây thiếu, chỉ có trên máy Mac
+python-docx==1.2.0
+PyYAML==6.0.3
+reportlab==5.0.1
+gspread==6.2.1
+gspread-dataframe==4.0.0
+SQLAlchemy==2.0.52
+streamlit==1.55.0  # CSS điện thoại (workspace.css) dựa vào data-testid nội bộ của bản này
+tzdata==2026.3
+uvicorn==0.52.4
+vnai==2.5.9
+vnii==0.2.5
+vnstock==4.0.7
+vnstock_data==3.2.8

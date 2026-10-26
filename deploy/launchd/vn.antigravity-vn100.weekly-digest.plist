@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>vn.antigravity-vn100.weekly-digest</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/macos/.venv/bin/python</string><string>scripts/weekly_learning_digest.py</string></array>
+  <key>WorkingDirectory</key><string>/Users/macos/Library/CloudStorage/GoogleDrive-tranphixdbt@gmail.com/.shortcut-targets-by-id/18agtU6fpR5TUOQ34MscdIETims-hoTsa/DATA-G/Phi/1 Antigravity/chứng khoán định giá/antigravity-vn100</string>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/Users/macos/Library/CloudStorage/GoogleDrive-tranphixdbt@gmail.com/.shortcut-targets-by-id/18agtU6fpR5TUOQ34MscdIETims-hoTsa/DATA-G/Phi/1 Antigravity/chứng khoán định giá/antigravity-vn100/logs/weekly_digest.log</string>
+  <key>StandardErrorPath</key><string>/Users/macos/Library/CloudStorage/GoogleDrive-tranphixdbt@gmail.com/.shortcut-targets-by-id/18agtU6fpR5TUOQ34MscdIETims-hoTsa/DATA-G/Phi/1 Antigravity/chứng khoán định giá/antigravity-vn100/logs/weekly_digest.log</string>
+</dict>
+</plist>

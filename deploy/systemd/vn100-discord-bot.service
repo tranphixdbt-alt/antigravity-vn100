@@ -1,0 +1,17 @@
+[Unit]
+Description=VN100 - bot Discord (scripts/discord_bot.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python scripts/discord_bot.py
+Restart=always
+RestartSec=60
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:__APP_DIR__/logs/discord_bot.log
+StandardError=append:__APP_DIR__/logs/discord_bot.log
+
+[Install]
+WantedBy=multi-user.target

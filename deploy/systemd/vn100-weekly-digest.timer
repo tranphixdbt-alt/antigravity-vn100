@@ -1,0 +1,9 @@
+[Unit]
+Description=VN100 - tóm tắt tuần Chủ nhật 18:00 giờ VN (trước routine Claude cloud 20:00)
+
+[Timer]
+OnCalendar=Sun *-*-* 18:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=VN100 - chạy báo cáo sáng 07:50 thứ 2-6 (giờ Việt Nam), như launchd trên Mac
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 07:50:00 Asia/Ho_Chi_Minh
+# VPS khởi động lại sau 07:50 → chạy bù một lần (Mac tắt máy thì không bù được).
+Persistent=true
+
+[Install]
+WantedBy=timers.target
