@@ -16,6 +16,9 @@ description: Khi ingest, chuẩn hóa, lưu hoặc đọc dữ liệu tài chín
 - Tính & lưu vào `flags`: **Altman Z-score** (chọn đúng biến thể SX/phi SX), **Beneish M-score**, **Piotroski F-score**, accruals ratio, cash conversion (LN ròng / dòng tiền HĐKD).
 - Phát hiện bất thường: dòng tiền âm kéo dài, LN tăng nhưng dòng tiền giảm, khoản phải thu phình bất thường → gắn cờ, KHÔNG tự ý "làm mượt".
 - Thanh khoản: ADTV 3 tháng dưới ngưỡng → cờ "thanh khoản thấp", vẫn định giá nhưng cảnh báo.
+- Khi dùng dữ liệu cho khuyến nghị/tích sản, kiểm tra `data/source_quality_status.json`
+  nếu có. Mã có xung đột trọng yếu hoặc thiếu input không được nâng lên danh
+  sách tốt chỉ vì upside cao.
 
 ## Chống bias (cực kỳ quan trọng cho backfill & backtest)
 1. **Lookahead bias:** khi backtest hoặc tính chỉ số tại thời điểm T, chỉ dùng dữ liệu **đã công bố tính đến T**. BCTC quý chỉ "có hiệu lực" sau ngày công bố thực tế, KHÔNG phải ngày kết thúc quý. Lưu `published_at` và lọc theo nó.
@@ -25,6 +28,8 @@ description: Khi ingest, chuẩn hóa, lưu hoặc đọc dữ liệu tài chín
 ## Khi mâu thuẫn nguồn (vnstock vs filing)
 - Ưu tiên **filing gốc đã kiểm toán** > vnstock > số chưa kiểm toán.
 - Nếu lệch đáng kể → gắn cờ và báo, KHÔNG tự chọn im lặng.
+- DeepSeek/AI chỉ được ghi nhận nghi vấn dữ liệu; không được tự sửa DB hoặc bịa
+  nguồn thay cho filing gốc.
 
 ## Luật ghi DB
 - Mọi insert/update **idempotent** (dùng UPSERT theo khóa chính). Chạy lại backfill không được nhân đôi dữ liệu.
@@ -32,5 +37,48 @@ description: Khi ingest, chuẩn hóa, lưu hoặc đọc dữ liệu tài chín
 - Không DELETE dữ liệu lịch sử; muốn sửa thì thêm version mới.
 - Mọi bản ghi lưu `source` và `ingested_at`.
 
+## Lỗi đã gặp thực tế (đọc trước khi đụng cashflow)
+
+### CFI/CFF bị trừ CapEx hai lần
+- CFI (dòng tiền đầu tư) trong BCTC VN **đã bao gồm sẵn CapEx âm** như một dòng
+  con. Model lại lưu CapEx riêng để tính FCFF. Nếu cộng thẳng CFI+CFF vào
+  `cf_other` mà không cộng ngược CapEx lại, phép đối chiếu
+  `Δcash ≈ cfo - capex + cf_other` (trong `Company.validate_model_integrity`,
+  `valuation/models/financials.py`) sẽ **trừ CapEx hai lần** — hoặc tệ hơn, bị
+  "vá" bằng cách âm thầm set `cf_other=0.0`.
+- Sửa đúng: `_cashflow_other_excluding_capex()`
+  (`valuation/data_access/repo.py`) cộng ngược `capex_abs` vào tổng
+  CFI+CFF+FX trước khi so khớp. Khi không khớp được taxonomy CFI/CFF, gắn cờ
+  `MISSING_FINANCIAL_INPUT:{year}:cfi_cff` — **không** default về 0 rồi im
+  lặng bỏ qua.
+- Bài học chung: bất kỳ dòng tổng hợp nào (CFI, CFF, "cf_other", "khác") đều có
+  khả năng **chồng lấn** với một field đã tách riêng (CapEx, cổ tức, nợ vay).
+  Trước khi cộng gộp, luôn kiểm tra dòng tổng có chứa sẵn dòng con đang dùng
+  riêng hay không.
+
 ## Test bắt buộc
 - Test chuẩn hóa đơn vị (tỷ → VND), test UPSERT idempotent (chạy 2 lần, đếm dòng không đổi), test lọc theo `published_at` (không rò dữ liệu tương lai).
+
+## Bài học đã gặp trong dự án, D9–D33 (chi tiết: `DECISIONS.md`)
+Bảng này viết từ DECISIONS.md tới D33; các quyết định D34–D82 mới hơn (vd D64, D66, D67 về ngân hàng) có thể đã thay đổi vài dòng — đọc DECISIONS.md trước khi dựa vào.
+
+Bẫy chung cho mọi dự án tài chính Việt Nam nằm ở skill toàn máy `vn-finance-data` (`~/.claude/skills/`). Dưới đây là chỗ trong repo này
+đang xử lý từng bẫy. Repo dùng **vnstock 4.0.2** (dòng cũ): API và lỗi khác bản 5.x, nên kiểm thế hệ trước khi sửa ingest.
+
+| Bẫy | Mã | Chỗ xử lý trong repo |
+|---|---|---|
+| Upsert dòng tiền khối ngoại ghi đè OHLCV thành NULL | C8 | `ingest/pipeline.py::upsert_market_flows` chỉ update `_MARKET_FLOW_COLUMNS`; `repo.get_latest_price` bỏ ngày close NULL |
+| Giá lệch "thế hệ" giữa các mã, vĩ mô cũ | D16 | `data_access/freshness.py` (`STALE_PRICE` > 5 ngày, `STALE_MACRO_RF` > 30 ngày); `pipeline._incremental_price_start` (đệm 5 ngày) |
+| Tên CTCK trùng hoặc nhầm (HCM ≠ HSC, hậu tố tên chuyên viên) | D24 | `config/broker_aliases.yaml`, `ingest/broker_names.normalize_broker`, `tests/test_broker_names.py` |
+| Dữ liệu đồng thuận gõ tay lẫn với dữ liệu cào | D24 | cờ `is_synthetic`, `--i-know-this-is-fake`; migration `scripts/migrate_consensus_quality.py` (dry-run mặc định, không sửa cột `broker` trong PK) |
+| Hai cách đọc đồng thuận cho hai số khác nhau | D23 | chỉ đọc qua `calibration/consensus_view.get_consensus_view` (dedup CTCK, `report_date <= as_of`) |
+| Bóc nhầm số quý thành số dự phóng; thiếu dữ liệu ghi 0 | D31 | `engine/consensus_extract._first_forecast`; thiếu thì trả `None` |
+| % nhân đôi khi xuất (VCB "1000%"); sai tên key cho ra cột rỗng | D14b, D11 | `export_100.py` (Upside không `*100`; Sector lấy `group`, MOS lấy `decision.target_mos`) |
+| UI không hiển thị cờ của engine | D8 | `engine/flag_descriptions.py`; cờ mới phải thêm mô tả (`tests/test_flag_descriptions.py`) |
+| OPEX chỉ bắt dòng khớp đầu tiên (thiếu QLDN) | C3 | `data_access/repo.py` (bán hàng + QLDN) |
+| Connection đọc bị poison sau query lỗi | C4 | `db/session.py`: `engine_read` AUTOCOMMIT |
+| App trỏ nhầm cluster PostgreSQL gần rỗng | D23-b | **còn rủi ro:** plist `homebrew.mxcl.postgresql@15` trong `~/Library/LaunchAgents` có thể giành cổng 5432 |
+| Vĩ mô: đơn vị % vs số thập phân; chuỗi không phải %YoY | D17, D18 | `ingest/import_macro_csv.py` (tự đổi khi \|v\| > 1); **không** ingest M2_YOY vì nguồn chỉ có số tuyệt đối; domain phải nằm trong `macro_sources.allowed_domains` (`_assert_allowed_host`) |
+
+**Còn lệch so với guardrail** (theo `.agents/rules/project-context.md`, có thể đã cũ, kiểm lại trước khi dựa vào):
+`published_at` chưa lấy từ ngày công bố thật; ingest chưa có cổng QC chặn BCTC rác (TA = L + E) trước khi lưu.

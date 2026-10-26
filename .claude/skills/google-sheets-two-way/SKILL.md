@@ -1,0 +1,1 @@
+../../../.agents/skills/google-sheets-two-way/SKILL.md
