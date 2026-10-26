@@ -1,4 +1,6 @@
 import logging
+
+from valuation.engine.decision_engine import REC_LABELS_VI
 import datetime
 from collections import Counter
 from pathlib import Path
@@ -400,21 +402,18 @@ def update_single_ticker_to_gsheets(
         except Exception as e:
             logger.warning(f"Error fetching consensus for single {ticker}: {e}")
             
-        # 4. Tính toán Upside & MOS (Biên an toàn) & Khuyến nghị
+        # 4. Upside & khuyến nghị — cùng nguồn decision_engine với UI/PDF/báo cáo.
+        # (Công thức cũ "upside > 1 − giá/FV" luôn cho MUA khi FV > giá.)
+        from valuation.engine.decision_engine import recommend
+
         upside = None
         mos = None
-        if curr_price > 0:
-            upside = (blended_fv - curr_price) / curr_price
-            mos = 1.0 - (curr_price / blended_fv) if blended_fv > 0 else 0.0
-            
         rating = "THEO DÕI"
-        if upside is not None and mos is not None:
-            if upside > mos:
-                rating = "MUA"
-            elif upside < 0:
-                rating = "BÁN"
-            else:
-                rating = "THEO DÕI"
+        if curr_price > 0 and blended_fv:
+            decision = recommend(ticker, curr_price, blended_fv)
+            upside = decision["upside"] / 100.0
+            mos = decision["target_mos"]
+            rating = REC_LABELS_VI[decision["recommendation"]]
                 
         # 5. UI ưu tiên dùng lại báo cáo đã kiểm chứng để không tạo API call thứ hai.
         if not ai_insight and allow_ai_call:
@@ -609,7 +608,7 @@ def build_vn100_dataframe(results: list) -> pd.DataFrame:
             "Giá": round(r["price"]) if r.get("price") else None,
             "FV": round(r["fair_value"]) if r.get("fair_value") is not None else None,
             "Upside %": round(r["upside"] * 100, 1) if r.get("upside") is not None else None,
-            "Khuyến nghị": r.get("recommendation", "THEO DÕI"),
+            "Khuyến nghị": REC_LABELS_VI.get(r.get("recommendation"), r.get("recommendation")),
             "Độ tin cậy": confidence,
             "Cờ": ", ".join(flags),
         })

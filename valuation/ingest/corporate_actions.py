@@ -1,4 +1,5 @@
 """Thu thập và ghi idempotent sự kiện vốn/quyền cổ đông."""
+
 from __future__ import annotations
 
 import datetime
@@ -7,24 +8,26 @@ import json
 import math
 import re
 import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any
 
 import yaml
 from sqlalchemy.orm import Session
+from vnstock import Company as VnstockCompany
 
 from valuation.config import load_defaults
 from valuation.db.models import CorporateAction, CorporateActionSync, Ticker
 
 
-def _value(row: Dict[str, Any], *keys: str) -> Any:
+def _value(row: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in row and row[key] is not None:
             return row[key]
     return None
 
 
-def _date(value: Any) -> Optional[datetime.date]:
+def _date(value: Any) -> datetime.date | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime.datetime):
@@ -40,7 +43,7 @@ def _date(value: Any) -> Optional[datetime.date]:
         return None
 
 
-def _number(value: Any) -> Optional[float]:
+def _number(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
@@ -50,7 +53,7 @@ def _number(value: Any) -> Optional[float]:
     return parsed if math.isfinite(parsed) else None
 
 
-def _event_type(code: str, title: str, cash_amount: Optional[float]) -> str:
+def _event_type(code: str, title: str, cash_amount: float | None) -> str:
     code = str(code or "").upper()
     lowered = title.lower()
     if "mua lại" in lowered or "cổ phiếu quỹ" in lowered:
@@ -58,7 +61,11 @@ def _event_type(code: str, title: str, cash_amount: Optional[float]) -> str:
     if "chuyển đổi" in lowered:
         return "CONVERTIBLE"
     if code == "DIV":
-        return "CASH_DIVIDEND" if cash_amount is not None or "tiền mặt" in lowered else "DIVIDEND_OTHER"
+        return (
+            "CASH_DIVIDEND"
+            if cash_amount is not None or "tiền mặt" in lowered
+            else "DIVIDEND_OTHER"
+        )
     if code == "AIS":
         return "ADDITIONAL_LISTING"
     if code == "MA":
@@ -78,7 +85,7 @@ def _event_type(code: str, title: str, cash_amount: Optional[float]) -> str:
     return "OTHER_CAPITAL_ACTION"
 
 
-def _shares_from_title(title: str) -> Optional[float]:
+def _shares_from_title(title: str) -> float | None:
     match = re.search(r"([0-9][0-9.,]*)\s*cổ phiếu", title.lower())
     if not match:
         return None
@@ -98,7 +105,7 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _with_hash(values: Dict[str, Any]) -> Dict[str, Any]:
+def _with_hash(values: dict[str, Any]) -> dict[str, Any]:
     hashable = {
         key: (_json_safe(value) if not isinstance(value, dict) else value)
         for key, value in values.items()
@@ -109,9 +116,12 @@ def _with_hash(values: Dict[str, Any]) -> Dict[str, Any]:
     return values
 
 
-def normalize_vci_event(row: Dict[str, Any], *, ticker: str) -> Dict[str, Any]:
+def normalize_vci_event(row: dict[str, Any], *, ticker: str) -> dict[str, Any]:
     """Chuẩn hóa một bản ghi VCI, giữ nguyên VND/cổ phiếu và payload nguồn."""
-    title = str(_value(row, "eventTitleVi", "event_title_vi", "eventNameVi") or "Sự kiện doanh nghiệp")
+    title = str(
+        _value(row, "eventTitleVi", "event_title_vi", "eventNameVi")
+        or "Sự kiện doanh nghiệp"
+    )
     code = str(_value(row, "eventCode", "event_code") or "")
     cash_amount = _number(_value(row, "valuePerShare", "value_per_share"))
     source_event_id = str(_value(row, "id") or "").strip()
@@ -120,7 +130,7 @@ def normalize_vci_event(row: Dict[str, Any], *, ticker: str) -> Dict[str, Any]:
         source_event_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
 
     raw_payload = {str(key): _json_safe(value) for key, value in row.items()}
-    values: Dict[str, Any] = {
+    values: dict[str, Any] = {
         "ticker": ticker.upper(),
         "source_site": "VCI",
         "source_event_id": source_event_id,
@@ -146,13 +156,13 @@ def normalize_vci_event(row: Dict[str, Any], *, ticker: str) -> Dict[str, Any]:
     return _with_hash(values)
 
 
-def load_official_config_events() -> List[Dict[str, Any]]:
+def load_official_config_events() -> list[dict[str, Any]]:
     """Nạp các mốc VSDC đã đối chiếu thủ công trong config hiện có."""
     path = Path(__file__).resolve().parents[2] / "config" / "corporate_actions.yaml"
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     for item in data.get("shares_outstanding_events") or []:
         ticker = str(item.get("ticker") or "").upper()
         effective_date = _date(item.get("effective_date"))
@@ -186,7 +196,9 @@ def load_official_config_events() -> List[Dict[str, Any]]:
     return events
 
 
-def upsert_corporate_actions(db: Session, events: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+def upsert_corporate_actions(
+    db: Session, events: Iterable[dict[str, Any]]
+) -> dict[str, int]:
     """Chỉ ghi bản ghi mới/thay đổi; dữ liệu giống hệt không bị rewrite."""
     rows = list(events)
     result = {"inserted": 0, "updated": 0, "unchanged": 0}
@@ -196,7 +208,9 @@ def upsert_corporate_actions(db: Session, events: Iterable[Dict[str, Any]]) -> D
     tickers = {str(row["ticker"]).upper() for row in rows}
     existing = {
         (row.ticker, row.source_site, row.source_event_id): row
-        for row in db.query(CorporateAction).filter(CorporateAction.ticker.in_(tickers)).all()
+        for row in db.query(CorporateAction)
+        .filter(CorporateAction.ticker.in_(tickers))
+        .all()
     }
     now = datetime.datetime.now()
     try:
@@ -227,11 +241,11 @@ def fetch_vci_corporate_actions(
     start_date: datetime.date,
     end_date: datetime.date,
     page_size: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Một request/mã, chỉ lấy nhóm cổ tức/phát hành/niêm yết liên quan vốn."""
-    from vnstock import Company
-
-    company = Company(source="VCI", symbol=ticker.upper())
+    # Import vnstock ở module load trên luồng chính. Import lười đồng thời từ
+    # worker Streamlit từng gây _ModuleLock deadlock và làm checkpoint đứng ERROR.
+    company = VnstockCompany(source="VCI", symbol=ticker.upper())
     return list(
         company.provider._fetch_events(
             event_codes="DIV,ISS,AIS,MA,OTHE",
@@ -249,9 +263,9 @@ def refresh_corporate_actions(
     ticker: str,
     *,
     force: bool = False,
-    now: Optional[datetime.datetime] = None,
-    fetcher: Optional[Callable[..., List[Dict[str, Any]]]] = None,
-) -> Dict[str, Any]:
+    now: datetime.datetime | None = None,
+    fetcher: Callable[..., list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     """Kiểm tra tăng dần một mã theo TTL; không ghi lại event không đổi."""
     from valuation.data_access.corporate_actions import should_refresh_corporate_actions
 
@@ -326,9 +340,9 @@ def backfill_vn100_corporate_actions(
     db: Session,
     *,
     force: bool = False,
-    fetcher: Optional[Callable[..., List[Dict[str, Any]]]] = None,
-    progress: Optional[Callable[[int, int, str, Dict[str, Any]], None]] = None,
-) -> Dict[str, Any]:
+    fetcher: Callable[..., list[dict[str, Any]]] | None = None,
+    progress: Callable[[int, int, str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Backfill có checkpoint theo mã; lỗi một mã không làm mất tiến độ mã khác."""
     cfg = (load_defaults().get("corporate_actions") or {}).copy()
     interval = float(cfg.get("request_interval_sec", 1.1))
@@ -339,7 +353,7 @@ def backfill_vn100_corporate_actions(
         .order_by(Ticker.ticker)
         .all()
     ]
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "tickers": len(tickers),
         "ok": 0,
         "fresh": 0,
@@ -348,14 +362,14 @@ def backfill_vn100_corporate_actions(
         "updated": 0,
         "details": [],
     }
-    official = [row for row in load_official_config_events() if row["ticker"] in set(tickers)]
+    official = [
+        row for row in load_official_config_events() if row["ticker"] in set(tickers)
+    ]
     official_result = upsert_corporate_actions(db, official)
     summary["official"] = official_result
 
     for index, ticker in enumerate(tickers):
-        result = refresh_corporate_actions(
-            db, ticker, force=force, fetcher=fetcher
-        )
+        result = refresh_corporate_actions(db, ticker, force=force, fetcher=fetcher)
         status = str(result.get("status") or "ERROR").lower()
         if status == "ok":
             summary["ok"] += 1

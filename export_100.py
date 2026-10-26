@@ -1,3 +1,4 @@
+import os
 import json
 import pandas as pd
 from sqlalchemy import create_engine
@@ -6,7 +7,7 @@ from valuation.data_access.repo import build_company_data
 from valuation.engine.valuate import valuate
 from valuation.engine.sector_router import route
 
-engine = create_engine('postgresql://readonly_user:readonly_pass@localhost:5432/vn100')
+engine = create_engine(os.environ["DATABASE_URL_READONLY"])  # secret trong .env
 Session = sessionmaker(bind=engine)
 db = Session()
 

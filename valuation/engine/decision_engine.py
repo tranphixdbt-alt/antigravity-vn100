@@ -1,7 +1,40 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from valuation.config import load_defaults
 from valuation.models.financials import GovernanceData
 
 from valuation.models.macro_env import MacroEnvironment
+
+# Nhãn hiển thị duy nhất cho mọi kênh (UI, PDF, Sheets, báo cáo).
+REC_LABELS_VI = {
+    "BUY": "MUA",
+    "HOLD": "NẮM GIỮ",
+    "TRIM": "GIẢM TỶ TRỌNG",
+    "SELL": "BÁN",
+    "HARD REJECT": "LOẠI (RỦI RO QUẢN TRỊ)",
+    "NOT_RATED": "KHÔNG XẾP HẠNG",
+}
+
+
+def recommend(
+    ticker: str,
+    current_price: float,
+    fair_value: float,
+    governance: Optional[GovernanceData] = None,
+    macro_env: Optional[MacroEnvironment] = None,
+    not_rated: bool = False,
+) -> Dict[str, Any]:
+    """Nguồn khuyến nghị DUY NHẤT: biên an toàn theo bản chất ngành + cổng chặn."""
+    from valuation.engine.sector_router import route
+
+    plan = route(ticker) or {}
+    return InvestmentDecisionMaker(
+        business_nature=plan.get("business_nature", "Unknown"),
+        current_price=current_price,
+        fair_value=fair_value,
+        governance=governance,
+        macro_env=macro_env,
+        not_rated=not_rated,
+    ).make_decision()
 
 class InvestmentDecisionMaker:
     """
@@ -24,21 +57,12 @@ class InvestmentDecisionMaker:
         Xác định Margin of Safety an toàn tối thiểu theo loại hình doanh nghiệp.
         Và tự động nới rộng (+5%) nếu môi trường vĩ mô đang căng thẳng.
         """
-        if self.business_nature == "Compounder":
-            mos = 0.15
-        elif self.business_nature in ["Bank", "Utility"]:
-            mos = 0.20
-        elif self.business_nature == "Retail":
-            mos = 0.25
-        elif self.business_nature in ["Cyclical", "Developer", "Securities"]:
-            mos = 0.30
-        else:
-            mos = 0.25 # Default
-            
+        cfg = load_defaults().get("margin_of_safety") or {}
+        by_nature = cfg.get("by_business_nature") or {}
+        mos = float(by_nature.get(self.business_nature, cfg.get("default", 0.25)))
         # Nới rộng MOS nếu vĩ mô xấu
         if self.macro_env and self.macro_env.is_macro_stressed:
-            mos += 0.05
-            
+            mos += float(cfg.get("macro_stress_add", 0.05))
         return mos
 
     def evaluate_hard_gates(self) -> List[str]:
@@ -81,7 +105,7 @@ class InvestmentDecisionMaker:
             recommendation = "BUY"
         elif upside >= -_EPS:
             recommendation = "HOLD"
-        elif upside >= -10.0 - _EPS:
+        elif upside >= float((load_defaults().get("margin_of_safety") or {}).get("trim_floor", -0.10)) * 100.0 - _EPS:
             recommendation = "TRIM"
         else:
             recommendation = "SELL"

@@ -46,7 +46,7 @@ _PRIMARY_TO_METHOD = {
 #   PARTIAL         — có model nhưng dùng PROXY (gắn cờ VALUATION_PROXY).
 #   NOT_IMPLEMENTED — chưa có model; route gắn cờ, không định giá.
 METHOD_STATUS: Dict[str, str] = {
-    "RI_PB": "IMPLEMENTED",   # bank_vcb.VCBValuationModel + ROE fade
+    "RI_PB": "IMPLEMENTED",   # bank_general.BankGeneralValuationModel (RI + P/B thị trường)
     "DCF":   "IMPLEMENTED",   # dcf.DCFValuationModel (build_company_data); gồm cả FCFF+EV/EBITDA
     "RNAV":  "PARTIAL",       # rnav.RNAVValuationModel.from_pydantic — proxy
     "SOTP":  "PARTIAL",       # sotp.SOTPValuationModel.from_pydantic — proxy
@@ -109,6 +109,7 @@ def route(ticker: str) -> Optional[Dict[str, Any]]:
         # Tài chính
         "NH": "Bank",
         "Ngân hàng": "Bank",
+        "Tài chính": "Bank",    # công ty tài chính (EVF) = TCTD phi NH, định giá như NH
         # Chứng khoán: lợi nhuận biến động mạnh theo thị trường → nhóm riêng,
         # MOS cao hơn ngân hàng (xem decision_engine.get_target_mos).
         "CK": "Securities",
@@ -172,6 +173,12 @@ def route(ticker: str) -> Optional[Dict[str, Any]]:
         "secondary_method_1": data.get("secondary"),
         "secondary_method_2": None
     }
+
+
+def dcf_secondary_multiple(business_nature: str | None) -> str:
+    """Bội số phụ blend với DCF: P/E cho Compounder/Retail (định giá theo lợi nhuận),
+    EV/EBITDA cho phần còn lại (loại nhiễu D&A + nợ). Nguồn duy nhất cho dcf.py và repo."""
+    return "PE" if business_nature in ("Compounder", "Retail") else "EV_EBITDA"
 
 
 def is_supported(ticker: str) -> bool:

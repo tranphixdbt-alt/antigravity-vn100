@@ -7,36 +7,39 @@ Render end-to-end trên DB thật cho 1 mã ngân hàng (ACB) + 1 phi tài chín
 - Word (.docx) build được, mở lại đọc được số section.
 Không gọi DeepSeek trong test (dùng narrative fallback) — không phụ thuộc mạng.
 """
+
 import os
 
 import jinja2
 import pytest
 
-from valuation.db.session import SessionLocalRead
 from valuation.data_access.repo import build_company_data
+from valuation.db.session import SessionLocalRead
 from valuation.engine.valuate import valuate
-from valuation.report.report_data import build_report_sections
 from valuation.report.ai_narrative import _FALLBACK
 from valuation.report.build_docx import build_docx_report
+from valuation.report.report_data import build_report_sections
 
 TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "valuation", "report", "template.html",
+    "valuation",
+    "report",
+    "template.html",
 )
 
 # 11 phần theo khuôn SPEC PHẦN B (tiêu đề trong template)
 EXPECTED_SECTIONS = [
-    "KHUYẾN NGHỊ ĐẦU TƯ",                       # 1. Cover
-    "1. Luận điểm đầu tư",                       # 2
-    "2. Tóm tắt định giá",                       # 3
-    "3. Tổng quan doanh nghiệp",                 # 4
-    "4. Bối cảnh ngành",                         # 5
-    "5. Phân tích tài chính lịch sử",            # 6
-    "6. Giả định dự phóng",                      # 7
-    "7. Chi tiết định giá",                      # 8
-    "8. Phân tích độ nhạy & kịch bản",           # 9
-    "9. Rủi ro đầu tư",                          # 10
-    "10. Phụ lục — Báo cáo tài chính lịch sử",   # 11
+    "KHUYẾN NGHỊ ĐẦU TƯ",  # 1. Cover
+    "1. Luận điểm đầu tư",  # 2
+    "2. Tóm tắt định giá",  # 3
+    "3. Tổng quan doanh nghiệp",  # 4
+    "4. Bối cảnh ngành",  # 5
+    "5. Phân tích tài chính lịch sử",  # 6
+    "6. Giả định dự phóng",  # 7
+    "7. Chi tiết định giá",  # 8
+    "8. Phân tích độ nhạy & kịch bản",  # 9
+    "9. Rủi ro đầu tư",  # 10
+    "10. Phụ lục — Báo cáo tài chính lịch sử",  # 11
 ]
 
 
@@ -71,11 +74,17 @@ def _render_html(ticker: str, db) -> tuple:
         "current_price": f"{company.current_price:,.0f}",
         "shares": f"{company.shares_outstanding:,.2f}",
         "market_cap": f"{cover['market_cap']:,.0f}",
-        "weight_intrinsic": 50, "weight_relative": 50,
-        "intrinsic_method": "TEST_PRIMARY", "relative_method": "TEST_SECONDARY",
-        "intrinsic_price": "0 VND", "relative_price": "0 VND",
-        "notes": "", "chart_football": "", "chart_heatmap": "",
-        "chart_history": "", "chart_profitability": "",
+        "weight_intrinsic": 50,
+        "weight_relative": 50,
+        "intrinsic_method": "TEST_PRIMARY",
+        "relative_method": "TEST_SECONDARY",
+        "intrinsic_price": "0 VND",
+        "relative_price": "0 VND",
+        "notes": "",
+        "chart_football": "",
+        "chart_heatmap": "",
+        "chart_history": "",
+        "chart_profitability": "",
         "proj_cols": ["N1", "N2", "N3", "N4", "N5"],
         "proj_rows": [{"label": "Doanh thu", "values": ["1", "2", "3", "4", "5"]}],
         "narrative": {**_FALLBACK, "ai_generated": False},
@@ -113,9 +122,6 @@ def test_report_ai_notice_shown_only_when_ai_generated(db):
     assert "Nháp do AI tạo" not in html  # fallback → không có dấu AI
 
     # Render lại với narrative giả lập AI
-    company = build_company_data(db, "ACB", mode="TTM")
-    res = valuate(company)
-    sections = build_report_sections(company, res["blended_fair_value_per_share"], db=db)
     with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
         template = jinja2.Template(f.read())
     _, data, _ = _render_html("ACB", db)
@@ -123,12 +129,14 @@ def test_report_ai_notice_shown_only_when_ai_generated(db):
         "thesis": "x",
         "overview": "x",
         "industry": "x",
-        "corporate_actions": "x",
+        "market_view": "x",
         "risks": "x",
         "ai_generated": True,
     }
     html_ai = template.render(**data)
     assert "Nháp do AI tạo" in html_ai
+    assert "4A. Kỹ thuật, dòng tiền & vị thế thị trường" in html_ai
+    assert "4A. Cổ tức, tăng vốn & quyền cổ đông" not in html_ai
 
 
 def test_docx_builds_with_11_sections(db, tmp_path):
@@ -191,3 +199,25 @@ def test_docx_consensus_comparison_section(db, tmp_path):
     if consensus.get("synthesis"):
         assert "Điểm CHUNG các CTCK đồng thuận:" in text
         assert "AI tổng hợp từ báo cáo CTCK" in text
+
+
+def test_docx_chi_dung_khi_bam_tai(monkeypatch, tmp_path):
+    """Nút tải Word nhận hàm (data=callable): tạo nút KHÔNG dựng file; gọi hàm mới dựng; dựng lỗi thì raise."""
+    from valuation.views import results
+
+    calls: list[str] = []
+
+    def fake_build(data, headers, rows, charts, path):
+        calls.append(path)
+        with open(path, "wb") as f:
+            f.write(b"DOCX")
+        return True
+
+    monkeypatch.setattr(results, "build_docx_report", fake_build)
+    out = str(tmp_path / "r.docx")
+    build = results.docx_on_click({}, [], [], {}, out)
+    assert calls == []  # dựng nút ở mỗi lượt chạy lại không tốn ~6 s
+    assert build() == b"DOCX" and calls == [out]
+    monkeypatch.setattr(results, "build_docx_report", lambda *a: False)
+    with pytest.raises(RuntimeError, match="Không dựng được báo cáo Word"):
+        results.docx_on_click({}, [], [], {}, out)()

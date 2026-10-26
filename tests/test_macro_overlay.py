@@ -8,7 +8,6 @@ from valuation.db.session import SessionLocalWrite
 from valuation.forecast.drivers import (
     MacroContext,
     classify_sector,
-    overlay_credit_growth,
     overlay_revenue_growth,
 )
 
@@ -50,20 +49,6 @@ def test_overlay_revenue_growth_banks_excluded():
     ctx = MacroContext(deltas={"GDP_YOY": 0.05})
     base = [0.15, 0.14]
     assert overlay_revenue_growth(base, "Banks", ctx) == base
-
-
-def test_overlay_credit_growth_banks():
-    """Tín dụng hệ thống +2% -> credit growth bank +2% (beta=1.0)."""
-    ctx = MacroContext(deltas={"CREDIT_GROWTH": 0.02})
-    base = [0.12, 0.11, 0.10]
-    out = overlay_credit_growth(base, "Banks", ctx)
-    assert out == pytest.approx([0.14, 0.13, 0.12])
-
-
-def test_overlay_credit_growth_floor_nonnegative():
-    ctx = MacroContext(deltas={"CREDIT_GROWTH": -0.20})
-    out = overlay_credit_growth([0.10], "Banks", ctx)
-    assert out[0] == 0.0  # không âm
 
 
 def test_macro_context_from_db():

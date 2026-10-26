@@ -208,10 +208,10 @@
     {% if narrative.ai_generated %}<span class="ai-notice">⚠ Nháp do AI tạo — cần analyst review</span>{% endif %}
     <div class="narrative">{{ narrative.industry }}</div>
 
-    <!-- ============ SỰ KIỆN VỐN & QUYỀN CỔ ĐÔNG ============ -->
-    <div class="section-title">4A. Cổ tức, tăng vốn & quyền cổ đông</div>
+    <!-- ============ KỸ THUẬT, DÒNG TIỀN & VỊ THẾ THỊ TRƯỜNG ============ -->
+    <div class="section-title">4A. Kỹ thuật, dòng tiền & vị thế thị trường</div>
     {% if narrative.ai_generated %}<span class="ai-notice">⚠ Nháp do AI tạo — cần analyst review</span>{% endif %}
-    <div class="narrative">{{ narrative.corporate_actions }}</div>
+    <div class="narrative">{{ narrative.market_view }}</div>
 
     <!-- ============ 6. PHÂN TÍCH TÀI CHÍNH LỊCH SỬ ============ -->
     <div class="section-title">5. Phân tích tài chính lịch sử</div>
@@ -361,6 +361,8 @@
             {% endfor %}
         </tbody>
     </table>
+    {% elif scenarios and scenarios.note %}
+    <p style="font-size:12.5px; color:#64748B;">Không dựng được bảng kịch bản: {{ scenarios.note }}</p>
     {% elif scenarios %}
     <p style="font-size:12.5px; color:#64748B;">Phương pháp định giá hiện tại (proxy từ giá trị sổ sách) không co giãn theo giả định tăng trưởng/biên — bảng kịch bản Bull/Bear không áp dụng.</p>
     {% endif %}

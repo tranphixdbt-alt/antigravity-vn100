@@ -30,7 +30,36 @@ def test_pe_negative_earnings_no_garbage():
     m = _pe([-50.0, -30.0, -40.0])
     r = m.perform_valuation()
     assert r["blended_fair_value_per_share"] == 0.0
-    assert "NEGATIVE_NORMALIZED_EARNINGS" in r["flags"]
+    assert "PE_DISABLED_TTM_LOSS" in r["flags"]
+
+
+def test_pe_disabled_when_ttm_loss_even_if_median_positive():
+    # Luật vàng #2: DN không chu kỳ đang lỗ TTM → không dùng P/E dù median dương.
+    r = _pe([100.0, 120.0, -10.0]).perform_valuation()
+    assert r["blended_fair_value_per_share"] == 0.0
+    assert "PE_DISABLED_TTM_LOSS" in r["flags"]
+
+
+def _pe_cyclical(ni, rev, shares=200e6):
+    cf = {"net_income_history": ni, "revenue_history": rev,
+          "shares_outstanding": shares, "current_price": 50000}
+    return PERelativeValuationModel("ZZCY", cf, {"target_pe": 8.0, "norm_years": 5, "cyclical": True})
+
+
+def test_pe_cyclical_uses_midcycle_margin_times_ttm_revenue():
+    # Biên: -5%, 10%, 10% → trung vị 10% (GỒM năm lỗ) × DT TTM 2.000 tỷ = 200 tỷ.
+    # EPS = 200e9 / 200e6 = 1.000đ; FV = 1.000 × 8 = 8.000đ.
+    # (Cách cũ: median LN tuyệt đối = 100 tỷ → 4.000đ, định giá thấp DN đang lớn.)
+    r = _pe_cyclical([-50.0, 100.0, 200.0], [1000.0, 1000.0, 2000.0]).perform_valuation()
+    assert r["normalized_eps"] == pytest.approx(1000.0)
+    assert r["blended_fair_value_per_share"] == pytest.approx(8000.0)
+
+
+def test_pe_cyclical_ttm_loss_uses_midcycle_with_flag():
+    # Biên 10%, 10%, -2% → trung vị 10% × DT TTM 1.000 tỷ = 100 tỷ → EPS 500 → FV 4.000.
+    r = _pe_cyclical([100.0, 150.0, -20.0], [1000.0, 1500.0, 1000.0]).perform_valuation()
+    assert r["blended_fair_value_per_share"] == pytest.approx(4000.0)
+    assert "PE_ON_MIDCYCLE_EARNINGS_TTM_LOSS" in r["flags"]
 
 
 def test_pe_sector_target():

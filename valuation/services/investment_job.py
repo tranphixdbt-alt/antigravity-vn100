@@ -5,9 +5,18 @@ from __future__ import annotations
 import subprocess
 import sys
 import uuid
+from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from shutil import copy2
+from tempfile import TemporaryDirectory
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
 
 from valuation.analysis.investment_ranking import (
     load_ranking_config,
@@ -24,6 +33,51 @@ from valuation.services.ranking_store import (
     read_json,
     write_json,
 )
+
+
+def _sqlite_path_from_url(url: str) -> Path | None:
+    parsed = make_url(url)
+    if not parsed.drivername.startswith("sqlite"):
+        return None
+    database = parsed.database
+    if not database or database == ":memory:":
+        return None
+    path = Path(database)
+    return path if path.is_absolute() else ROOT / path
+
+
+@contextmanager
+def _batch_read_session_factory(*, refresh: bool, store: Path):
+    from valuation.config import settings
+    from valuation.db.session import SessionLocalRead
+
+    source = _sqlite_path_from_url(settings.database_url_readonly)
+    if refresh or source is None or not source.exists():
+        yield SessionLocalRead
+        return
+
+    with TemporaryDirectory(prefix="vn100-ranking-db-") as temp_dir:
+        target = Path(temp_dir) / source.name
+        copy2(source, target)
+        marker = store / "runtime" / "readonly_db_copy.json"
+        write_json(
+            marker,
+            {
+                "source": str(source),
+                "target": str(target),
+                "created_at": local_now().isoformat(),
+                "reason": "batch_read_no_refresh",
+            },
+        )
+        engine = create_engine(
+            f"sqlite:///{target}",
+            connect_args={"check_same_thread": False},
+            pool_pre_ping=True,
+        )
+        try:
+            yield sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        finally:
+            engine.dispose()
 
 
 def local_now() -> datetime:
@@ -91,6 +145,7 @@ def start_job(store: Path = STORE) -> bool:
                     cwd=ROOT,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    start_new_session=True,  # khởi động lại app không giết worker
                 )
             except OSError:
                 write_json(
@@ -113,21 +168,32 @@ def run_job(
     use_ai: bool = True,
     scheduled: bool = False,
     store: Path = STORE,
+    progress_sink: Callable[[dict], None] | None = None,
 ) -> dict:
     try:
         with exclusive_lock(store / "worker.lock"):
             return _run_locked(
-                refresh=refresh, use_ai=use_ai, scheduled=scheduled, store=store
+                refresh=refresh,
+                use_ai=use_ai,
+                scheduled=scheduled,
+                store=store,
+                progress_sink=progress_sink,
             )
     except BlockingIOError:
         return {"status": "BUSY", "message": "Đã có một đợt cập nhật đang chạy"}
 
 
-def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) -> dict:
+def _run_locked(
+    *,
+    refresh: bool,
+    use_ai: bool,
+    scheduled: bool,
+    store: Path,
+    progress_sink: Callable[[dict], None] | None = None,
+) -> dict:
     from valuation.config import PROJECT_ROOT
     from valuation.data_access.investment_snapshot import build_ranking_row, fingerprint
     from valuation.db.models import MacroSeries
-    from valuation.db.session import SessionLocalRead
     from valuation.ingest.universe import load_vn100_snapshot
     from valuation.report.accumulation_review import generate_review
     from valuation.services.ranking_sources import fetch_news, refresh_ticker
@@ -143,6 +209,8 @@ def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) ->
     def progress(message: str) -> None:
         state.update(message=message, updated_at=local_now().isoformat())
         write_json(store / "status.json", state)
+        if progress_sink is not None:
+            progress_sink(dict(state))
 
     progress("Đọc thành phần VN100 và kiểm tra nguồn")
     try:
@@ -152,40 +220,61 @@ def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) ->
         )["companies"]
         old = latest_snapshot(store) or {}
         rows, source_errors = [], []
-        for index, ticker in enumerate(universe["symbols"]):
-            progress(
-                f"{ticker}: {'kiểm tra dữ liệu và ' if refresh else ''}định giá ba kịch bản"
-            )
-            ticker_errors = refresh_ticker(ticker, now, cfg, store) if refresh else []
-            source_errors.extend(ticker_errors)
-            try:
-                with SessionLocalRead() as db:
-                    row = build_ranking_row(
-                        db, ticker, now.date(), cfg, evidence.get(ticker, {})
-                    )
-            except (Exception, SystemExit) as exc:
-                from valuation.config import settings
+        with _batch_read_session_factory(refresh=refresh, store=store) as ReadSession:
+            for index, ticker in enumerate(universe["symbols"]):
+                progress(
+                    f"{ticker}: {'kiểm tra dữ liệu và ' if refresh else ''}định giá ba kịch bản"
+                )
+                ticker_errors = (
+                    refresh_ticker(ticker, now, cfg, store) if refresh else []
+                )
+                source_errors.extend(ticker_errors)
+                try:
+                    with ReadSession() as db:
+                        row = build_ranking_row(
+                            db, ticker, now.date(), cfg, evidence.get(ticker, {})
+                        )
+                except (
+                    SQLAlchemyError,
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    ArithmeticError,
+                    OSError,
+                    KeyError,
+                    IndexError,
+                    AttributeError,
+                    SystemExit,
+                ) as exc:
+                    from valuation.config import settings
 
-                detail = str(exc)
-                for secret in (settings.vnstock_api_key, settings.deepseek_api_key):
-                    if secret:
-                        detail = detail.replace(secret, "[redacted]")
-                row = {
-                    "ticker": ticker,
-                    "name": ticker,
-                    "sector": "Chưa rõ",
-                    "error": f"Không tạo được hồ sơ ({type(exc).__name__}): {detail[:350]}",
-                    "flags": [],
-                }
-            row.setdefault("blockers", []).extend(ticker_errors)
-            universe_age = (
-                now.date() - datetime.fromisoformat(universe["as_of"]).date()
-            ).days
-            if not 0 <= universe_age <= cfg["universe_max_age_days"]:
-                row["blockers"].append("Cần xác nhận lại thành phần rổ VN100")
-            rows.append(row)
-            state["completed"] = index + 1
-            write_json(store / "checkpoints" / run_id / f"{ticker}.json", row)
+                    detail = str(exc)
+                    for secret in (settings.vnstock_api_key, settings.deepseek_api_key):
+                        if secret:
+                            detail = detail.replace(secret, "[redacted]")
+                    row = {
+                        "ticker": ticker,
+                        "name": ticker,
+                        "sector": "Chưa rõ",
+                        "error": f"Không tạo được hồ sơ ({type(exc).__name__}): {detail[:350]}",
+                        "flags": [],
+                    }
+                row.setdefault("blockers", []).extend(ticker_errors)
+                universe_age = (
+                    now.date() - datetime.fromisoformat(universe["as_of"]).date()
+                ).days
+                if not 0 <= universe_age <= cfg["universe_max_age_days"]:
+                    row["blockers"].append("Cần xác nhận lại thành phần rổ VN100")
+                rows.append(row)
+                state["completed"] = index + 1
+                write_json(store / "checkpoints" / run_id / f"{ticker}.json", row)
+            with ReadSession() as db:
+                macro_rows = (
+                    db.query(MacroSeries)
+                    .filter(MacroSeries.date <= now.date())
+                    .order_by(MacroSeries.date.desc())
+                    .all()
+                )
         score_metrics(rows, cfg)
         rows = rank_companies(rows, cfg)
         if not any(r["profiles"]["defensive"]["score"] is not None for r in rows):
@@ -243,21 +332,14 @@ def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) ->
                 {"items": [], "errors": ["Đợt này chỉ tính bằng dữ liệu đã lưu"]},
             )
         )
-        with SessionLocalRead() as db:
-            macros = (
-                db.query(MacroSeries)
-                .filter(MacroSeries.date <= now.date())
-                .order_by(MacroSeries.date.desc())
-                .all()
-            )
-            macro = {}
-            for item in macros:
-                if item.indicator_code not in macro:
-                    macro[item.indicator_code] = {
-                        "value": float(item.value) if item.value is not None else None,
-                        "date": str(item.date),
-                        "source": item.source,
-                    }
+        macro = {}
+        for item in macro_rows:
+            if item.indicator_code not in macro:
+                macro[item.indicator_code] = {
+                    "value": float(item.value) if item.value is not None else None,
+                    "date": str(item.date),
+                    "source": item.source,
+                }
         snapshot = {
             "run_id": run_id,
             "started_at": now.isoformat(),
@@ -295,7 +377,18 @@ def _run_locked(*, refresh: bool, use_ai: bool, scheduled: bool, store: Path) ->
             f"Đã tính {len(rows)} mã. AI: {snapshot['ai']['status']}. Cần đọc các điều kiện chưa đạt trước khi tư vấn."
         )
         return state
-    except (Exception, SystemExit) as exc:
+    except (
+        SQLAlchemyError,
+        RuntimeError,
+        ValueError,
+        TypeError,
+        ArithmeticError,
+        OSError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        SystemExit,
+    ) as exc:
         state["status"] = "FAILED"
         progress(
             f"Đợt cập nhật chưa hoàn thành ({type(exc).__name__}). Bản thành công trước vẫn được giữ."

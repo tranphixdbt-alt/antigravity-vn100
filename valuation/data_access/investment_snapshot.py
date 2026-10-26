@@ -31,6 +31,20 @@ def fingerprint(value: Any) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def traded_values(prices: list[Any]) -> list[float]:
+    """GTGD từng phiên. Cột `value` trống (vnstock không trả) → ước lượng giá đóng cửa × khối lượng.
+
+    Trước đây chỉ đọc `value` → không mã nào đủ 20 phiên → mọi mã "thanh khoản không đạt" (D56).
+    """
+    out = []
+    for x in prices:
+        if x.value is not None and x.value > 0:
+            out.append(float(x.value))
+        elif x.close and x.volume:
+            out.append(float(x.close) * float(x.volume))
+    return out
+
+
 def previous_session_day(today: date) -> date:
     """Chỉ dùng phiên đã kết thúc trước ngày chạy, tránh giá dở phiên lúc 09:30."""
     day = today - timedelta(days=1)
@@ -93,9 +107,9 @@ def financial_metrics(company: Any, as_of: date) -> dict:
     years = latest.year - first.year
     if start > 0 and end > 0 and years > 0:
         result["revenue_cagr"] = (end / start) ** (1 / years) - 1
-    if balance and previous and min(balance.total_equity, previous.total_equity) > 0:
+    if balance and previous and min(balance.parent_equity, previous.parent_equity) > 0:
         result["roe"] = latest.net_income / (
-            (balance.total_equity + previous.total_equity) / 2
+            (balance.parent_equity + previous.parent_equity) / 2
         )
     if not bank and balance and balance.total_equity > 0:
         debt = balance.short_term_debt + balance.long_term_debt
@@ -207,7 +221,7 @@ def build_ranking_row(
     metrics = financial_metrics(company, as_of)
     if metrics["history_years"] < cfg["min_history_years"]:
         row["blockers"].append("Chưa đủ lịch sử kinh doanh nhiều năm")
-    values = [float(x.value) for x in prices if x.value is not None and x.value > 0]
+    values = traded_values(prices)
     row["liquidity_ok"] = (
         len(values) == len(prices) == 20
         and sum(values) / len(values) >= cfg["scales"]["min_traded_value_vnd"]

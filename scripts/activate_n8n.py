@@ -1,8 +1,9 @@
+import os
 import requests
 
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlZmY2OTViNy1iZmJkLTQ4ZDgtYWIwNS0xY2UyZDJjOTdkMGEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzgyMjM1ODQ0fQ.vQAgbbV59OkYMAmnmjmwxnzGgyDaqXB32Im8fRrruSU"
+API_KEY = os.environ["N8N_API_KEY"]  # secret trong .env, không ghi vào code
 WORKFLOW_ID = "GFpcvTfiJURsNbgF"
-URL = f"https://n8n.xaydungbenthanh.com/api/v1/workflows/{WORKFLOW_ID}/activate"
+URL = f"{os.environ['N8N_BASE_URL']}/api/v1/workflows/{WORKFLOW_ID}/activate"
 
 headers = {
     "X-N8N-API-KEY": API_KEY,

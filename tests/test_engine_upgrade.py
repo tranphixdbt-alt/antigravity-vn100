@@ -146,19 +146,25 @@ def test_relative_valuation():
     assert abs(rel_fv - 18000.0) < 1.0
 
 def test_blended_and_recommendation():
-    # Test blend logic
-    blended, upside, rec = blend_intrinsic_relative(
+    blended, upside = blend_intrinsic_relative(
         intrinsic_fv=17780.0,
         relative_fv=13200.0,
         weight_intrinsic=0.5,
         current_price=60000.0
     )
-    
     # Blended = (17780 + 13200) / 2 = 15490 VND
     assert abs(blended - 15490.0) < 1e-2
     # Upside = (15490 - 60000) / 60000 = -74.18%
     assert abs(upside - (-74.18)) < 1e-1
-    assert rec == "BÁN"
+    from valuation.engine.decision_engine import recommend
+    assert recommend("FPT", 60000.0, blended)["recommendation"] == "SELL"
+
+
+def test_blend_rejects_nan_or_negative_leg():
+    import math
+    for bad in (math.nan, -1.0, None):
+        with pytest.raises(ValueError, match="INVALID_VALUATION_LEG"):
+            blend_intrinsic_relative(bad, 13200.0, 0.5, 60000.0)
 
 def test_bank_valuation_pb_roe():
     # Tạo CompanyBank mẫu

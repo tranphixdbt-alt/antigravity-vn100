@@ -3,10 +3,15 @@ Bank General Model — Mô hình định giá ngân hàng tổng quát (Residual
 Kế thừa tinh hoa từ VCB model và mở rộng cho tất cả các ngân hàng thương mại thuộc VN100.
 """
 from typing import Dict, Any, List
-import numpy as np
 from valuation.config import load_defaults
 from valuation.models.financials_bank import CompanyBank
-from valuation.engine.forecast_bank import forecast_bank_financials
+from valuation.engine.forecast_bank import (  # noqa: F401 — converged_roe giữ đường import cũ
+    bank_terminal_roe,
+    begin_roe_from_avg,
+    converged_roe,
+    forecast_bank_financials,
+)
+
 
 class BankGeneralValuationModel:
     """
@@ -31,7 +36,10 @@ class BankGeneralValuationModel:
             
         # Ràng buộc g < coe
         if self.g >= self.coe:
-            self.g = self.coe - 0.005  # clamp
+            self.company.warnings.append(
+                f"BANK_G_CLAMPED_BELOW_COE: g={self.g:.2%} >= COE={self.coe:.2%} → {self.coe - 0.005:.2%}"
+            )
+            self.g = self.coe - 0.005
 
         # Sanity Floor Check cho COE (VND-base: equity premium >= MIN_EQUITY_PREMIUM)
         from valuation.engine.coe import MIN_EQUITY_PREMIUM
@@ -67,17 +75,12 @@ class BankGeneralValuationModel:
         # trị. Tier đó sinh ra để CHỮA TRIỆU CHỨNG của một ước lượng tồi (trung
         # bình toàn lịch sử, gồm cả đỉnh chu kỳ). D29 sửa thẳng ước lượng
         # (median cửa sổ gần nhất, xem repo.py) nên tier trở thành thừa và có hại.
-        _cfg = load_defaults().get("bank_terminal", {}) or {}
-        ROE_CAP = float(_cfg.get("terminal_roe_cap", 0.20))
-        ROE_FLOOR = float(_cfg.get("terminal_roe_floor", 0.0))
-
-        hist_equity = self.base_bs.total_equity
-        hist_ni = self.base_is.net_income
-        roe_ttm = hist_ni / hist_equity if hist_equity > 0 else ROE_CAP
-
-        sustainable_roe = getattr(self.assumptions, "sustainable_roe", None)
-        raw_roe = sustainable_roe if (sustainable_roe and sustainable_roe > 0) else roe_ttm
-        self.terminal_roe = min(max(raw_roe, ROE_FLOOR), ROE_CAP)
+        ROE_CAP = float((load_defaults().get("bank_terminal", {}) or {}).get("terminal_roe_cap", 0.20))
+        # ROE terminal trên VCSH BÌNH QUÂN (cùng định nghĩa roe5 và ROE ngành — config bank_terminal).
+        self.terminal_roe, raw_roe = bank_terminal_roe(self.company)
+        # RI terminal và P/B hợp lý cần ROE trên VCSH ĐẦU kỳ: trạng thái dừng VCSH tăng g → VCSH bình quân năm
+        # 6 = B5·(1 + g/2), nên LN6 / B5 = ROE_T·(1 + g/2) (đẳng thức, không phải giả định mới).
+        self.terminal_roe_begin = begin_roe_from_avg(self.terminal_roe, self.g)
         if raw_roe > ROE_CAP:
             self.company.warnings.append(
                 f"BANK_TERMINAL_ROE_CAPPED: ROE bền vững {raw_roe:.1%} vượt trần "
@@ -90,6 +93,21 @@ class BankGeneralValuationModel:
         # tức payout* = 1 - g/ROE. Nếu payout dùng trong giai đoạn dự phóng lệch
         # quá xa payout* thì hai khối đang mô tả hai thế giới khác nhau.
         self._check_terminal_consistency()
+        self._check_terminal_jump()
+
+    def _check_terminal_jump(self) -> None:
+        """D67: LN6 của RI terminal (ROE_T đầu kỳ × VCSH5) phải nối liền LN5 dự phóng: |LN6/LN5 − (1 + g)| quá ngưỡng
+        (hoặc LN5 ≤ 0) → cờ cảnh báo BANK_TERMINAL_JUMP. Bắt tái phát lỗi phản biện r4 (kịch bản dồn sốc vào năm 5)
+        và ca analyst sửa driver năm 4–5 làm năm 5 lệch xa ROE_T."""
+        tol = float(load_defaults()["bank_terminal"]["terminal_jump_flag_tolerance"])
+        ni5 = self.projections[-1]["net_income"]
+        ni6 = self.terminal_roe_begin * self.projections[-1]["total_equity"]
+        if ni5 <= 0:
+            self.company.warnings.append(
+                f"BANK_TERMINAL_JUMP: LN năm 5 = {ni5:,.0f} tỷ ≤ 0 trong khi RI terminal giả định LN6 = {ni6:,.0f} tỷ")
+        elif abs(ni6 / ni5 - (1 + self.g)) > tol:
+            self.company.warnings.append(
+                f"BANK_TERMINAL_JUMP: LN6/LN5 = {ni6 / ni5:.2f} lệch 1 + g = {1 + self.g:.3f} quá {tol:.0%}")
 
     def _check_terminal_consistency(self) -> None:
         """Cảnh báo khi trạng thái dừng KHÔNG THỂ TỒN TẠI về mặt toán học.
@@ -109,7 +127,7 @@ class BankGeneralValuationModel:
         """
         if self.terminal_roe <= 0:
             return
-        implied_payout = 1.0 - (self.g / self.terminal_roe)
+        implied_payout = 1.0 - (self.g / self.terminal_roe_begin)
         if implied_payout <= 0:
             self.company.warnings.append(
                 f"TERMINAL_IMPOSSIBLE: ROE bền vững {self.terminal_roe:.1%} <= tăng "
@@ -134,7 +152,7 @@ class BankGeneralValuationModel:
             
         # Terminal Value cho RI (fade về terminal_roe bền vững)
         eq_terminal_begin = self.projections[-1]["total_equity"]
-        sustainable_ri = (self.terminal_roe - self.coe) * eq_terminal_begin
+        sustainable_ri = (self.terminal_roe_begin - self.coe) * eq_terminal_begin
         terminal_ri = sustainable_ri / (self.coe - self.g)
         pv_terminal_ri = terminal_ri / ((1 + self.coe) ** len(self.projections))
         
@@ -147,7 +165,7 @@ class BankGeneralValuationModel:
             "pv_ri": pv_ri,
             "pv_terminal_ri": pv_terminal_ri,
             "equity_value": total_ri_equity_value,
-            "fair_value_per_share": max(0.0, ri_fvps)
+            "fair_value_per_share": ri_fvps
         }
 
     def calculate_pb_valuation(self) -> Dict[str, float]:
@@ -158,8 +176,8 @@ class BankGeneralValuationModel:
         thời (ngân hàng VN ROE ~20% hiện tại, cạnh tranh + tích lũy vốn nén dần).
         Chỉ fallback về ROE năm 5 khi assumptions không cung cấp sustainable_roe.
         """
-        # Sử dụng terminal_roe đã được cap ở mức bền vững (tối đa 15%)
-        long_term_roe = self.terminal_roe
+        # Gordon P0/B0 = (ROE − g)/(COE − g) với ROE = LN năm tới / VCSH hiện tại (đầu kỳ).
+        long_term_roe = self.terminal_roe_begin
         
         # Target P/B = (ROE - g) / (Re - g)
         if self.coe <= self.g:
@@ -204,10 +222,25 @@ class BankGeneralValuationModel:
             )
 
         return {
-            "long_term_roe": long_term_roe,
+            "long_term_roe": self.terminal_roe,  # VCSH bình quân (định nghĩa chung bank_terminal)
+            "long_term_roe_begin": long_term_roe,  # VCSH đầu kỳ — dùng trong (ROE − g)/(COE − g)
             "target_pb": target_pb,
             "equity_value": total_pb_equity_value,
-            "fair_value_per_share": max(0.0, pb_fvps)
+            "fair_value_per_share": pb_fvps
+        }
+
+    def calculate_market_pb_valuation(self) -> Dict[str, float] | None:
+        """Chân so sánh THỊ TRƯỜNG: P/B trung vị 5 cuối năm của chính NH × BVPS hiện tại.
+
+        P/B hợp lý (ROE−g)/(COE−g) dùng cùng ROE/COE/g với RI nên không kiểm tra
+        chéo được gì; chân này neo vào mức thị trường thực sự trả cho chính NH.
+        """
+        pb = getattr(self.assumptions, "historical_pb_median", None)
+        if not pb or pb <= 0 or self.company.shares_outstanding <= 0:
+            return None
+        return {
+            "market_pb": pb,
+            "fair_value_per_share": pb * self.base_bs.parent_equity / self.company.shares_outstanding * 1000.0,
         }
 
     def perform_valuation(self) -> Dict[str, Any]:

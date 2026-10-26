@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import date, datetime
 from types import SimpleNamespace as NS
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ from valuation.data_access.investment_snapshot import (
     previous_session_day,
     verified_evidence,
 )
+from valuation.services import investment_job
 from valuation.services.investment_job import next_run, week_key
 
 
@@ -22,8 +24,8 @@ def test_annual_metrics_exclude_overlapping_ttm():
             NS(year=2026, revenue=500, net_income=200),
         ],
         historical_bs=[
-            NS(year=2024, total_equity=100, short_term_debt=10, long_term_debt=10),
-            NS(year=2025, total_equity=200, short_term_debt=20, long_term_debt=40),
+            NS(year=2024, total_equity=100, parent_equity=100, short_term_debt=10, long_term_debt=10),
+            NS(year=2025, total_equity=200, parent_equity=200, short_term_debt=20, long_term_debt=40),
         ],
         historical_cf=[NS(year=2025, cfo=36)],
     )
@@ -65,3 +67,100 @@ def test_schedule_and_intraday_cutoff():
     assert week_key(tuesday) == "2026-09-01"
     assert previous_session_day(monday.date()) == date(2026, 8, 28)
     assert previous_session_day(tuesday.date()) == date(2026, 8, 31)
+
+
+def test_run_job_emits_progress_without_api(monkeypatch, tmp_path):
+    cfg = load_ranking_config()
+    cfg["schedule"] = {"weekday": 1, "hour": 9, "minute": 30}
+
+    class DummySession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def query(self, *args, **kwargs):
+            return self
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def order_by(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return []
+
+    def fake_rank(rows, cfg):
+        for row in rows:
+            row["mos"] = 0.30
+            row["upside_pct"] = 42.0
+            row["profiles"] = {
+                key: {
+                    "score": 80.0,
+                    "eligible": True,
+                    "rank": 1,
+                    "reasons": [],
+                    "components": {},
+                    "coverage": 100,
+                }
+                for key in cfg["profiles"]
+            }
+        return rows
+
+    monkeypatch.setattr(investment_job, "load_ranking_config", lambda: cfg)
+    monkeypatch.setattr(investment_job, "score_metrics", lambda rows, cfg: None)
+    monkeypatch.setattr(investment_job, "rank_companies", fake_rank)
+    monkeypatch.setattr(
+        investment_job,
+        "select_candidates",
+        lambda rows, profile, cfg, *, eligible_only: ["AAA"] if eligible_only else [],
+    )
+
+    @contextmanager
+    def fake_read_session_factory(*, refresh, store):
+        yield DummySession
+
+    monkeypatch.setattr(
+        investment_job, "_batch_read_session_factory", fake_read_session_factory
+    )
+
+    import valuation.db.session as db_session
+    from valuation.data_access import investment_snapshot
+    from valuation.ingest import universe
+
+    monkeypatch.setattr(db_session, "SessionLocalRead", DummySession)
+    monkeypatch.setattr(
+        universe,
+        "load_vn100_snapshot",
+        lambda: {"symbols": ["AAA"], "as_of": "2026-09-01"},
+    )
+    monkeypatch.setattr(investment_snapshot, "fingerprint", lambda value: "fp")
+    monkeypatch.setattr(
+        investment_snapshot,
+        "build_ranking_row",
+        lambda db, ticker, as_of, cfg, evidence: {
+            "ticker": ticker,
+            "name": ticker,
+            "sector": "Kiểm thử",
+            "price": 10.0,
+            "fair_value": 13.0,
+            "flags": [],
+            "blockers": [],
+            "checks": [],
+        },
+    )
+
+    progress = []
+    result = investment_job.run_job(
+        refresh=False,
+        use_ai=False,
+        store=tmp_path,
+        progress_sink=progress.append,
+    )
+
+    assert result["status"] == "COMPLETED"
+    assert progress
+    assert any("Đọc thành phần VN100" in item["message"] for item in progress)
+    assert progress[-1]["status"] == "COMPLETED"

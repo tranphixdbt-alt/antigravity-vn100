@@ -41,6 +41,16 @@ def get_erp(macro_env: MacroEnvironment | None = None) -> float:
     return erp_mature + crp_vn
 
 
+def terminal_growth(rf: float | None = None) -> float:
+    """g vĩnh viễn duy nhất = min(config, rf, GDP danh nghĩa dài hạn)."""
+    cfg = load_defaults()
+    g = float(cfg.get("coe_convention", {}).get("terminal_growth", 0.04))
+    caps = [float(cfg.get("long_run_nominal_gdp_growth", 0.08))]
+    if rf is not None and rf > 0:
+        caps.append(rf)
+    return min([g] + caps)
+
+
 def compute_coe(rf: float, beta: float, erp: float | None = None, macro_env: MacroEnvironment | None = None) -> float:
     """COE = rf + beta * erp. erp mặc định = mature ERP (VND-base)."""
     if erp is None:

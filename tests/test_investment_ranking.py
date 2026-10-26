@@ -81,6 +81,21 @@ def test_no_golden_cannot_be_recommended(row):
     assert not result["profiles"]["defensive"]["eligible"]
 
 
+def test_material_cashflow_warning_blocks_accumulation(row):
+    row["checks"] = [
+        {
+            "severity": "warning",
+            "message": "Năm 2025: chưa có đầy đủ lưu chuyển đầu tư/tài chính để đối chiếu biến động tiền; không tự tạo khoản bù.",
+        }
+    ]
+    result = rank_companies([row], load_ranking_config())[0]
+    assert not result["profiles"]["defensive"]["eligible"]
+    assert any(
+        "lưu chuyển đầu tư/tài chính" in reason
+        for reason in result["profiles"]["defensive"]["reasons"]
+    )
+
+
 def test_diversification_and_no_forced_quota(row):
     cfg = load_ranking_config()
     rows = [
@@ -96,6 +111,22 @@ def test_diversification_and_no_forced_quota(row):
     assert not select_candidates(
         rank_companies(rows, cfg), "defensive", cfg, eligible_only=True
     )
+
+
+def test_research_candidates_still_exclude_hard_blockers(row):
+    cfg = load_ranking_config()
+    soft = deepcopy(row)
+    soft["ticker"] = "SOFT"
+    soft["governance_verified"] = False
+    hard = deepcopy(row)
+    hard["ticker"] = "HARD"
+    hard["flags"] = ["STALE_PRICE"]
+
+    ranked = rank_companies([soft, hard], cfg)
+    research = select_candidates(ranked, "defensive", cfg, eligible_only=False)
+
+    assert "SOFT" in research
+    assert "HARD" not in research
 
 
 def test_identity_error_and_prefixed_proxy_are_not_ranked(row):

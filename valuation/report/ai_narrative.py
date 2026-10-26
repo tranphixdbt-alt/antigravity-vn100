@@ -8,16 +8,19 @@ LUẬT (SPEC PHẦN G): văn bản AI sinh là BẢN NHÁP — mọi đoạn tr�
 analyst review". Khi thiếu API key / lỗi mạng → fallback khung gợi ý để
 analyst tự viết, KHÔNG chặn việc xuất báo cáo.
 """
+
 from __future__ import annotations
 
 import datetime
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
-AI_DRAFT_NOTICE = "Nháp do AI tạo từ số liệu định giá — cần analyst review trước khi phát hành."
+AI_DRAFT_NOTICE = (
+    "Nháp do AI tạo từ số liệu định giá — cần analyst review trước khi phát hành."
+)
 
 # Khung gợi ý khi chưa sinh báo cáo bằng nút DeepSeek duy nhất.
 _FALLBACK = {
@@ -34,9 +37,9 @@ _FALLBACK = {
         "(Analyst tóm tắt bối cảnh ngành: chu kỳ, cung–cầu, chính sách, driver "
         "vĩ mô liên quan.)"
     ),
-    "corporate_actions": (
-        "(Analyst rà soát cổ tức, quyền mua, ESOP/phát hành và tác động pha loãng; "
-        "chỉ kết luận sau khi đối chiếu công bố chính thức và mục đích sử dụng vốn.)"
+    "market_view": (
+        "(Analyst nhận định xu hướng giá, khối lượng, dòng tiền và vị thế "
+        "cung-cầu; không quy kết thao túng khi chưa có bằng chứng.)"
     ),
     "risks": (
         "(Analyst liệt kê rủi ro: rủi ro ngành/chu kỳ, rủi ro thực thi, rủi ro "
@@ -60,12 +63,18 @@ def _build_facts(sections: Dict[str, Any]) -> Dict[str, Any]:
     # mảng rời → AI ghép nhầm & né số mới). Mỗi dòng là 1 năm đầy đủ chỉ số.
     financials_by_year = []
     for i, y in enumerate(years):
-        financials_by_year.append({
-            "year": y,
-            "revenue": round(revenue[i]) if i < len(revenue) else None,
-            "net_income": round(net_income[i]) if i < len(net_income) else None,
-            "roe_pct": round(roe[i] * 100, 1) if i < len(roe) and roe[i] is not None else None,
-        })
+        financials_by_year.append(
+            {
+                "year": y,
+                "revenue": round(revenue[i]) if i < len(revenue) else None,
+                "net_income": round(net_income[i]) if i < len(net_income) else None,
+                "roe_pct": (
+                    round(roe[i] * 100, 1)
+                    if i < len(roe) and roe[i] is not None
+                    else None
+                ),
+            }
+        )
 
     latest_year = years[-1] if years else None
     latest = financials_by_year[-1] if financials_by_year else {}
@@ -94,8 +103,8 @@ def _build_facts(sections: Dict[str, Any]) -> Dict[str, Any]:
 
 def generate_report_narratives(sections: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Sinh nháp 4 phần văn bản. Trả về:
-      {"thesis": str, "overview": str, "industry": str, "risks": str,
+    Sinh nháp 5 phần văn bản. Trả về:
+      {"thesis": str, "overview": str, "industry": str, "market_view": str, "risks": str,
        "ai_generated": bool}
     """
     from valuation.config import settings
@@ -118,25 +127,30 @@ QUY TẮC BẮT BUỘC VỀ DỮ LIỆU:
 - Khi trích số theo năm, lấy ĐÚNG cặp năm↔giá trị trong "financials_by_year";
   không tự gán năm cho một con số.
 
-Viết 4 phần:
+Viết 5 phần:
 1. "thesis": Luận điểm đầu tư — 3 đến 5 gạch đầu dòng, mỗi ý 1-2 câu, sắc bén,
    trong đó có ít nhất 1 ý về diễn biến/định giá MỚI NHẤT.
 2. "overview": Tổng quan doanh nghiệp — 3-4 câu về quy mô & hiệu quả, dùng số
    liệu năm mới nhất ({facts.get('latest_fiscal_year')}) làm mốc chính.
 3. "industry": Bối cảnh ngành {facts.get('sector')} tại Việt Nam — 3-4 câu, nêu
    driver chính; thận trọng, không bịa số liệu ngành không có trong data.
-4. "risks": Rủi ro đầu tư — 3 đến 4 gạch đầu dòng, PHẢI gồm rủi ro giả định định
+4. "market_view": Kỹ thuật, khối lượng, dòng tiền và vị thế cung-cầu; không
+   khẳng định thao túng khi không có bằng chứng.
+5. "risks": Rủi ro đầu tư — 3 đến 4 gạch đầu dòng, PHẢI gồm rủi ro giả định định
    giá (WACC/terminal growth) và giải thích các cờ QC nếu có; nêu rõ nếu chỉ số
    gần đây suy giảm.
 
 Số liệu (nguồn sự thật DUY NHẤT): {json.dumps(facts, ensure_ascii=False)}
 
 TRẢ VỀ JSON THUẦN đúng schema: {{"thesis": "...", "overview": "...",
-"industry": "...", "risks": "..."}} — không markdown fence, không lời dẫn.
+"industry": "...", "market_view": "...", "risks": "..."}} — không markdown fence, không lời dẫn.
 """
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=settings.deepseek_api_key, base_url="https://api.deepseek.com/v1")
+
+        client = OpenAI(
+            api_key=settings.deepseek_api_key, base_url="https://api.deepseek.com/v1"
+        )
         response = client.chat.completions.create(
             # "deepseek-chat" — không dùng model suy luận "deepseek-v4-flash":
             # đo thực tế tiêu tốn 89-1065 "reasoning token" NGẪU NHIÊN cho cùng
@@ -146,7 +160,10 @@ TRẢ VỀ JSON THUẦN đúng schema: {{"thesis": "...", "overview": "...",
             # thỉnh thoảng không hoạt động mà không báo lỗi gì.
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": "You are a senior equity research analyst. Reply with pure JSON only."},
+                {
+                    "role": "system",
+                    "content": "You are a senior equity research analyst. Reply with pure JSON only.",
+                },
                 {"role": "user", "content": prompt},
             ],
             max_tokens=2000,
@@ -156,10 +173,15 @@ TRẢ VỀ JSON THUẦN đúng schema: {{"thesis": "...", "overview": "...",
         # Chịu lỗi nhẹ: gọt markdown fence nếu model vẫn trả kèm
         if raw.startswith("```"):
             raw = raw.strip("`")
-            raw = raw[raw.find("{"):raw.rfind("}") + 1]
+            raw = raw[raw.find("{") : raw.rfind("}") + 1]
         data = json.loads(raw)
-        out = {k: str(data.get(k) or _FALLBACK[k]) for k in ("thesis", "overview", "industry", "risks")}
+        out = {
+            k: str(data.get(k) or _FALLBACK[k])
+            for k in ("thesis", "overview", "industry", "market_view", "risks")
+        }
         return {**out, "ai_generated": True}
     except Exception as e:
-        logger.error(f"AI narrative thất bại ({type(e).__name__}: {e}) — dùng khung gợi ý.")
+        logger.error(
+            f"AI narrative thất bại ({type(e).__name__}: {e}) — dùng khung gợi ý."
+        )
         return {**_FALLBACK, "ai_generated": False}

@@ -5,7 +5,7 @@
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "Thu nhập thặng dư (Residual Income)",
     "raw_secondary": "So sánh P/B",
     "raw_weights": "P/B 50–70% + RI 30–50%"
@@ -38,7 +38,7 @@
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "Thu nhập thặng dư (Residual Income)",
     "raw_secondary": "So sánh P/B",
     "raw_weights": "P/B 50–70% + RI 30–50%"
@@ -313,7 +313,7 @@
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "RNAV",
     "raw_secondary": "So sánh P/E, P/B",
     "raw_weights": "RNAV chính, chiết khấu 40–45%"
@@ -324,7 +324,7 @@
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
-    "verified": true,
+    "verified": false,
     "raw_primary": "SOTP / Tỷ suất vốn hóa (cap rate)",
     "raw_secondary": "DCF",
     "raw_weights": "Cap rate cho TTTM"
@@ -445,7 +445,7 @@
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
-    "verified": true,
+    "verified": false,
     "raw_primary": "RNAV / SOTP",
     "raw_secondary": "DCF",
     "raw_weights": "SOTP"
@@ -463,21 +463,22 @@
   },
   "SIP": {
     "sector": "KCN",
-    "primary": "RNAV",
+    "primary": "FCFF",
     "secondary": "EV/EBITDA",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
     "verified": false,
     "raw_primary": "RNAV / DCF",
     "raw_secondary": "EV/EBITDA",
-    "raw_weights": "RNAV quỹ đất"
+    "raw_weights": "RNAV quỹ đất",
+    "note": "s5 (RNAV F1): KCN ghi nhận tiền thuê theo đường thẳng (doanh thu chưa thực hiện ≈ 2,6× VCSH mẹ), ROE/CFO ổn định → DCF (FCFF, Δdoanh thu chưa thực hiện nằm trong vốn lưu động) + EV/EBITDA lịch sử. KCN bán đất ghi nhận một lần (KBC) vẫn RNAV. VGC giữ SOTP (đất KCN ghi giá gốc, phản biện C12)."
   },
   "VGC": {
     "sector": "KCN",
-    "primary": "FCFF",
-    "secondary": "EV/EBITDA",
-    "weight_primary": 0.5,
-    "weight_secondary": 0.5,
+    "primary": "SOTP",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
     "verified": false,
     "raw_primary": "SOTP / RNAV",
     "raw_secondary": "EV/EBITDA",
@@ -489,7 +490,7 @@
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "DCF/FCFF + EV/EBITDA",
     "raw_secondary": "P/E, P/B (xuyên chu kỳ)",
     "raw_weights": "Kết hợp 2–3 PP"
@@ -517,18 +518,18 @@
     "raw_weights": "Kết hợp 2–3 PP"
   },
   "HT1": {
-    "sector": "Thép",
+    "sector": "Vật liệu xây dựng",
     "primary": "EV/EBITDA",
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "EV/EBITDA",
     "raw_secondary": "P/B",
     "raw_weights": "EV/EBITDA"
   },
   "BMP": {
-    "sector": "Thép",
+    "sector": "Vật liệu xây dựng",
     "primary": "FCFF",
     "secondary": "P/E",
     "weight_primary": 0.5,
@@ -599,7 +600,7 @@
     "secondary": "P/E",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "SOTP",
     "raw_secondary": "P/E",
     "raw_weights": "SOTP"
@@ -716,29 +717,31 @@
   },
   "PC1": {
     "sector": "Điện",
-    "primary": "FCFF",
-    "secondary": "EV/EBITDA",
-    "weight_primary": 0.5,
-    "weight_secondary": 0.5,
+    "primary": "EV/EBITDA",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
     "verified": false,
     "raw_primary": "SOTP / DCF",
     "raw_secondary": "EV/EBITDA",
-    "raw_weights": "SOTP"
+    "raw_weights": "SOTP",
+    "note": "s5 (đảo D39): SOTP không khai báo cổ phần niêm yết (DB không có công ty con niêm yết, không có báo cáo bộ phận) → dùng raw_secondary đã IMPLEMENTED (EV/EBITDA hợp nhất, Damodaran)."
   },
   "HDG": {
     "sector": "Điện",
     "primary": "FCFF",
-    "secondary": "RNAV",
-    "weight_primary": 0.5,
-    "weight_secondary": 0.5,
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
     "verified": false,
     "raw_primary": "SOTP",
     "raw_secondary": "DCF / RNAV",
-    "raw_weights": "SOTP"
+    "raw_weights": "SOTP",
+    "note": "s5 (đảo D39): SOTP không khai báo cổ phần niêm yết → raw_secondary 'DCF / RNAV' lấy DCF (FCFF hợp nhất); RNAV chưa có dữ liệu dự án."
   },
   "GEX": {
     "sector": "Điện",
-    "primary": "FCFF",
+    "primary": "SOTP",
     "secondary": null,
     "weight_primary": 1.0,
     "weight_secondary": 0.0,
@@ -775,7 +778,7 @@
     "secondary": "EV/EBITDA",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "DCF",
     "raw_secondary": "P/B, EV/EBITDA",
     "raw_weights": "DCF"
@@ -910,7 +913,8 @@
     "verified": false,
     "raw_primary": "SOTP / P/B",
     "raw_secondary": "DCF",
-    "raw_weights": "SOTP"
+    "raw_weights": "SOTP",
+    "note": "s5 (đảo D39): SOTP không khai báo cổ phần niêm yết → raw_secondary DCF (FCFF hợp nhất). Hạn chế: quỹ đất BĐS ghi giá gốc không được định giá lại."
   },
   "HHV": {
     "sector": "Xây dựng",
@@ -1028,7 +1032,7 @@
     "secondary": "P/B",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "SOTP / RNAV",
     "raw_secondary": "P/B",
     "raw_weights": "SOTP"
@@ -1072,7 +1076,7 @@
     "secondary": "SOTP",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "SOTP",
     "raw_secondary": "NAV từng phần",
     "raw_weights": "SOTP"
@@ -1083,7 +1087,7 @@
     "secondary": "SOTP",
     "weight_primary": 0.5,
     "weight_secondary": 0.5,
-    "verified": true,
+    "verified": false,
     "raw_primary": "SOTP",
     "raw_secondary": "NAV từng phần",
     "raw_weights": "SOTP"
@@ -1110,21 +1114,191 @@
     "raw_secondary": "NAV",
     "raw_weights": "SOTP"
   },
-  "BAF": {"sector": "Cao su/NN", "primary": "FCFF", "secondary": "P/B", "weight_primary": 0.5, "weight_secondary": 0.5, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "P/B", "raw_weights": "Chưa golden test"},
-  "BWE": {"sector": "Nước", "primary": "FCFF", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "DDM", "raw_weights": "Chưa golden test"},
-  "CII": {"sector": "Xây dựng", "primary": "FCFF", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "SOTP", "raw_weights": "Chưa golden test"},
-  "CTS": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
-  "DBC": {"sector": "Cao su/NN", "primary": "FCFF", "secondary": "P/B", "weight_primary": 0.5, "weight_secondary": 0.5, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "P/B", "raw_weights": "Chưa golden test"},
-  "DSE": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
-  "EVF": {"sector": "Tài chính", "primary": "P/B", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "P/B", "raw_secondary": null, "raw_weights": "Chưa golden test"},
-  "GEE": {"sector": "Đa ngành", "primary": "SOTP", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "SOTP", "raw_secondary": "NAV", "raw_weights": "Proxy, chưa golden test"},
-  "KOS": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
-  "PAN": {"sector": "Đa ngành", "primary": "SOTP", "secondary": null, "weight_primary": 1.0, "weight_secondary": 0.0, "verified": false, "raw_primary": "SOTP", "raw_secondary": "NAV", "raw_weights": "Proxy, chưa golden test"},
-  "SJS": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
-  "TAL": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
-  "TCX": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
-  "VCK": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"},
-  "VPI": {"sector": "BĐS", "primary": "RNAV", "secondary": "P/B", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "RNAV", "raw_secondary": "P/B", "raw_weights": "Proxy, chưa golden test"},
-  "VPL": {"sector": "Du lịch", "primary": "FCFF", "secondary": "EV/EBITDA", "weight_primary": 0.6, "weight_secondary": 0.4, "verified": false, "raw_primary": "DCF/FCFF", "raw_secondary": "EV/EBITDA", "raw_weights": "Chưa golden test"},
-  "VPX": {"sector": "CK", "primary": "P/B", "secondary": "P/E", "weight_primary": 0.7, "weight_secondary": 0.3, "verified": false, "raw_primary": "P/B", "raw_secondary": "P/E", "raw_weights": "Chưa golden test"}
+  "BAF": {
+    "sector": "Cao su/NN",
+    "primary": "FCFF",
+    "secondary": "P/B",
+    "weight_primary": 0.5,
+    "weight_secondary": 0.5,
+    "verified": false,
+    "raw_primary": "DCF/FCFF",
+    "raw_secondary": "P/B",
+    "raw_weights": "Chưa golden test"
+  },
+  "BWE": {
+    "sector": "Nước",
+    "primary": "FCFF",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
+    "verified": false,
+    "raw_primary": "DCF/FCFF",
+    "raw_secondary": "DDM",
+    "raw_weights": "Chưa golden test"
+  },
+  "CII": {
+    "sector": "Xây dựng",
+    "primary": "FCFF",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
+    "verified": false,
+    "raw_primary": "DCF/FCFF",
+    "raw_secondary": "SOTP",
+    "raw_weights": "Chưa golden test"
+  },
+  "CTS": {
+    "sector": "CK",
+    "primary": "P/B",
+    "secondary": "P/E",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "P/B",
+    "raw_secondary": "P/E",
+    "raw_weights": "Chưa golden test"
+  },
+  "DBC": {
+    "sector": "Cao su/NN",
+    "primary": "FCFF",
+    "secondary": "P/B",
+    "weight_primary": 0.5,
+    "weight_secondary": 0.5,
+    "verified": false,
+    "raw_primary": "DCF/FCFF",
+    "raw_secondary": "P/B",
+    "raw_weights": "Chưa golden test"
+  },
+  "DSE": {
+    "sector": "CK",
+    "primary": "P/B",
+    "secondary": "P/E",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "P/B",
+    "raw_secondary": "P/E",
+    "raw_weights": "Chưa golden test"
+  },
+  "EVF": {
+    "sector": "Tài chính",
+    "primary": "RI",
+    "secondary": "P/B",
+    "weight_primary": 0.5,
+    "weight_secondary": 0.5,
+    "verified": false,
+    "raw_primary": "Thu nhập thặng dư (Residual Income)",
+    "raw_secondary": "So sánh P/B",
+    "raw_weights": "RI 50% + P/B 50% như NH (TCTD phi ngân hàng, mẫu BCTC TCTD); chưa golden test"
+  },
+  "GEE": {
+    "sector": "Đa ngành",
+    "primary": "SOTP",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
+    "verified": false,
+    "raw_primary": "SOTP",
+    "raw_secondary": "NAV",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "KOS": {
+    "sector": "BĐS",
+    "primary": "RNAV",
+    "secondary": "P/B",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "RNAV",
+    "raw_secondary": "P/B",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "PAN": {
+    "sector": "Đa ngành",
+    "primary": "SOTP",
+    "secondary": null,
+    "weight_primary": 1.0,
+    "weight_secondary": 0.0,
+    "verified": false,
+    "raw_primary": "SOTP",
+    "raw_secondary": "NAV",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "SJS": {
+    "sector": "BĐS",
+    "primary": "RNAV",
+    "secondary": "P/B",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "RNAV",
+    "raw_secondary": "P/B",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "TAL": {
+    "sector": "BĐS",
+    "primary": "RNAV",
+    "secondary": "P/B",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "RNAV",
+    "raw_secondary": "P/B",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "TCX": {
+    "sector": "CK",
+    "primary": "P/B",
+    "secondary": "P/E",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "P/B",
+    "raw_secondary": "P/E",
+    "raw_weights": "Chưa golden test"
+  },
+  "VCK": {
+    "sector": "CK",
+    "primary": "P/B",
+    "secondary": "P/E",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "P/B",
+    "raw_secondary": "P/E",
+    "raw_weights": "Chưa golden test"
+  },
+  "VPI": {
+    "sector": "BĐS",
+    "primary": "RNAV",
+    "secondary": "P/B",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "RNAV",
+    "raw_secondary": "P/B",
+    "raw_weights": "Proxy, chưa golden test"
+  },
+  "VPL": {
+    "sector": "Du lịch",
+    "primary": "FCFF",
+    "secondary": "EV/EBITDA",
+    "weight_primary": 0.6,
+    "weight_secondary": 0.4,
+    "verified": false,
+    "raw_primary": "DCF/FCFF",
+    "raw_secondary": "EV/EBITDA",
+    "raw_weights": "Chưa golden test"
+  },
+  "VPX": {
+    "sector": "CK",
+    "primary": "P/B",
+    "secondary": "P/E",
+    "weight_primary": 0.7,
+    "weight_secondary": 0.3,
+    "verified": false,
+    "raw_primary": "P/B",
+    "raw_secondary": "P/E",
+    "raw_weights": "Chưa golden test"
+  }
 }

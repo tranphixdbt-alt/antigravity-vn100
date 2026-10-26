@@ -1,11 +1,16 @@
 """
 Weekly Auto Updater Module — Tự động cập nhật BCTC, Giá & Báo cáo Định giá CTCK hàng tuần.
 """
+
 import logging
 import time
-from typing import Callable, Optional, Dict, Any
+from collections.abc import Callable
+from typing import Any
+
+from sqlalchemy import distinct
 from sqlalchemy.orm import Session
-from valuation.db.models import Ticker
+
+from valuation.db.models import FinancialsQuarterly, Ticker
 from valuation.ingest.pipeline import run_ingest
 from valuation.ingest.scrapers import broker_24hmoney, broker_simplize
 
@@ -24,9 +29,9 @@ _CONSENSUS_SOURCES = (
 def run_weekly_auto_update(
     db_read: Session,
     db_write: Session = None,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None,
-    max_tickers: Optional[int] = None
-) -> Dict[str, Any]:
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    max_tickers: int | None = None,
+) -> dict[str, Any]:
     """
     Chạy cập nhật dữ liệu hàng tuần cho các mã VN100:
     1. Cập nhật Giá thị trường & Dòng tiền mới nhất.
@@ -34,17 +39,27 @@ def run_weekly_auto_update(
     3. Crawl Báo cáo & Khuyến nghị mới nhất của các CTCK vào consensus_history.
     """
     logger.info("--- BẮT ĐẦU CẬP NHẬT TỰ ĐỘNG HÀNG TUẦN ---")
-    
-    tickers_query = db_read.query(Ticker.ticker).filter(Ticker.is_vn100 == True).order_by(Ticker.ticker.asc()).all()
+
+    tickers_query = (
+        db_read.query(Ticker.ticker)
+        .filter(Ticker.is_vn100)
+        .order_by(Ticker.ticker.asc())
+        .all()
+    )
     tickers = [t[0] for t in tickers_query]
-    
+    vn100 = set(tickers)
+
     if max_tickers and max_tickers > 0:
         tickers = tickers[:max_tickers]
-        
+
     total = len(tickers)
     success_count = 0
+    partial_count = 0
     fail_count = 0
-    consensus_counts: Dict[str, int] = {name: 0 for name, _ in _CONSENSUS_SOURCES}
+    have_financials = {
+        row[0] for row in db_read.query(distinct(FinancialsQuarterly.ticker)).all()
+    }
+    consensus_counts: dict[str, int] = {name: 0 for name, _ in _CONSENSUS_SOURCES}
     consensus_errors: list[str] = []
 
     for idx, ticker in enumerate(tickers, start=1):
@@ -55,7 +70,12 @@ def run_weekly_auto_update(
 
         try:
             # 1. Ingest Giá & BCTC
-            run_ingest(ticker, data_types=['prices', 'financials'], incremental=True)
+            ingest_result = run_ingest(
+                ticker,
+                data_types=["prices", "financials"],
+                incremental=True,
+                include_yearly=ticker not in have_financials,
+            )
 
             # 2. Ingest Báo cáo định giá CTCK — từng nguồn độc lập
             for source_name, importer in _CONSENSUS_SOURCES:
@@ -67,22 +87,78 @@ def run_weekly_auto_update(
                     logger.warning(f"Lỗi crawl báo cáo CTCK — {msg}")
                     consensus_errors.append(msg)
 
-            success_count += 1
+            if ingest_result["status"] == "SUCCESS":
+                success_count += 1
+            elif ingest_result["status"] == "PARTIAL":
+                partial_count += 1
+                logger.warning(
+                    "Cập nhật một phần %s: %s",
+                    ticker,
+                    ingest_result["errors"],
+                )
+            else:
+                fail_count += 1
             time.sleep(1.0)  # Giảm tải cho API server & web scrapers
         except Exception as e:
             logger.error(f"Lỗi cập nhật {ticker}: {e}")
             fail_count += 1
 
+    # VNINDEX có is_vn100=0 nên vòng trên bỏ qua → chuỗi chỉ số từng đứng im (D51).
+    vni = run_ingest("VNINDEX", data_types=["prices"], include_market_flows=False)
+    if vni["prices"]["status"] != "UPDATED":
+        logger.warning("Không cập nhật được VNINDEX: %s", vni["prices"])
+
+    # Công ty con niêm yết ngoài VN100 khai trong config/sotp_holdings.yaml cũng is_vn100=0: không làm mới
+    # thì giá cũ → SOTP_HOLDINGS_STALE chặn tập đoàn mẹ. Ingest với is_vn100=False (không đổi rổ).
+    from valuation.config import sotp_holding_tickers
+
+    subs = sorted(sotp_holding_tickers() - vn100)
+    sotp_subs: dict[str, str] = {}
+    for sub in subs:
+        try:
+            sub_result = run_ingest(
+                sub,
+                data_types=["prices", "financials"],
+                incremental=True,
+                include_yearly=sub not in have_financials,
+                include_market_flows=False,
+                is_vn100=False,
+            )
+            sotp_subs[sub] = sub_result["status"]
+        except Exception as e:  # noqa: BLE001 — cô lập từng mã như vòng VN100; lỗi ghi log + FAILED trong kết quả
+            logger.error(f"Lỗi cập nhật công ty con SOTP {sub}: {e}")
+            sotp_subs[sub] = "FAILED"
+        if sotp_subs[sub] != "SUCCESS":
+            logger.warning("Cập nhật công ty con SOTP %s: %s", sub, sotp_subs[sub])
+
+    # Sự kiện cổ tức/quyền trước đây chỉ làm mới khi mở từng mã → 85/100 mã đứng ở 30/08 và lịch
+    # quyền VN100 thiếu các đợt công bố mới. Theo TTL nên mã vừa kiểm tra không gọi lại nguồn.
+    if db_write is not None:
+        from valuation.ingest.corporate_actions import backfill_vn100_corporate_actions
+
+        ca = backfill_vn100_corporate_actions(db_write)
+        if ca.get("error"):
+            logger.warning("Cập nhật sự kiện cổ tức/quyền lỗi %s mã: %s", ca["error"], ca)
+
     consensus_summary = ", ".join(f"{k}={v}" for k, v in consensus_counts.items())
-    summary_msg = (f"Hoàn tất cập nhật hàng tuần: {success_count}/{total} mã thành công. "
-                   f"Khuyến nghị CTCK thu được: {consensus_summary}.")
+    # BCTC/giá công ty con SOTP đứng yên làm lệch kỳ với tập đoàn mẹ → không được báo SUCCESS tổng.
+    subs_bad = sorted(sub for sub, status in sotp_subs.items() if status != "SUCCESS")
+    summary_msg = (
+        f"Hoàn tất cập nhật hàng tuần: {success_count}/{total} mã đầy đủ, "
+        f"{partial_count} mã một phần, {fail_count} mã thất bại. "
+        f"Công ty con SOTP chưa cập nhật đủ: {len(subs_bad)}/{len(sotp_subs)}"
+        f"{' (' + ', '.join(subs_bad) + ')' if subs_bad else ''}. "
+        f"Khuyến nghị CTCK thu được: {consensus_summary}."
+    )
     logger.info(summary_msg)
 
     return {
-        "status": "SUCCESS",
+        "status": "SUCCESS" if not (partial_count or fail_count or subs_bad) else "PARTIAL",
         "total": total,
         "success_count": success_count,
+        "partial_count": partial_count,
         "fail_count": fail_count,
         "consensus": {**consensus_counts, "errors": consensus_errors},
-        "message": summary_msg
+        "sotp_subs": sotp_subs,
+        "message": summary_msg,
     }

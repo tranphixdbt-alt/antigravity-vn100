@@ -30,14 +30,14 @@ def _collect_flags(model, result: Dict[str, Any]) -> List[str]:
     return flags
 
 
-def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
+def value_ticker(db: Session, ticker: str, macro_env=None, as_of=None) -> Dict[str, Any]:
     """Định giá 1 mã theo đúng phương pháp router. Trả dict chuẩn hoặc {error}."""
     plan = route(ticker)
     if not plan:
         return {"ticker": ticker, "error": "NOT_IN_VN100"}
 
     method, status, group = plan["method"], plan["status"], plan["group"]
-    price = get_latest_price(db, ticker, fetch_live=False)
+    price = get_latest_price(db, ticker, fetch_live=False, as_of=as_of)
     base = {
         "ticker": ticker, "method": method, "status": status,
         "group": group, "verified": plan["verified"], "price": price,
@@ -46,19 +46,28 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
         # Engine DUY NHẤT: build_company_data → valuate (best-of-both theo ngành).
         # Cùng lõi với Streamlit → CLI/batch/Sheets và UI ra cùng một số.
         from valuation.engine.valuate import valuate
-        company = build_company_data(db, ticker, mode="TTM", fetch_live=False)
+        company = build_company_data(db, ticker, mode="TTM", fetch_live=False, as_of=as_of)
         res = valuate(company, macro_env=macro_env)
 
         fv = float(res["blended_fair_value_per_share"])
         flags = list(res.get("flags", []) or [])
-        if fv <= 0 or _NOT_RATEABLE_FLAGS.intersection(flags):
+        # Cổng phát hành của valuate() (lỗi dữ liệu/mô hình) phải chặn cả batch,
+        # xếp hạng và file xuất — trước đây chỉ UI tôn trọng nó.
+        # D68: mã BROKER_SYNTH vẫn mang cờ chẩn đoán của mô hình riêng (vd VALUATION_PROXY,
+        # lý do nó không dùng được) để minh bạch — không coi là NOT_RATEABLE nữa, vì quyết
+        # định công bố thật đã nằm ở publication_allowed (tính trên BROKER_SYNTH, không phải
+        # mô hình riêng).
+        rateable_block = (
+            set() if res.get("method") == "BROKER_SYNTH" else _NOT_RATEABLE_FLAGS.intersection(flags)
+        )
+        if fv <= 0 or not res.get("publication_allowed", True) or rateable_block:
             if "NOT_RATEABLE" not in flags:
                 flags.append("NOT_RATEABLE")
             return {
                 **base,
                 "fair_value": None,
                 "upside": None,
-                "recommendation": "KHÔNG XẾP HẠNG",
+                "recommendation": "NOT_RATED",
                 "flags": flags,
             }
         upside = (fv / price - 1.0) if price else None
@@ -66,7 +75,7 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
             **base,
             "fair_value": fv,
             "upside": upside,
-            "recommendation": res.get("recommendation", "THEO DÕI"),
+            "recommendation": res["recommendation"],
             "flags": flags,
         }
     except Exception as e:  # 1 mã lỗi không phá batch
@@ -76,33 +85,8 @@ def value_ticker(db: Session, ticker: str, macro_env=None) -> Dict[str, Any]:
 def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None):
     """Chọn model phi tài chính theo method. Trả (model, result) hoặc (None, None)."""
     
-    # NẾU LÀ NGÀNH CHU KỲ (Thép, Hóa chất, Dầu khí, Phân bón, etc.)
-    # Theo kế hoạch: Ép dùng Mid-cycle (trung bình 5 năm) thay vì Trailing TTM
-    _CYCLICAL_KW = ("Thép", "Hóa chất", "Dầu khí", "Cao su", "Phân bón", "Vận tải", "Khai khoáng")
-    is_cyclical = any(k in (group or "") for k in _CYCLICAL_KW)
-    
-    if is_cyclical and method in ("EV_EBITDA", "PE") and len(company.historical_is) > 0:
-        # Chuẩn hóa chu kỳ chỉ là biến đổi nội bộ của model. Không sửa đối tượng
-        # caller vì báo cáo/scenario có thể tái sử dụng cùng Company và ra Base
-        # khác nhau tùy thứ tự gọi.
-        company = company.model_copy(deep=True)
-        # Tính giá trị trung bình 5 năm từ lịch sử
-        hist_ni = [x.net_income for x in company.historical_is if x.net_income > 0]
-        if method == "PE" and hist_ni:
-            mid_ni = sum(hist_ni) / len(hist_ni)
-            company.historical_is[-1].net_income = mid_ni
-            
-        if method == "EV_EBITDA" and len(company.historical_cf) > 0:
-            hist_ebitda = []
-            for _is, _cf in zip(company.historical_is, company.historical_cf):
-                if _is.ebit > 0:
-                    hist_ebitda.append(_is.ebit + _cf.depreciation)
-            if hist_ebitda:
-                mid_ebitda = sum(hist_ebitda) / len(hist_ebitda)
-                # Ghi đè vào quý cuối để mô hình EV_EBITDA lấy ra
-                company.historical_is[-1].ebit = mid_ebitda
-                company.historical_cf[-1].depreciation = 0.0
-
+    # Chuẩn hóa chu kỳ nằm TRONG từng model (biên giữa chu kỳ × doanh thu TTM,
+    # xem models/base.midcycle_level) — không sửa đè dữ liệu Company ở đây.
     from valuation.engine.models.dcf import DCFValuationModel
     if method == "RNAV":
         from valuation.engine.models.rnav import RNAVValuationModel
@@ -136,10 +120,13 @@ def _dispatch_nonfin(company, method: str, group: Optional[str], macro_env=None)
         if group == "Điện":
             from valuation.engine.models.ddm import DDMValuationModel
             w = load_defaults().get("ddm", {}).get("power_dcf_weight", 0.6)
-            ddm_fv = DDMValuationModel.from_pydantic(company).perform_valuation()["blended_fair_value_per_share"]
+            ddm = DDMValuationModel.from_pydantic(company).perform_valuation()
+            ddm_fv = ddm["blended_fair_value_per_share"]
             if ddm_fv > 0:
                 res["blended_fair_value_per_share"] = w * res["blended_fair_value_per_share"] + (1 - w) * ddm_fv
                 res.setdefault("flags", []).append("DDM_BLEND")
+            else:
+                res.setdefault("flags", []).extend(ddm.get("flags", []))
         return m, res
     else:
         return None, None

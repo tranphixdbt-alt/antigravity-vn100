@@ -120,7 +120,7 @@ class TestHopNhatKichBan:
         for scenario in ("Bull", "Base", "Bear"):
             comp = apply_scenario_adjustments(company, scenario)
             i, r = run_valuation_engine(comp)
-            blended, _, _ = blend_intrinsic_relative(i, r, w, company.current_price)
+            blended, _ = blend_intrinsic_relative(i, r, w, company.current_price)
             assert direct[scenario] == pytest.approx(round(blended, 0)), (
                 f"{scenario}: hai đường gọi phải ra cùng số (D30)"
             )

@@ -240,6 +240,27 @@ def test_validation_does_not_invent_cash_flow_balancing_entry():
     assert restored.historical_cf[0].cf_other == 0
 
 
+def test_cashflow_other_uses_reported_cfi_cff_without_double_counting_capex():
+    from valuation.data_access.repo import _cashflow_other_excluding_capex
+
+    data = {
+        "net_cash_inflows_outflows_from_operating_activities": 1_000.0,
+        "net_cash_inflows_outflows_from_investing_activities": -300.0,
+        "net_cash_inflows_outflows_from_financing_activities": -100.0,
+        "effect_of_foreign_exchange_differences": 5.0,
+        "purchases_of_fixed_assets_and_other_long_term_assets": -200.0,
+    }
+
+    cf_other, has_full_sections = _cashflow_other_excluding_capex(
+        data,
+        capex_abs=200.0,
+    )
+
+    assert has_full_sections is True
+    assert cf_other == -195.0
+    assert 1_000.0 - 200.0 + cf_other == 605.0
+
+
 def test_material_data_error_blocks_publication_without_hiding_diagnostic():
     from test_verified_summary import _company
 

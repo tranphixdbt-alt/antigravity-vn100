@@ -155,14 +155,3 @@ def overlay_revenue_growth(
         return list(base_growth)
     return [g + adj for g in base_growth]
 
-
-def overlay_credit_growth(
-    base_credit_growth: list[float], sector_str: Optional[str], ctx: MacroContext
-) -> list[float]:
-    """Điều chỉnh credit_growth ngân hàng theo tín dụng hệ thống."""
-    sector_key = classify_sector(sector_str)
-    beta = _elasticity("credit_growth_to_system", sector_key)
-    adj = beta * ctx.delta("CREDIT_GROWTH")
-    if adj == 0.0:
-        return list(base_credit_growth)
-    return [max(g + adj, 0.0) for g in base_credit_growth]

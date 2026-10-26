@@ -29,10 +29,10 @@ class PBRelativeValuationModel(BaseValuationModel):
         bs = company.historical_bs[-1]
         a = company.assumptions
         cf_dict = {
-            "total_equity": bs.total_equity * 1e9,            # đồng
+            "total_equity": bs.parent_equity * 1e9,            # đồng
             "net_income_history": [is_.net_income for is_ in company.historical_is],  # tỷ
             # D26: cần chuỗi VCSH để tính ROE CÙNG KỲ (xem `perform_valuation`).
-            "equity_history": [b.total_equity for b in company.historical_bs],  # tỷ
+            "equity_history": [b.parent_equity for b in company.historical_bs],  # tỷ
             "shares_outstanding": company.shares_outstanding * 1e6,
             "current_price": company.current_price,
         }

@@ -15,6 +15,10 @@ html, body, .stApp, .stApp button, .stApp input, .stApp textarea,
     font-family: var(--ag-font);
     letter-spacing: 0;
 }
+html, body, .stApp {
+    max-width: 100%;
+    overflow-x: hidden;
+}
 .stApp { background: #fff; color: var(--ag-ink); }
 .stMainBlockContainer {
     max-width: 1440px;
@@ -22,7 +26,12 @@ html, body, .stApp, .stApp button, .stApp input, .stApp textarea,
 }
 [data-testid="stHeader"] { background: #fff; }
 [data-testid="stSidebar"] { background: #f7f9f8; border-right: 1px solid var(--ag-line); }
-[data-testid="stSidebarUserContent"] { padding-top: 1.5rem; }
+[data-testid="stSidebarUserContent"] { padding-top: .5rem; }
+[data-testid="stAppViewContainer"],
+[data-testid="stVerticalBlock"],
+[data-testid="stHorizontalBlock"] {
+    min-width: 0;
+}
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li { font-size: 15px; line-height: 1.7; }
 [data-testid="stMarkdownContainer"] h1,
@@ -96,6 +105,25 @@ html, body, .stApp, .stApp button, .stApp input, .stApp textarea,
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] { color: var(--ag-green-text); }
 [data-testid="stTabs"] [role="tabpanel"] { padding-top: 26px; }
 [data-testid="stDataFrame"] { border: 1px solid var(--ag-line); border-radius: 6px; box-shadow: none; }
+[data-testid="stDataFrame"],
+[data-testid="stDataFrame"] > div,
+[data-testid="stDataEditor"],
+[data-testid="stDataEditor"] > div {
+    max-width: 100%;
+    overflow-x: auto;
+}
+.stPlotlyChart,
+.stPlotlyChart > div,
+.js-plotly-plot {
+    max-width: 100%;
+}
+.modebar {
+    max-width: 100%;
+    white-space: normal;
+}
+img, svg, canvas, iframe {
+    max-width: 100%;
+}
 hr { border-color: var(--ag-line); margin: 1.4rem 0; }
 .ag-shell-header { margin-bottom: 4px; }
 .ag-utility-bar {
@@ -128,22 +156,176 @@ hr { border-color: var(--ag-line); margin: 1.4rem 0; }
 .ag-summary-price strong { display: block; font-size: 25px; color: var(--ag-ink); margin-top: 4px; }
 .ag-summary-price small { font-size: 13px; font-weight: 400; }
 .ag-summary-upside { font-size: 16px; font-weight: 700; color: var(--ag-summary-text); margin-top: 6px; }
+/* Tab 3 (Cổ tức) / 4 (VN100) / 5 (Dòng tiền ngành) đang mở (D80: trước là 4/5/6, gộp Định giá + CTCK) → ẩn khối định giá phía trên thanh tab (thẻ
+   khuyến nghị, cảnh báo, cờ) cho các tab này gọn; chuyển lại tab định giá thì hiện lại ngay, không gọi lại
+   server (D55, D73). */
+.stMainBlockContainer > [data-testid="stVerticalBlock"]:has(> [data-testid="stTabs"] > div > div > [role="tablist"] > button[role="tab"]:is(:nth-of-type(3), :nth-of-type(4), :nth-of-type(5))[aria-selected="true"]) .st-key-valuation_head {
+    display: none;
+}
 @media (max-width: 1100px) {
     .stMainBlockContainer { padding-left: 1.5rem; padding-right: 1.5rem; }
     .ag-summary-band { grid-template-columns: 1fr; gap: 18px; }
     .ag-summary-market { border-left: 0; padding: 14px 0 0; border-top: 1px solid #d6e1d9; min-width: 0; }
 }
+/* ≤768px: Streamlit tự thu sidebar → icon ">>" 28px không chữ là lối duy nhất tới chọn mã/vĩ mô. */
+@media (max-width: 768px) {
+    [data-testid="stExpandSidebarButton"] {
+        width: auto; min-height: 44px; padding: 0 14px 0 8px; gap: 4px;
+        border: 1px solid #cad6ce; border-radius: 22px; background: var(--ag-mint);
+    }
+    [data-testid="stExpandSidebarButton"]::after {
+        content: "Chọn mã · Vĩ mô";
+        font: 700 13px/1 var(--ag-font); color: var(--ag-green-text); white-space: nowrap;
+    }
+    [data-testid="stSidebarHeader"] { position: sticky; top: 0; z-index: 2; background: #f7f9f8; }
+    /* Khối menu ⋮ của Streamlit có min-width 200px → ở màn ≤345px bị nút trên đẩy ra ngoài màn hình. */
+    [data-testid="stToolbar"] div:has(> [data-testid="stMainMenu"]) { min-width: 0; }
+}
+@media (max-width: 380px) {
+    [data-testid="stExpandSidebarButton"]::after { content: "Chọn mã"; }
+}
 @media (max-width: 640px) {
-    .stMainBlockContainer { padding: 3.5rem 1rem 2rem; }
+    .stMainBlockContainer { padding: 3.1rem .85rem 2rem; }
+    [data-testid="stSidebar"] {
+        width: min(92vw, 22rem) !important;
+        min-width: 0 !important;
+    }
+    [data-testid="stSidebarUserContent"] {
+        padding: 1rem 0 1.25rem;  /* stSidebarContent đã có lề 20px mỗi bên */
+    }
     [data-testid="stMarkdownContainer"] h1 { font-size: 28px; }
     [data-testid="stMarkdownContainer"] h2 { font-size: 23px; }
     [data-testid="stMarkdownContainer"] h3 { font-size: 18px; }
-    .ag-utility-bar { padding: 12px; font-size: 11px; gap: 8px; }
-    .ag-brand-row { padding: 20px 0; gap: 14px; }
-    .ag-brand-caption { padding-left: 14px; font-size: 12px; }
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] li { font-size: 14px; line-height: 1.65; }
+    [data-testid="stMetric"] { padding: 12px 0; }
+    [data-testid="stMetricValue"] {
+        font-size: 23px;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: .65rem !important;
+    }
+    /* Streamlit tự xếp cột full-width ở màn hẹp; riêng cặp chỉ số vĩ mô ở sidebar giữ 2 cột. */
+    [data-testid="stSidebar"] [data-testid="stColumn"]:has([data-testid="stMetric"]) { min-width: 0 !important; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] hr { margin: .5rem 0; }
+    /* Tab xuống dòng thay vì cuộn ngang (2/5 tab từng nằm ngoài màn hình). tab-highlight định vị
+       bằng translateX sẽ lệch khi xuống dòng → ẩn, gạch chân bằng box-shadow của tab đang chọn. */
+    [data-testid="stTabs"] [role="tablist"] { gap: 4px; flex-wrap: wrap; overflow-x: visible; row-gap: 0; }
+    [data-testid="stTabs"] [data-baseweb="tab-highlight"],
+    [data-testid^="stTabsScroll"] { display: none; }
+    [data-testid="stTabs"] [role="tab"][aria-selected="true"] { box-shadow: inset 0 -3px 0 var(--ag-green-text); }
+    [data-testid="stTabs"] [role="tab"] {
+        min-height: 44px;
+        padding: 8px 10px;
+    }
+    [data-testid="stTabs"] [role="tab"] p {
+        font-size: 13px;
+    }
+    [data-testid="stTabs"] [role="tabpanel"] {
+        padding-top: 18px;
+    }
+    [data-testid="stDataFrame"],
+    [data-testid="stDataEditor"] {
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    .stButton button, .stDownloadButton button {
+        width: 100%;
+        min-height: 42px;
+        padding: 9px 14px;
+        border-radius: 22px;
+    }
+    .stButton button p, .stDownloadButton button p {
+        font-size: 13px;
+        white-space: normal;
+    }
+    /* Header gọn: branding từng chiếm ~39% màn hình trước khi tới thanh tổng quan mã. */
+    .ag-utility-bar, .ag-page-heading .ag-breadcrumb { display: none; }
+    .ag-brand-row { align-items: baseline; padding: 4px 0 10px; gap: 10px; }
+    .ag-wordmark { font-size: 22px; }
+    .ag-brand-caption { font-size: 12px; border-left: 0; padding-left: 0; }
+    .ag-page-heading { padding: 10px 0 6px; }
     .ag-summary-band { padding: 18px; }
+    .ag-summary-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
     [data-testid="stMarkdownContainer"] .ag-summary-title { font-size: 24px; }
-    [data-testid="stTabs"] [role="tab"] { padding: 10px 12px; }
+    .ag-summary-price strong { font-size: 22px; }
+}
+@media (max-width: 430px) {
+    .stMainBlockContainer { padding-left: .7rem; padding-right: .7rem; }
+    [data-testid="stMarkdownContainer"] h1 { font-size: 25px; }
+    [data-testid="stMarkdownContainer"] h2 { font-size: 21px; }
+    [data-testid="stMarkdownContainer"] h3 { font-size: 17px; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
+        font-size: 12px;
+        line-height: 1.55;
+    }
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+        font-size: 13px;
+    }
+    [data-testid="stMarkdownContainer"] .ag-summary-title { font-size: 21px; }
+    .ag-summary-band { padding: 14px; }
+}
+/* ≤640px: 5 tab cấp trang thành thanh điều hướng cố định ở đáy như app (D54). Chỉ chọn tab là con trực
+   tiếp của khối nội dung chính → tab lồng bên trong các trang vẫn như cũ. */
+@media (max-width: 640px) {
+    .stMainBlockContainer { padding-bottom: calc(88px + env(safe-area-inset-bottom)) !important; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"] {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 999990;
+        flex-wrap: nowrap; gap: 0; margin: 0;
+        padding: 0 4px env(safe-area-inset-bottom);
+        background: #fff; border-top: 1px solid var(--ag-line);
+        box-shadow: 0 -4px 14px rgba(15, 23, 42, .08);
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"] > [role="tab"] {
+        flex: 1 1 0; min-width: 0; min-height: 60px; padding: 6px 2px 4px;
+        flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"] > [role="tab"] p {
+        font-size: 11px; line-height: 1.2; white-space: normal; text-align: center;
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"] > [role="tab"][aria-selected="true"] {
+        box-shadow: inset 0 3px 0 var(--ag-green-text); background: var(--ag-mint);
+    }
+    /* ≥ 2 tab (đã nạp mã: 5 tab — D80 gộp Định giá + CTCK; chưa nạp: 2 tab): icon + tên ngắn; tên đầy đủ vẫn còn cho trình đọc
+       màn hình. Nhãn đáy tab "Dòng tiền ngành" là "money" (D73). */
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)) > [role="tab"] p {
+        position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)) > [role="tab"]::before {
+        font-size: 20px; line-height: 1;
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)) > [role="tab"]::after {
+        font: 700 11px/1.2 var(--ag-font); white-space: nowrap;
+    }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(1)::before { content: "📊"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(1)::after { content: "BCTC"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(2)::before { content: "🎯"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(2)::after { content: "Định giá"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(3)::before { content: "💵"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(3)::after { content: "Cổ tức"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(4)::before { content: "🏆"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(4)::after { content: "VN100"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(5)::before { content: "💸"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(5)) > [role="tab"]:nth-of-type(5)::after { content: "money"; }
+    /* Chưa nạp mã: 2 tab VN100 · money. */
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)):not(:has(> button[role="tab"]:nth-of-type(3))) > [role="tab"]:nth-of-type(1)::before { content: "🏆"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)):not(:has(> button[role="tab"]:nth-of-type(3))) > [role="tab"]:nth-of-type(1)::after { content: "VN100"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)):not(:has(> button[role="tab"]:nth-of-type(3))) > [role="tab"]:nth-of-type(2)::before { content: "💸"; }
+    .stMainBlockContainer > [data-testid="stVerticalBlock"] > [data-testid="stTabs"] > div > div > [role="tablist"]:has(> button[role="tab"]:nth-of-type(2)):not(:has(> button[role="tab"]:nth-of-type(3))) > [role="tab"]:nth-of-type(2)::after { content: "money"; }
+}
+/* Điện thoại cảm ứng: Plotly chặn cuộn khi vuốt lên chart (preventDefault) → trang kẹt trên các chart cao.
+   Chart thành tĩnh khi chạm (mất tooltip/zoom), đổi lại cuộn được. Chỉ ≤768px: iPad/tablet giữ tương tác.
+   Modebar chỉ giữ nhóm cuối (nút Fullscreen của Streamlit) — xem chart lớn trên điện thoại. */
+@media (hover: none) and (pointer: coarse) and (max-width: 768px) {
+    .stPlotlyChart .drag { pointer-events: none !important; }
+    .stPlotlyChart .modebar-group:not(:last-child) { display: none !important; }
 }
 @media (prefers-reduced-motion: reduce) {
     .stButton button, .stDownloadButton button, .ca-card, .ca-stat { transition: none !important; }

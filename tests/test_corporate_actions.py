@@ -14,6 +14,7 @@ from valuation.analysis.corporate_actions import (
 from valuation.data_access.corporate_actions import (
     corporate_actions_context,
     load_corporate_actions,
+    load_upcoming_vn100_corporate_actions,
     should_refresh_corporate_actions,
 )
 from valuation.db.models import (
@@ -23,7 +24,10 @@ from valuation.db.models import (
     Ticker,
 )
 from valuation.db.session import Base
-from valuation.ingest.corporate_actions import normalize_vci_event, upsert_corporate_actions
+from valuation.ingest.corporate_actions import (
+    normalize_vci_event,
+    upsert_corporate_actions,
+)
 from valuation.views.corporate_actions import _historical_impact_rows
 
 
@@ -102,8 +106,80 @@ def test_reader_blocks_lookahead_but_keeps_announced_future_action(db):
     assert rows[0].payment_date > datetime.date(2026, 4, 1)
 
 
+def test_upcoming_vn100_reader_uses_next_milestone_and_blocks_lookahead(db):
+    as_of = datetime.date(2026, 9, 9)
+    db.add(Ticker(ticker="BBB", company_name="Ngoài VN100", is_vn100=False))
+    db.add_all(
+        [
+            CorporateAction(
+                ticker="AAA",
+                source_site="VCI",
+                source_event_id="cash-payment-soon",
+                event_type="CASH_DIVIDEND",
+                event_code="DIV",
+                title="Trả cổ tức tiền mặt 1.000 đồng/cổ phiếu",
+                announcement_date=datetime.date(2026, 8, 1),
+                ex_right_date=datetime.date(2026, 8, 20),
+                record_date=datetime.date(2026, 8, 21),
+                payment_date=datetime.date(2026, 9, 18),
+                cash_amount_vnd_per_share=1_000,
+                source_tier="AGGREGATOR",
+                content_hash="cash-payment-soon",
+            ),
+            CorporateAction(
+                ticker="AAA",
+                source_site="VCI",
+                source_event_id="outside-window",
+                event_type="RIGHTS_ISSUE",
+                event_code="ISS",
+                title="Quyền mua ngoài cửa sổ",
+                announcement_date=datetime.date(2026, 8, 1),
+                start_date=datetime.date(2026, 10, 10),
+                source_tier="AGGREGATOR",
+                content_hash="outside-window",
+            ),
+            CorporateAction(
+                ticker="AAA",
+                source_site="VCI",
+                source_event_id="future-disclosure",
+                event_type="CASH_DIVIDEND",
+                event_code="DIV",
+                title="Chưa được công bố tại ngày xem",
+                announcement_date=datetime.date(2026, 9, 12),
+                payment_date=datetime.date(2026, 9, 20),
+                source_tier="AGGREGATOR",
+                content_hash="future-disclosure",
+            ),
+            CorporateAction(
+                ticker="BBB",
+                source_site="VCI",
+                source_event_id="outside-vn100",
+                event_type="CASH_DIVIDEND",
+                event_code="DIV",
+                title="Mã ngoài VN100",
+                announcement_date=datetime.date(2026, 8, 1),
+                payment_date=datetime.date(2026, 9, 15),
+                source_tier="AGGREGATOR",
+                content_hash="outside-vn100",
+            ),
+        ]
+    )
+    db.commit()
+
+    items = load_upcoming_vn100_corporate_actions(
+        db,
+        as_of_date=as_of,
+        future_days=30,
+    )
+
+    assert len(items) == 1
+    assert items[0].action.ticker == "AAA"
+    assert items[0].event_date == datetime.date(2026, 9, 18)
+    assert items[0].date_role == "Ngày thanh toán"
+
+
 def test_refresh_gate_uses_checkpoint_ttl(db):
-    now = datetime.datetime(2026, 8, 30, 8, 0, 0)
+    now = datetime.datetime(2026, 8, 30, 8, 0, 0, tzinfo=datetime.timezone.utc)
     db.add(
         CorporateActionSync(
             ticker="AAA",
@@ -121,7 +197,7 @@ def test_refresh_gate_uses_checkpoint_ttl(db):
 
 
 def test_failed_checkpoint_uses_short_backoff_instead_of_retrying_every_rerun(db):
-    now = datetime.datetime(2026, 8, 30, 8, 0, 0)
+    now = datetime.datetime(2026, 8, 30, 8, 0, 0, tzinfo=datetime.timezone.utc)
     db.add(
         CorporateActionSync(
             ticker="AAA",
@@ -192,7 +268,10 @@ def test_rights_issue_without_price_is_not_guessed():
 
 def test_historical_cash_dividend_separates_mechanical_drop_from_market_reaction():
     prices = [
-        {"date": datetime.date(2026, 3, 18) + datetime.timedelta(days=i), "close": close}
+        {
+            "date": datetime.date(2026, 3, 18) + datetime.timedelta(days=i),
+            "close": close,
+        }
         for i, close in enumerate(
             [30_000, 28_600, 28_700, 28_900, 29_000, 29_100, 29_200]
             + [29_300] * 14
@@ -383,9 +462,7 @@ def test_upcoming_rights_explanation_does_not_invent_missing_issue_price():
 
 
 def test_deepseek_context_contains_only_traceable_events(db):
-    upsert_corporate_actions(
-        db, [normalize_vci_event(_vci_cash_event(), ticker="AAA")]
-    )
+    upsert_corporate_actions(db, [normalize_vci_event(_vci_cash_event(), ticker="AAA")])
 
     context = corporate_actions_context(
         db,
@@ -401,11 +478,10 @@ def test_deepseek_context_contains_only_traceable_events(db):
 
 
 def test_deepseek_context_includes_traceable_historical_price_reaction(db):
-    upsert_corporate_actions(
-        db, [normalize_vci_event(_vci_cash_event(), ticker="AAA")]
-    )
+    upsert_corporate_actions(db, [normalize_vci_event(_vci_cash_event(), ticker="AAA")])
+    # Giá DB đã điều chỉnh cổ tức (D57): trước GDKHQ 30.000 gốc − 1.500 cổ tức = 28.500.
     prices = [
-        (datetime.date(2026, 3, 18), 30_000),
+        (datetime.date(2026, 3, 18), 28_500),
         (datetime.date(2026, 3, 19), 28_600),
         (datetime.date(2026, 3, 20), 28_900),
     ]
@@ -433,9 +509,33 @@ def test_deepseek_context_includes_traceable_historical_price_reaction(db):
     )
 
     reaction = context["events"][0]["historical_price_impact"]
-    assert reaction["price_before_vnd"] == 30_000
+    assert reaction["price_before_vnd"] == 28_500
+    assert reaction["estimated_unadjusted_price_before_vnd"] == 30_000
     assert reaction["market_reaction_vs_theoretical_pct"] == pytest.approx(
         28_600 / 28_500 * 100 - 100
     )
     explanation = context["events"][0]["historical_explanation"]
     assert explanation["reaction_label"] == "TỔNG TÀI SẢN GẦN NHƯ KHÔNG ĐỔI"
+
+
+def test_cash_dividend_on_adjusted_prices_is_not_counted_twice():
+    # Giá DB đã điều chỉnh cổ tức: trước GDKHQ 95 (gốc 100), ngày GDKHQ 95, cổ tức 5 đ.
+    # Cổ đông: 100 → 95 + 5 tiền = 0%. Cách cũ cộng thêm 5 vào giá đã điều chỉnh → +5,3% (sai).
+    prices = [
+        {"date": datetime.date(2026, 5, 27), "close": 95},
+        {"date": datetime.date(2026, 5, 28), "close": 95},
+    ]
+    impact = analyze_historical_price_impact(
+        prices=prices,
+        event_date=datetime.date(2026, 5, 28),
+        event_type="CASH_DIVIDEND",
+        cash_amount_vnd_per_share=5,
+        cash_dividend_prices_adjusted=True,
+    )
+    assert impact["shareholder_wealth_change_pct"] == pytest.approx(0.0)
+    assert impact["price_series_adjusted"] is True
+    assert impact["estimated_unadjusted_price_before_vnd"] == pytest.approx(100.0)
+    text = explain_historical_price_impact(
+        event_type="CASH_DIVIDEND", impact=impact, reaction_materiality_pct=2.0
+    )["wealth_explanation"]
+    assert "không cộng tiền này lần nữa" in text

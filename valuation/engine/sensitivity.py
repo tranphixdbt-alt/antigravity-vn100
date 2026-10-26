@@ -42,6 +42,9 @@ def apply_scenario_adjustments(company: Union[Company, CompanyBank], scenario: s
     và ROE BỀN VỮNG — không chỉ credit growth/NIM. Bất định thật của định giá
     ngân hàng nằm gần hết ở khối terminal; bản cũ chỉ nhiễu giai đoạn dự phóng
     nên dải Bull-Bear chỉ ±6%, tạo cảm giác an toàn giả.
+
+    D67: ROE bền vững NH của kịch bản = ROE riêng Base + (roe5 driver đã sốc − roe5 driver Base) thay cho ±2 điểm %
+    cố định; ROE_T kịch bản = hội tụ λ về ROE ngành (không sốc); driver gốc sốc cùng hệ số nên năm 5 = ROE_T.
     """
     import copy
     comp_copy = copy.deepcopy(company)
@@ -54,28 +57,54 @@ def apply_scenario_adjustments(company: Union[Company, CompanyBank], scenario: s
     sec = (cfg.get("bank") if is_bank else cfg.get("nonfin")) or {}
 
     if is_bank:
-        a.credit_growth = _scaled(a.credit_growth,
-                                  sec.get("credit_growth_mult", 1.0),
-                                  sec.get("credit_growth_cap"), sec.get("credit_growth_floor"))
+        from valuation.engine.forecast_bank import bank_own_roe, driver_roe5
+
+        assert isinstance(comp_copy, CompanyBank)  # thu hẹp kiểu cho mypy (is_bank đã xác định)
+        a = comp_copy.assumptions
+
+        # D67 (phi chọn phương án b): ROE dài hạn của kịch bản tính lại từ driver đã sốc → đo trước khi sốc.
+        own_roe, roe5_before = bank_own_roe(comp_copy), driver_roe5(comp_copy)
+        shocks = {  # driver LN: (hệ số, trần, sàn)
+            "credit_growth": (sec.get("credit_growth_mult", 1.0), sec.get("credit_growth_cap"),
+                              sec.get("credit_growth_floor")),
+            "nim": (sec.get("nim_mult", 1.0), sec.get("nim_cap"), sec.get("nim_floor")),
+            "cir": (sec.get("cir_mult", 1.0), sec.get("cir_cap"), sec.get("cir_floor")),
+            "credit_cost": (sec.get("credit_cost_mult", 1.0), None, None),
+        }
+        for k, args in shocks.items():
+            setattr(a, k, _scaled(getattr(a, k), *args))
+        # Driver gốc sốc cùng hệ số: kịch bản là bộ driver máy đặt mới → năm 3–5 phai từ driver đã sốc về ROE_T của
+        # kịch bản, năm 5 = ROE_T (trước D67 delta r4a dồn toàn bộ sốc vào năm 5 → LN6/LN5 nhảy bậc). Phần analyst
+        # sửa so với driver gốc vẫn cộng delta như Base.
+        if a.driver_base:
+            a.driver_base = {k: _scaled(v, *shocks[k]) if k in shocks else v for k, v in a.driver_base.items()}
         if getattr(a, "deposit_growth", None):
             a.deposit_growth = _scaled(a.deposit_growth,
                                        sec.get("deposit_growth_mult", 1.0),
                                        sec.get("deposit_growth_cap"), sec.get("deposit_growth_floor"))
-        a.nim = _scaled(a.nim, sec.get("nim_mult", 1.0),
-                        sec.get("nim_cap"), sec.get("nim_floor"))
-        a.cir = _scaled(a.cir, sec.get("cir_mult", 1.0),
-                        sec.get("cir_cap"), sec.get("cir_floor"))
-        # ROE bền vững chi phối giá trị terminal -> BẮT BUỘC phải biến thiên.
-        roe_delta = sec.get("sustainable_roe_delta")
-        if roe_delta and getattr(a, "sustainable_roe", None):
-            a.sustainable_roe = max(0.0, a.sustainable_roe + roe_delta)
+        roe5_after = driver_roe5(comp_copy)
+        if roe5_before is None or roe5_after is None:
+            raise ValueError(f"BANK_SCENARIO_ROE5_UNDEFINED:{comp_copy.ticker}:{scenario} — VCSH bình quân năm 5 ≤ 0")
+        # roe5 kịch bản = ROE riêng của Base + phần driver đã sốc làm đổi roe5. Máy đặt: ROE riêng ≡ roe5 driver
+        # (repo) → đúng bằng ROE năm 5 của driver đã sốc, không cộng số cố định; analyst nhập ROE bền vững thì giữ
+        # mức đó và chỉ dịch phần sốc (Bear − Base chỉ do kịch bản).
+        a.sustainable_roe = own_roe + (roe5_after - roe5_before)
+        # ROE ngành KHÔNG sốc (D67): là dữ liệu quan sát (trung vị ROE lịch sử của nhóm), đích dài hạn của hội tụ
+        # Damodaran, không phải driver của NH; sốc nó cần số cố định (±2 điểm % cũ) hoặc dự phóng lại cả nhóm.
     else:
-        a.revenue_growth = _scaled(a.revenue_growth,
-                                   sec.get("revenue_growth_mult", 1.0),
-                                   sec.get("revenue_growth_cap"), sec.get("revenue_growth_floor"))
+        g_delta_rev = float(sec.get("revenue_growth_delta", 0.0))
+        a.revenue_growth = [
+            min(max(g + g_delta_rev, sec.get("revenue_growth_floor", -1.0)), sec.get("revenue_growth_cap", 1.0))
+            for g in a.revenue_growth
+        ]
         a.ebit_margin = _scaled(a.ebit_margin,
                                 sec.get("ebit_margin_mult", 1.0),
                                 sec.get("ebit_margin_cap"), sec.get("ebit_margin_floor"))
+        # Ngành chu kỳ: terminal dùng biên giữa chu kỳ → sốc biên phải tới được terminal.
+        if a.mid_cycle_ebit_margin is not None:
+            a.mid_cycle_ebit_margin = _scaled([a.mid_cycle_ebit_margin],
+                                              sec.get("ebit_margin_mult", 1.0),
+                                              sec.get("ebit_margin_cap"), sec.get("ebit_margin_floor"))[0]
 
     # Tham số chung cho cả hai loại hình.
     rf_delta = cfg.get("rf_delta")
@@ -97,7 +126,6 @@ def run_valuation_engine(company: Union[Company, CompanyBank], wacc_override: fl
     from valuation.engine.router import ValuationRouter
     router = ValuationRouter()
     route = router.get_routing(company.ticker)
-    primary_method = route.get("primary", "FCFF")
     
     from valuation.engine.models.bank_general import BankGeneralValuationModel
     
@@ -106,12 +134,12 @@ def run_valuation_engine(company: Union[Company, CompanyBank], wacc_override: fl
         # .from_pydantic chạy đúng & bao phủ đủ PE/PB/EV_EBITDA/RNAV/SOTP/DCF).
         # Đường dựng cf/ass trực tiếp trước đây khiến SOTP=0 và thiếu PE/PB.
         assumptions = copy.deepcopy(company.assumptions)
-        # Assumptions KHÔNG có field 'wacc'; DCF suy WACC từ COE → ánh xạ cả
-        # wacc_override lẫn coe_override vào cost_of_equity (đủ cho sensitivity).
+        # Trục WACC đi thẳng vào WACC của DCF. Trước đây nó bị gán vào COE rồi DCF
+        # pha lại với nợ → WACC thực thấp hơn nhãn trục, ô giữa ≠ giá trị hiển thị.
         if coe_override is not None:
             assumptions.cost_of_equity = coe_override
         if wacc_override is not None:
-            assumptions.cost_of_equity = wacc_override
+            assumptions.wacc_override = wacc_override
         if g_override is not None:
             assumptions.terminal_growth_rate = g_override
 
@@ -135,15 +163,21 @@ def run_valuation_engine(company: Union[Company, CompanyBank], wacc_override: fl
             comp_copy.assumptions.terminal_growth_rate = g_override
             
         model = BankGeneralValuationModel(comp_copy, projections=projections)
-        ri_res = model.calculate_residual_income()
-        pb_res = model.calculate_pb_valuation()
-        
-        intrinsic_fv = ri_res["fair_value_per_share"]
+        ri_fv = model.calculate_residual_income()["fair_value_per_share"]
+        market = model.calculate_market_pb_valuation()
+        if market is None:
+            comp_copy.warnings.append("BANK_NO_MARKET_PB_HISTORY: thiếu ≥3 năm P/B lịch sử, dùng P/B hợp lý")
+            rel_fv = model.calculate_pb_valuation()["fair_value_per_share"]
+        else:
+            rel_fv = market["fair_value_per_share"]
+        # Cảnh báo của model nằm trên bản sao → đưa về object gốc để valuate xuất ra cờ.
+        for w in comp_copy.warnings:
+            if w not in company.warnings:
+                company.warnings.append(w)
         if route.get("primary") == "P/B":
             # Nếu Primary là P/B, swap intrinsic and relative để khớp weights
-            return pb_res["fair_value_per_share"], ri_res["fair_value_per_share"]
-        else:
-            return ri_res["fair_value_per_share"], pb_res["fair_value_per_share"]
+            return rel_fv, ri_fv
+        return ri_fv, rel_fv
 
 def calculate_sensitivity_matrix(
     company: Union[Company, CompanyBank],
@@ -183,7 +217,7 @@ def calculate_sensitivity_matrix(
                     # X là Re (COE)
                     int_fv, rel_fv = run_valuation_engine(company, coe_override=x_val, g_override=g_val)
                     
-                blended, _, _ = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, company.current_price)
+                blended, _ = blend_intrinsic_relative(int_fv, rel_fv, weight_intrinsic, company.current_price)
                 row.append(round(blended, 0))
             except Exception:
                 row.append(0.0)
@@ -209,8 +243,12 @@ def run_scenario_analysis(company: Union[Company, CompanyBank]) -> Dict[str, flo
         comp = apply_scenario_adjustments(company, scenario)
         # COE/g của kịch bản nằm trong assumptions của bản sao -> model tự đọc.
         intrinsic, relative = run_valuation_engine(comp)
-        blended, _, _ = blend_intrinsic_relative(
+        blended, _ = blend_intrinsic_relative(
             intrinsic, relative, weight_intrinsic, company.current_price
         )
         out[scenario] = round(blended, 0)
+    weights = _scenario_config().get("weights") or {"Bull": 0.25, "Base": 0.5, "Bear": 0.25}
+    if abs(sum(weights.values()) - 1.0) > 1e-9:
+        raise ValueError(f"SCENARIO_WEIGHTS_NOT_SUM_TO_1: {weights}")
+    out["Expected"] = round(sum(out[k] * w for k, w in weights.items()), 0)
     return out

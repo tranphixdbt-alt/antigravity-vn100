@@ -3,16 +3,33 @@ Streamlit App Entrypoint — Giao diện phân tích và định giá tự độ
 Đặt trực tiếp tại thư mục gốc của dự án.
 """
 
-import streamlit as st
 import os
 import sys
+import traceback
+from pathlib import Path
+
+import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
+
+from valuation.views.device import phone_collapsible, render_alerts
 from valuation.views.theme import (
     render_app_theme,
     render_shell_header,
     render_summary_banner,
+)
+
+_APP_HANDLED_EXCEPTIONS = (
+    SQLAlchemyError,
+    OSError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    ImportError,
 )
 
 # Thêm đường dẫn dự án vào PYTHONPATH để import đồng bộ
@@ -32,7 +49,7 @@ st.set_page_config(
     page_title="VN100 Valuation - Hệ thống định giá tự động chuẩn quỹ",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 render_app_theme()
@@ -41,29 +58,37 @@ render_app_theme()
 # 1. Cấu hình DB engine cache để tránh cạn kiệt connection pool
 @st.cache_resource
 def get_db_engines():
+    # Máy mới/VPS: giải nén vn100_full.db.gz TRƯỚC khi create_all bên dưới tạo DB rỗng — DB rỗng làm
+    # ensure_portable_db tưởng đã có dữ liệu và không giải nén nữa (app chạy với kho trống).
+    portable_db = Path(__file__).resolve().parent / "vn100_full.db"
+    if not portable_db.exists() and portable_db.with_suffix(".db.gz").exists():
+        from scripts.ensure_portable_db import ensure_portable_db
+
+        ensure_portable_db()
+
     db_url_read = os.getenv("DATABASE_URL_READONLY") or "sqlite:///vn100_full.db"
     db_url_write = os.getenv("DATABASE_URL_WRITE") or "sqlite:///vn100_full.db"
 
-    _pool_kwargs = dict(pool_pre_ping=True)
+    _pool_kwargs = {"pool_pre_ping": True}
     if "sqlite" in db_url_read:
         _pool_kwargs["connect_args"] = {"check_same_thread": False}
     else:
         _pool_kwargs.update(
-            dict(
-                pool_recycle=1800,
-                pool_size=5,
-                max_overflow=5,
-                pool_timeout=30,
-            )
+            {
+                "pool_recycle": 1800,
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+            }
         )
 
     try:
         engine_read = create_engine(db_url_read, **_pool_kwargs)
         engine_write = create_engine(db_url_write, **_pool_kwargs)
         # Test connection
-        with engine_read.connect() as conn:
+        with engine_read.connect():
             pass
-    except Exception as e:
+    except _APP_HANDLED_EXCEPTIONS:
         # Fallback sang SQLite nếu PostgreSQL local không hoạt động
         sqlite_url = "sqlite:///vn100_full.db"
         engine_read = create_engine(
@@ -97,7 +122,7 @@ def fetch_live_price_cached(ticker: str) -> float:
 
     try:
         return vnstock_client.get_live_price(ticker)
-    except Exception:
+    except _APP_HANDLED_EXCEPTIONS:
         return 0.0
 
 
@@ -110,25 +135,31 @@ db_write = SessionWrite()
 
 try:
     # Import các view
-    from valuation.views.select_ticker import render_select_ticker
-    from valuation.views.input_financials import render_input_financials
     from valuation.views.input_assumptions import render_input_assumptions
+    from valuation.views.input_financials import render_input_financials
     from valuation.views.results import render_valuation_results
+    from valuation.views.select_ticker import render_select_ticker
 
     # Freshness check on startup. Không tự chạy ingest khi mở app: bản portable
     # trong Drive phải ưu tiên xem dữ liệu đã lưu, tránh spam API/rate-limit và
     # tránh ghi DB ngoài ý muốn.
     if "auto_weekly_check_done" not in st.session_state:
-        from valuation.data_access.freshness_checker import check_data_freshness
+        from valuation.data_access.freshness_checker import (
+            check_data_freshness,
+            describe_data_freshness,
+        )
 
         freshness_status = check_data_freshness(db_read, threshold_days=7)
         if freshness_status.is_stale:
-            st.info(
-                f"**Dữ liệu lưu trong Drive cần làm mới khi bạn muốn cập nhật thị trường.** "
-                f"Giá cách {freshness_status.days_since_price} ngày, báo cáo CTCK cách "
-                f"{freshness_status.days_since_consensus} ngày. Dùng nút cập nhật trong sidebar khi cần.",
-                icon="⚠️",
+            freshness_headline, freshness_details = describe_data_freshness(
+                freshness_status
             )
+            with phone_collapsible("Dữ liệu cần cập nhật"):
+                st.info(
+                    f"**{freshness_headline}.** {freshness_details} "
+                    "Dùng nút cập nhật ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô ») khi cần.",
+                    icon="⚠️",
+                )
         st.session_state["auto_weekly_check_done"] = True
 
     # Render sidebar
@@ -162,8 +193,8 @@ try:
             or st.session_state.get("projections_ticker") != company.ticker
             or st.session_state.get("projections_mode") != base_year_mode
         ):
-            from valuation.engine.forecast_bank import forecast_bank_financials
             from valuation.engine.forecast import forecast_company_financials
+            from valuation.engine.forecast_bank import forecast_bank_financials
 
             if is_bank:
                 st.session_state["projections"] = forecast_bank_financials(company)
@@ -174,13 +205,12 @@ try:
             st.session_state["last_assumptions"] = company.assumptions.model_dump()
 
         # 2. Định giá real-time cho Summary Banner (áp dụng kịch bản và ghi đè của analyst)
+        from valuation.engine.blend import blend_intrinsic_relative
+        from valuation.engine.forecast import forecast_company_financials
+        from valuation.engine.forecast_bank import forecast_bank_financials
         from valuation.engine.sensitivity import (
-            run_valuation_engine,
             apply_scenario_adjustments,
         )
-        from valuation.engine.blend import blend_intrinsic_relative
-        from valuation.engine.forecast_bank import forecast_bank_financials
-        from valuation.engine.forecast import forecast_company_financials
 
         analyst_scenario = st.session_state.get("analyst_scenario", "Base")
         scenario_company = apply_scenario_adjustments(company, analyst_scenario)
@@ -244,21 +274,19 @@ try:
         # đã blend sẵn → dùng thẳng; chỉ blend lại khi có P/E override.
         # Tính toán Fair Value
         if is_bank or has_override:
-            blended_fv, upside, _ = blend_intrinsic_relative(
+            blended_fv, upside = blend_intrinsic_relative(
                 int_fv, rel_fv, weight_intrinsic, scenario_company.current_price
             )
-            # Re-run Decision Engine if there are overrides
-            from valuation.engine.decision_engine import InvestmentDecisionMaker
-            from valuation.engine.sector_router import route as _route_fn
+            from valuation.engine.decision_engine import recommend
 
-            plan = _route_fn(company.ticker) or {}
-            decision_engine = InvestmentDecisionMaker(
-                business_nature=plan.get("business_nature", "Unknown"),
-                current_price=scenario_company.current_price,
-                fair_value=blended_fv,
+            decision = recommend(
+                scenario_company.ticker,
+                scenario_company.current_price,
+                blended_fv,
                 governance=scenario_company.governance,
+                macro_env=macro_env,
+                not_rated=bool(_res.get("not_rated")),
             )
-            decision = decision_engine.make_decision()
             rec = decision["recommendation"]
         else:
             blended_fv, upside, rec = (
@@ -271,89 +299,116 @@ try:
         # Ghi đè của analyst không được bỏ qua lỗi đầu vào trọng yếu.
         if not _res.get("publication_allowed", True):
             rec = "NOT_RATED"
+        # Nhãn phương pháp/rà soát phải hiện rõ (Mô hình tổng hợp CTCK, Đã rà soát).
+        for _lbl in (_res.get("method_label"), _res.get("review_label")):
+            if _lbl:
+                st.info(_lbl)
 
-        # Hiển thị các cảnh báo Model Integrity (nếu có)
-        if scenario_company.warnings:
-            st.warning("⚠️ **Cảnh báo tính toàn vẹn mô hình (Model Integrity):**")
-            for warn in scenario_company.warnings:
-                st.error(f"- {warn}")
+        # Khối định giá (thẻ khuyến nghị + cảnh báo + cờ): CSS ẩn khi đang mở tab Cổ tức / VN100
+        # để 2 tab không liên quan định giá hiển thị gọn (D55).
+        with st.container(key="valuation_head"):
+            # 3. Hiển thị Summary Banner (Premium Styling)
+            # NOT_RATED phải TRUNG TÍNH (xám), không tô đỏ: "chưa đủ cơ sở định giá"
+            # hoàn toàn khác "khuyến nghị bán" — tô đỏ sẽ khiến người đọc hiểu nhầm
+            # thành tín hiệu tiêu cực (D28).
+            if rec == "NOT_RATED":
+                rec_color, bg_color, text_color = "#64748B", "#F8FAFC", "#334155"
+            elif rec == "BUY":
+                rec_color, bg_color, text_color = "#00B74F", "#F1FBF5", "#00843D"
+            elif rec in ["HOLD", "TRIM"]:
+                rec_color, bg_color, text_color = "#F59E0B", "#FFFBEB", "#92400E"
+            else:
+                rec_color, bg_color, text_color = "#EF4444", "#FEF2F2", "#991B1B"
 
-        # 3. Hiển thị Summary Banner (Premium Styling)
-        # NOT_RATED phải TRUNG TÍNH (xám), không tô đỏ: "chưa đủ cơ sở định giá"
-        # hoàn toàn khác "khuyến nghị bán" — tô đỏ sẽ khiến người đọc hiểu nhầm
-        # thành tín hiệu tiêu cực (D28).
-        if rec == "NOT_RATED":
-            rec_color, bg_color, text_color = "#64748B", "#F8FAFC", "#334155"
-        elif rec == "BUY":
-            rec_color, bg_color, text_color = "#00B74F", "#F1FBF5", "#00843D"
-        elif rec in ["HOLD", "TRIM"]:
-            rec_color, bg_color, text_color = "#F59E0B", "#FFFBEB", "#92400E"
-        else:
-            rec_color, bg_color, text_color = "#EF4444", "#FEF2F2", "#991B1B"
+            # Với NOT_RATED, KHÔNG hiển thị giá mục tiêu và upside — đó chính là con
+            # số hệ thống vừa tuyên bố là không đáng tin. Hiện nó ra rồi dán nhãn
+            # "không định giá được" là tự mâu thuẫn, và người đọc sẽ nhớ con số.
+            if rec == "NOT_RATED":
+                _headline = "CHƯA ĐỦ CƠ SỞ ĐỊNH GIÁ"
+                _right = (
+                    "<div class='ag-summary-upside' style='font-size:18px;color:#64748B;'>"
+                    "Không công bố giá mục tiêu</div>"
+                )
+            else:
+                from valuation.engine.decision_engine import REC_LABELS_VI
 
-        # Với NOT_RATED, KHÔNG hiển thị giá mục tiêu và upside — đó chính là con
-        # số hệ thống vừa tuyên bố là không đáng tin. Hiện nó ra rồi dán nhãn
-        # "không định giá được" là tự mâu thuẫn, và người đọc sẽ nhớ con số.
-        if rec == "NOT_RATED":
-            _headline = "CHƯA ĐỦ CƠ SỞ ĐỊNH GIÁ"
-            _right = (
-                "<div class='ag-summary-upside' style='font-size:18px;color:#64748B;'>"
-                "Không công bố giá mục tiêu</div>"
+                _headline = f"{REC_LABELS_VI.get(rec, rec)} · Giá mục tiêu {blended_fv:,.0f} VND"
+                _right = f"<div class='ag-summary-upside'>So với thị giá: {upside:+.1f}%</div>"
+
+            render_summary_banner(
+                ticker=scenario_company.ticker,
+                sector=scenario_company.sector,
+                headline=_headline,
+                current_price=scenario_company.current_price,
+                right_html=_right,
+                accent_color=rec_color,
+                bg_color=bg_color,
+                text_color=text_color,
             )
-        else:
-            _headline = f"{rec} · Giá mục tiêu {blended_fv:,.0f} VND"
-            _right = f"<div class='ag-summary-upside'>So với thị giá: {upside:+.1f}%</div>"
-
-        render_summary_banner(
-            ticker=scenario_company.ticker,
-            sector=scenario_company.sector,
-            headline=_headline,
-            current_price=scenario_company.current_price,
-            right_html=_right,
-            accent_color=rec_color,
-            bg_color=bg_color,
-            text_color=text_color,
-        )
-        if rec == "NOT_RATED":
-            st.warning(
-                "Chưa công bố giá mục tiêu: dữ liệu đầu vào chưa đạt kiểm tra "
-                "hoặc mô hình còn thiếu dữ liệu chuyên ngành.",
-                icon="🚫",
-            )
-            for issue in _res.get("data_checks", []):
-                if issue["severity"] == "error":
-                    st.error(issue["message"])
-
-        # Hard Gates & Governance Section
-        violations = decision.get("hard_gates_violations", [])
-        if violations:
-            st.error("🚨 **HARD GATES BỊ VI PHẠM (Chỉ định: HARD REJECT)**")
-            for v in violations:
-                st.markdown(f"- {v}")
-        else:
-            st.success(
-                "✅ **Governance Check Passed** (Không phát hiện cờ rủi ro Hard Gates)"
+            # Cờ định giá (giải thích TẠI SAO kết quả bất thường — vd Giá MT = 0,
+            # upside -100% — thay vì để người dùng tưởng nhầm là lỗi hệ thống).
+            from valuation.engine.flag_descriptions import (
+                FLAG_DESCRIPTIONS,
+                describe_flags,
             )
 
-        st.markdown(
-            f"**Margin of Safety (MOS) Mục tiêu cho {decision.get('business_nature', 'Unknown')}:** {decision.get('target_mos', 0)*100:.0f}%"
-        )
-
-        # Cờ định giá (giải thích TẠI SAO kết quả bất thường — vd Giá MT = 0,
-        # upside -100% — thay vì để người dùng tưởng nhầm là lỗi hệ thống).
-        from valuation.engine.flag_descriptions import describe_flags
-
-        valuation_flags = describe_flags(_res.get("flags", []))
-        if valuation_flags:
-            st.markdown("**Cờ định giá (Valuation Flags):**")
-            for vf in valuation_flags:
-                text = f"`{vf['code']}` — {vf['message']}"
-                if vf["level"] == "error":
-                    st.error(text, icon="🚨")
-                elif vf["level"] == "warning":
-                    st.warning(text, icon="⚠️")
-                else:
-                    st.info(text, icon="ℹ️")
+            violations = decision.get("hard_gates_violations", [])
+            valuation_flags = describe_flags(_res.get("flags", []))
+            # D54/D58 (mọi thiết bị): tối đa 2 cảnh báo nặng nhất hiện ngay, còn lại gom lại; cùng mức thì theo thứ tự: hard gates → NOT_RATED/lỗi dữ liệu → cờ → toàn vẹn mô hình.
+            alerts = []
+            if violations:
+                alerts.append(
+                    (
+                        "error",
+                        "🚨 **HARD GATES BỊ VI PHẠM (Chỉ định: HARD REJECT)**\n"
+                        + "\n".join(f"- {v}" for v in violations),
+                        None,
+                    )
+                )
+            if rec == "NOT_RATED":
+                alerts.append(
+                    (
+                        "warning",
+                        (
+                            "Chưa công bố giá mục tiêu: dữ liệu đầu vào chưa đạt kiểm tra "
+                            "hoặc mô hình còn thiếu dữ liệu chuyên ngành."
+                        ),
+                        "🚫",
+                    )
+                )
+                alerts += [
+                    ("error", i["message"], None)
+                    for i in _res.get("data_checks", [])
+                    if i["severity"] == "error"
+                ]
+            icons = {"error": "🚨", "warning": "⚠️"}
+            alerts += [
+                (
+                    vf["level"] if vf["level"] in icons else "info",
+                    f"`{vf['code']}` — {vf['message']}",
+                    icons.get(vf["level"], "ℹ️"),
+                )
+                for vf in valuation_flags
+            ]
+            # Mã đã có mô tả: cờ cùng mã ở trên đã mang đúng mức → bản văn bản thô chỉ là bản trùng.
+            alerts += [
+                (
+                    (
+                        "info"
+                        if str(w).split(":", 1)[0].strip() in FLAG_DESCRIPTIONS
+                        else "warning"
+                    ),
+                    f"Model Integrity — {w}",
+                    None,
+                )
+                for w in scenario_company.warnings
+            ]
+            render_alerts(alerts)
+            st.caption(
+                ("" if violations else "✅ Không vi phạm Hard Gates · ")
+                + f"MOS mục tiêu ({decision.get('business_nature', 'Unknown')}): "
+                f"{decision.get('target_mos', 0) * 100:.0f}%"
+            )
 
         from valuation.config import load_defaults
         from valuation.data_access.corporate_actions import (
@@ -382,13 +437,20 @@ try:
                 "updated": 0,
             }
 
-        financials_tab, valuation_tab, consensus_tab, corporate_actions_tab, ranking_tab = st.tabs(
+        # D80: "Định giá & dự phóng" + "So sánh CTCK" gộp một tab — cùng trả lời "đáng giá bao nhiêu".
+        (
+            financials_tab,
+            valuation_tab,
+            corporate_actions_tab,
+            ranking_tab,
+            money_flow_tab,
+        ) = st.tabs(
             [
                 "Báo cáo tài chính",
-                "Định giá & dự phóng",
-                "So sánh CTCK",
+                "Định giá & CTCK",
                 "Cổ tức & quyền mua",
                 "VN100 & tích sản",
+                "Dòng tiền ngành",
             ]
         )
 
@@ -402,17 +464,8 @@ try:
                 corporate_actions_context=None,
             )
 
-        with valuation_tab:
-            with st.expander("Giả định & tham số dự phóng", expanded=False):
-                render_input_assumptions(company)
-
-        with consensus_tab:
-            from valuation.views.consensus_compare import render_consensus_compare
-
-            if _res.get("publication_allowed", True):
-                render_consensus_compare(company, blended_fv, db_write)
-            else:
-                st.warning("Chưa so sánh giá mục tiêu khi dữ liệu định giá còn lỗi trọng yếu.")
+        with valuation_tab, st.expander("Giả định & tham số dự phóng", expanded=False):
+            render_input_assumptions(company)
 
         with corporate_actions_tab:
             render_corporate_actions(
@@ -427,22 +480,42 @@ try:
             render_vn100_ranking()
 
         # Tab kết quả có phần chuẩn bị biểu đồ/xuất báo cáo tĩnh khá nặng, nên
-        # render sau hai tab tham chiếu để người dùng mở tab CTCK/cổ tức nhanh hơn.
+        # render sau các tab tham chiếu để người dùng mở tab cổ tức/VN100 nhanh hơn.
         with valuation_tab:
             render_valuation_results(company, db_write)
+            st.divider()
+            # So sánh CTCK nằm ngay dưới kết quả định giá (D80).
+            from valuation.views.consensus_compare import render_consensus_compare
+
+            if _res.get("publication_allowed", True):
+                render_consensus_compare(company, blended_fv, db_write)
+            else:
+                st.warning(
+                    "Chưa so sánh giá mục tiêu khi dữ liệu định giá còn lỗi trọng yếu."
+                )
+
+        # Tab phụ render SAU tab định giá: cache lạnh ~1,5 giây hoặc lỗi của nó không chặn
+        # được kết quả định giá (vị trí hiển thị vẫn là tab cuối).
+        with money_flow_tab:
+            from valuation.views.money_flow import render_money_flow
+
+            render_money_flow(db_read, company.ticker)
     else:
         st.info(
-            "👈 Vui lòng chọn Ticker ở sidebar và nhấn **'Tải dữ liệu mặc định'** để bắt đầu phân tích định giá.",
+            "Chọn mã ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô » góc trên trái) rồi nhấn **'Nạp lại mô hình đã lưu'** để bắt đầu phân tích định giá.",
             icon="ℹ️",
         )
+        from valuation.views.money_flow import render_money_flow
         from valuation.views.vn100_ranking import render_vn100_ranking
 
-        with st.tabs(["VN100 & tích sản"])[0]:
+        ranking_tab, money_flow_tab = st.tabs(["VN100 & tích sản", "Dòng tiền ngành"])
+        with ranking_tab:
             render_vn100_ranking()
+        with money_flow_tab:
+            render_money_flow(db_read, None)
 
-except Exception as e:
+except _APP_HANDLED_EXCEPTIONS as e:
     st.error(f"Đã xảy ra lỗi hệ thống: {e}")
-    import traceback
 
     st.code(traceback.format_exc())
     with open("streamlit_crash.log", "w", encoding="utf-8") as f:

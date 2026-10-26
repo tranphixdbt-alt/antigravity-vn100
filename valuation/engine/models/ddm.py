@@ -7,16 +7,25 @@ from valuation.config import load_defaults
 
 class DDMValuationModel(BaseValuationModel):
     """
-    Dividend Discount Model (DDM) — cross-check cho điện (genco trả cổ tức ổn định).
+    Dividend Discount Model (DDM) — cross-check cho điện.
 
-    Multi-stage Gordon: cổ tức = EPS chuẩn hóa × payout, tăng near_growth 5 năm rồi
-    về terminal_growth vĩnh viễn, chiết khấu theo COE.
-    EPS CHUẨN HÓA = median LN lịch sử / số cp (chống nhiễu năm bất thường).
+    Cổ tức năm t = EPS chuẩn hóa (median LN mẹ 3 kỳ) × payout THỰC TẾ × Π(1+g_t),
+    g_t = đường tăng trưởng doanh thu của DCF; sau năm 5 dùng g vĩnh viễn chung,
+    chiết khấu theo COE. Payout < ngưỡng → cổ tức không đại diện FCFE → không định giá.
     """
 
     def __init__(self, ticker: str, current_financials: Dict[str, Any], assumptions: Dict[str, Any]):
         super().__init__(ticker, current_financials, assumptions)
         self.use_wacc = False
+
+    @staticmethod
+    def historical_payout(company: Company, years: int) -> float | None:
+        paid = {cf.year: cf.dividends_paid for cf in company.historical_cf}
+        pairs = [(paid.get(is_.year, 0.0), is_.net_income) for is_ in company.historical_is[-years:]]
+        ni = sum(n for _, n in pairs if n > 0)
+        if ni <= 0:
+            return None
+        return min(sum(d for d, _ in pairs) / ni, 1.0)
 
     @classmethod
     def from_pydantic(cls, company: Company) -> "DDMValuationModel":
@@ -30,48 +39,43 @@ class DDMValuationModel(BaseValuationModel):
         }
         assumptions = {
             "cost_of_equity": coe,
-            "payout_ratio": cfg.get("power_payout", 0.50),
-            "near_growth": cfg.get("near_growth", 0.05),
-            "long_term_growth": cfg.get("terminal_growth", 0.03),
+            "risk_free_rate": a.risk_free_rate,
+            "payout_ratio": cls.historical_payout(company, int(cfg.get("payout_years", 4))),
+            "min_payout": float(cfg.get("min_payout", 0.40)),
+            "growth_path": list(a.revenue_growth),
+            "long_term_growth": a.terminal_growth_rate,
         }
         return cls(company.ticker, cf_dict, assumptions)
 
     def perform_valuation(self) -> Dict[str, Any]:
         hist = [x for x in self.current_financials.get("net_income_history", []) if x is not None]
-        shares = self.current_financials.get("shares_outstanding", 1.0)
-        coe = self.coe
-        g_term = self.g
-        g_near = self.assumptions.get("near_growth", 0.05)
-        payout = self.assumptions.get("payout_ratio", 0.50)
-
-        if not hist or shares <= 0:
+        shares = self.current_financials.get("shares_outstanding")
+        payout = self.assumptions.get("payout_ratio")
+        if not hist or not shares or shares <= 0:
             return {"blended_fair_value_per_share": 0.0, "flags": ["NO_DDM_DATA"]}
+        if payout is None or payout < self.assumptions.get("min_payout", 0.40):
+            return {"blended_fair_value_per_share": 0.0, "payout_ratio": payout,
+                    "flags": ["DDM_SKIPPED_LOW_PAYOUT"]}
 
         window = hist[-3:] if len(hist) >= 3 else hist
         norm_ni = statistics.median(window) * 1e9
         if norm_ni <= 0:
             return {"blended_fair_value_per_share": 0.0, "flags": ["NEGATIVE_EARNINGS"]}
 
+        coe, g_term = self.coe, self.g  # g đã qua guardrail g ≤ rf, COE − g ≥ spread
         eps0 = norm_ni / shares
-        # Guardrail Gordon: spread COE − g_term phải dương.
-        if coe <= g_term:
-            g_term = coe - 0.02
-
-        # 5 năm cổ tức tăng near_growth, rồi terminal Gordon.
-        pv = 0.0
-        d_t = eps0 * payout
-        for t in range(1, 6):
-            d_t = eps0 * payout * (1 + g_near) ** t
+        pv, d_t = 0.0, eps0 * payout
+        path = self.assumptions.get("growth_path") or [g_term] * 5
+        for t, g_t in enumerate(path[:5], start=1):
+            d_t *= 1 + g_t
             pv += d_t / (1 + coe) ** t
-        d_terminal = d_t * (1 + g_term)
-        tv = d_terminal / (coe - g_term)
-        pv += tv / (1 + coe) ** 5
+        pv += d_t * (1 + g_term) / (coe - g_term) / (1 + coe) ** 5
 
         return {
             "blended_fair_value_per_share": max(0.0, pv),
             "normalized_eps": eps0,
             "payout_ratio": payout,
-            "implied_div_yield": (eps0 * payout) / self.current_financials.get("current_price", 1)
+            "implied_div_yield": (eps0 * payout) / self.current_financials["current_price"]
             if self.current_financials.get("current_price") else None,
             "flags": [],
         }

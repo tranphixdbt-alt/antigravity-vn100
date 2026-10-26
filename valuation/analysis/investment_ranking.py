@@ -9,6 +9,13 @@ from typing import Any
 
 import yaml
 
+MATERIAL_MODEL_WARNING_PHRASES = (
+    "chưa có đầy đủ lưu chuyển đầu tư/tài chính",  # dòng cảnh báo cũ (trước 02/09/2026)
+    "Thiếu lưu chuyển đầu tư/tài chính",  # dòng gộp mới — xem models/financials.py
+    "không tự tạo khoản bù",
+    "vượt ngưỡng đối chiếu",  # lệch đối chiếu Δtiền thật (loại B) — xem PLAN_FIX_CASHFLOW_WARNINGS.md
+)
+
 
 def load_ranking_config() -> dict[str, Any]:
     path = Path(__file__).resolve().parents[2] / "config/investment_ranking.yaml"
@@ -118,6 +125,15 @@ def rank_companies(rows: list[dict], cfg: dict) -> list[dict]:
             )
             reasons = list(row.get("blockers", []))
             reasons.extend(
+                check["message"]
+                for check in row.get("checks", [])
+                if check.get("severity") == "warning"
+                and any(
+                    phrase in check.get("message", "")
+                    for phrase in MATERIAL_MODEL_WARNING_PHRASES
+                )
+            )
+            reasons.extend(
                 flag
                 for flag in row.get("flags", [])
                 if flag.split(":", 1)[0] in cfg["blocking_flags"]
@@ -163,13 +179,22 @@ def rank_companies(rows: list[dict], cfg: dict) -> list[dict]:
 def select_candidates(
     rows: list[dict], profile: str, cfg: dict, *, eligible_only: bool
 ) -> list[str]:
+    def researchable(row: dict) -> bool:
+        if row["profiles"][profile]["score"] is None:
+            return False
+        if eligible_only:
+            return row["profiles"][profile]["eligible"]
+        codes = {flag.split(":", 1)[0] for flag in row.get("flags", [])}
+        if row.get("error") or codes.intersection(cfg["not_rateable_flags"]):
+            return False
+        if codes.intersection(cfg["blocking_flags"]):
+            return False
+        return not any(
+            check.get("severity") == "error" for check in row.get("checks", [])
+        )
+
     pool = sorted(
-        [
-            r
-            for r in rows
-            if r["profiles"][profile]["score"] is not None
-            and (not eligible_only or r["profiles"][profile]["eligible"])
-        ],
+        [r for r in rows if researchable(r)],
         key=lambda r: (-r["profiles"][profile]["score"], r["ticker"]),
     )
     selected: list[str] = []

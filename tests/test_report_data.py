@@ -13,7 +13,6 @@ from valuation.report.report_data import (
     build_cover,
     build_historical_analysis,
     build_wacc_breakdown,
-    classify_recommendation,
     market_cap_billion_vnd,
 )
 
@@ -50,15 +49,6 @@ def _make_company(price: float = 50_000.0) -> Company:
                    historical_cf=hist_cf, assumptions=ass)
 
 
-def test_recommendation_bands_5_levels():
-    """Band khuyến nghị 5 mức theo SPEC 4.3."""
-    assert classify_recommendation(0.25) == "MUA"
-    assert classify_recommendation(0.10) == "KHẢ QUAN"
-    assert classify_recommendation(0.00) == "NẮM GIỮ"
-    assert classify_recommendation(-0.10) == "KÉM KHẢ QUAN"
-    assert classify_recommendation(-0.30) == "BÁN"
-
-
 def test_market_cap_hand_calc():
     """Vốn hóa = 100 triệu cp × 50,000 VND = 5,000 tỷ đồng (tính tay)."""
     c = _make_company(price=50_000.0)
@@ -66,11 +56,13 @@ def test_market_cap_hand_calc():
 
 
 def test_cover_upside_and_recommendation():
-    """FV 60,000 vs giá 50,000 → upside 20% → MUA (biên band)."""
+    """Cùng một nguồn khuyến nghị với UI: upside 20% < MOS mặc định 25% → NẮM GIỮ;
+    upside 30% ≥ 25% → MUA."""
     c = _make_company(price=50_000.0)
     cover = build_cover(c, blended_fv=60_000.0)
     assert cover["upside"] == pytest.approx(0.20)
-    assert cover["recommendation"] == "MUA"
+    assert cover["recommendation"] == "NẮM GIỮ"
+    assert build_cover(c, blended_fv=65_000.0)["recommendation"] == "MUA"
     assert cover["market_cap"] == pytest.approx(5_000.0)
 
 

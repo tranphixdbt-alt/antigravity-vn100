@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from valuation.services.investment_job import run_job  # noqa: E402
+from valuation.services.investment_job import run_job
 
 
 def main() -> None:
@@ -42,8 +42,15 @@ def main() -> None:
             f"Đã xuất snapshot {snapshot['run_id']} vào {PORTABLE.name}; không gọi API"
         )
         return
+
+    def emit_progress(state: dict) -> None:
+        print(json.dumps(state, ensure_ascii=False), flush=True)
+
     result = run_job(
-        refresh=not args.no_refresh, use_ai=not args.no_ai, scheduled=args.scheduled
+        refresh=not args.no_refresh,
+        use_ai=not args.no_ai,
+        scheduled=args.scheduled,
+        progress_sink=emit_progress,
     )
     print(json.dumps(result, ensure_ascii=False))
 

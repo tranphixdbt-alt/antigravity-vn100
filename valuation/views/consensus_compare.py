@@ -1,5 +1,5 @@
 """
-Tab "So sánh CTCK" — đối chiếu định giá mô hình VN100 với các công ty chứng khoán.
+Phần "So sánh CTCK" (cuối tab "Định giá & CTCK", D80) — đối chiếu định giá mô hình VN100 với các công ty chứng khoán.
 
 Nội dung:
   1. KPI hàng đầu: FV mô hình | Median CTCK | Chênh lệch | Số CTCK.
@@ -14,7 +14,7 @@ consensus_synthesis (được sinh trong lượt báo cáo DeepSeek duy nhất �
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from valuation.models.financials import Company
 from valuation.models.financials_bank import CompanyBank
 from valuation.report.report_data import build_consensus_comparison
+from valuation.views.device import phone_collapsible, render_alerts
 
 # Bảng màu đồng bộ giao diện báo cáo
 _C_MODEL = "#1F4E78"  # xanh navy — mô hình VN100
@@ -32,11 +33,11 @@ _C_BROKER = "#94A3B8"  # xám xanh — CTCK
 _C_MEDIAN = "#F59E0B"  # cam — median CTCK
 
 
-def _fmt_vnd(v: Optional[float]) -> str:
+def _fmt_vnd(v: float | None) -> str:
     return f"{v:,.0f}".replace(",", ".") if v is not None else "—"
 
 
-def _football_field(data: Dict[str, Any]) -> go.Figure:
+def _football_field(data: dict[str, Any]) -> go.Figure:
     """Bar ngang: giá mục tiêu từng CTCK; vline FV mô hình / thị giá / median."""
     rows = data["broker_rows"]
     brokers = [r["broker"] for r in rows][::-1]  # đảo để cao nhất nằm trên
@@ -48,7 +49,7 @@ def _football_field(data: Dict[str, Any]) -> go.Figure:
             y=brokers,
             x=tps,
             orientation="h",
-            marker=dict(color=_C_BROKER, opacity=0.85),
+            marker={"color": _C_BROKER, "opacity": 0.85},
             text=[_fmt_vnd(v) for v in tps],
             textposition="outside",
             hovertemplate="%{y}: %{x:,.0f} VND<extra></extra>",
@@ -64,7 +65,7 @@ def _football_field(data: Dict[str, Any]) -> go.Figure:
             yref="paper",
             showarrow=False,
             text=f"<b>{label}</b>",
-            font=dict(color=color, size=12),
+            font={"color": color, "size": 12},
         )
 
     _vline(
@@ -86,14 +87,14 @@ def _football_field(data: Dict[str, Any]) -> go.Figure:
 
     fig.update_layout(
         height=max(320, 60 + 42 * len(brokers)),
-        margin=dict(l=10, r=90, t=60, b=10),
-        xaxis=dict(
-            title="VND/cổ phiếu",
-            tickformat=",.0f",
-            showgrid=True,
-            gridcolor="rgba(148,163,184,0.25)",
-        ),
-        yaxis=dict(title=None),
+        margin={"l": 10, "r": 90, "t": 60, "b": 10},
+        xaxis={
+            "title": "VND/cổ phiếu",
+            "tickformat": ",.0f",
+            "showgrid": True,
+            "gridcolor": "rgba(148,163,184,0.25)",
+        },
+        yaxis={"title": None},
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
@@ -193,9 +194,9 @@ def _render_calibration(data: dict, dev: float) -> None:
 
 
 def render_consensus_compare(
-    company: Union[Company, CompanyBank], blended_fv: float, db: Session
+    company: Company | CompanyBank, blended_fv: float, db: Session
 ) -> None:
-    """Render tab So sánh CTCK cho 1 mã."""
+    """Render phần So sánh CTCK cho 1 mã (dưới kết quả định giá)."""
     st.header("So sánh với định giá công ty chứng khoán")
 
     data = build_consensus_comparison(
@@ -207,7 +208,7 @@ def render_consensus_compare(
             "Bấm nút **'Tải mới "
             + company.ticker
             + "'** hoặc **'Quét VN100 Hàng Tuần'** "
-            "ở sidebar để thu thập báo cáo CTCK (Simplize/24hmoney) cho mã này.",
+            "ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô ») để thu thập báo cáo CTCK (Simplize/24hmoney) cho mã này.",
             icon="ℹ️",
         )
         return
@@ -232,101 +233,129 @@ def render_consensus_compare(
         help=f"Dải giá mục tiêu: {_fmt_vnd(data['range_min'])} – {_fmt_vnd(data['range_max'])} đ",
     )
 
+    alerts: list[tuple[str, str, str | None]] = []
     # Đồng thuận quá mỏng: median chỉ phản ánh ý kiến 1 CTCK, không phải thị trường.
     if data.get("consensus_thin"):
-        st.warning(
-            f"Chỉ **{data['n_brokers']} CTCK** theo dõi mã này — con số 'đồng thuận' bên trên "
-            "thực chất là ý kiến đơn lẻ, không đại diện quan điểm thị trường. "
-            "Hãy đọc kèm luận điểm thay vì chỉ nhìn độ lệch.",
-            icon="⚠️",
+        alerts.append(
+            (
+                "warning",
+                (
+                    f"Chỉ **{data['n_brokers']} CTCK** theo dõi mã này — con số 'đồng thuận' "
+                    "bên trên thực chất là ý kiến đơn lẻ, không đại diện quan điểm thị trường. "
+                    "Hãy đọc kèm luận điểm thay vì chỉ nhìn độ lệch."
+                ),
+                "⚠️",
+            )
         )
     if data.get("consensus_stale"):
-        st.info(
-            "Báo cáo CTCK mới nhất đã cũ hơn 120 ngày — có thể chưa phản ánh "
-            "kết quả kinh doanh gần đây.",
-            icon="🕒",
+        alerts.append(
+            (
+                "info",
+                (
+                    "Báo cáo CTCK mới nhất đã cũ hơn 120 ngày — có thể chưa phản ánh "
+                    "kết quả kinh doanh gần đây."
+                ),
+                "🕒",
+            )
         )
+    # D54: số CTCK đã có ở KPI c4; kết luận hiệu chuẩn bên dưới luôn hiện.
+    render_alerts(alerts, max_visible=0)
 
     _render_calibration(data, dev)
 
     # ---- 2. Football field ------------------------------------------------
-    st.subheader("Giá mục tiêu CTCK, mô hình và thị giá")
-    st.plotly_chart(_football_field(data), width="stretch", theme=None)
+    with phone_collapsible("Giá mục tiêu từng CTCK"):
+        st.subheader("Giá mục tiêu CTCK, mô hình và thị giá")
+        st.plotly_chart(_football_field(data), width="stretch", theme=None)
 
-    # ---- 3. Bảng chi tiết -------------------------------------------------
-    st.subheader("Chi tiết khuyến nghị từng CTCK")
-    df = pd.DataFrame(data["broker_rows"])
-    df = df.rename(
-        columns={
-            "broker": "CTCK",
-            "report_date": "Ngày BC",
-            "target_price": "Giá mục tiêu (đ)",
-            "rating": "Khuyến nghị",
-            "vs_model": "Mô hình so với CTCK",
-            "age_days": "Tuổi (ngày)",
-        }
-    )
-    styler = (
-        df.style.format(
-            {
-                "Giá mục tiêu (đ)": lambda v: _fmt_vnd(v),
-                "Mô hình so với CTCK": "{:+.1%}",
+        # ---- 3. Bảng chi tiết -------------------------------------------------
+        st.subheader("Chi tiết khuyến nghị từng CTCK")
+        df = pd.DataFrame(data["broker_rows"])
+        df = df.rename(
+            columns={
+                "broker": "CTCK",
+                "report_date": "Ngày BC",
+                "target_price": "Giá mục tiêu (đ)",
+                "rating": "Khuyến nghị",
+                "vs_model": "Mô hình so với CTCK",
+                "age_days": "Tuổi (ngày)",
             }
         )
-        .map(
-            lambda v: (
-                "color:#EF4444;font-weight:600;"
-                if isinstance(v, float) and v < -0.25
-                else (
-                    "color:#16A34A;font-weight:600;"
-                    if isinstance(v, float) and v > 0.25
-                    else ""
-                )
-            ),
-            subset=["Mô hình so với CTCK"],
+        styler = (
+            df.style.format(
+                {
+                    "Giá mục tiêu (đ)": lambda v: _fmt_vnd(v),
+                    "Mô hình so với CTCK": "{:+.1%}",
+                }
+            )
+            .map(
+                lambda v: (
+                    "color:#EF4444;font-weight:600;"
+                    if isinstance(v, float) and v < -0.25
+                    else (
+                        "color:#16A34A;font-weight:600;"
+                        if isinstance(v, float) and v > 0.25
+                        else ""
+                    )
+                ),
+                subset=["Mô hình so với CTCK"],
+            )
+            .map(
+                lambda v: "color:#EF4444;" if isinstance(v, int) and v > 120 else "",
+                subset=["Tuổi (ngày)"],
+            )
         )
-        .map(
-            lambda v: "color:#EF4444;" if isinstance(v, int) and v > 120 else "",
-            subset=["Tuổi (ngày)"],
+        st.dataframe(
+            styler,
+            width="stretch",
+            hide_index=True,
+            column_config={"CTCK": st.column_config.TextColumn(pinned=True)},
         )
-    )
-    st.dataframe(styler, width="stretch", hide_index=True)
-    st.caption(
-        "🔴 chênh >25% (mô hình thấp hơn) · 🟢 chênh >25% (mô hình cao hơn) · tuổi đỏ = báo cáo >120 ngày"
-    )
+        st.caption(
+            "🔴 chênh >25% (mô hình thấp hơn) · 🟢 chênh >25% (mô hình cao hơn) · tuổi đỏ = báo cáo >120 ngày"
+        )
 
     # ---- 4. AI tổng hợp điểm chung / riêng --------------------------------
-    st.subheader("Tổng hợp luận điểm CTCK")
-    synth = data.get("synthesis")
-    if synth:
-        gen_at = synth.get("generated_at")
-        gen_str = gen_at.strftime("%d/%m/%Y") if gen_at else "—"
-        st.caption(
-            f"Tổng hợp từ {synth['n_reports']} báo cáo ({synth['brokers']}) · "
-            f"sinh ngày {gen_str} · ⚠️ AI tổng hợp từ báo cáo CTCK — cần analyst review"
-        )
-        col_l, col_r = st.columns(2)
-        with col_l:
-            _panel(
-                "Điểm CHUNG các CTCK đồng thuận", "🤝", "#16A34A", synth["diem_chung"]
+    with phone_collapsible("Luận điểm CTCK (AI tổng hợp)"):
+        st.subheader("Tổng hợp luận điểm CTCK")
+        synth = data.get("synthesis")
+        if synth:
+            gen_at = synth.get("generated_at")
+            gen_str = gen_at.strftime("%d/%m/%Y") if gen_at else "—"
+            st.caption(
+                f"Tổng hợp từ {synth['n_reports']} báo cáo ({synth['brokers']}) · "
+                f"sinh ngày {gen_str} · ⚠️ AI tổng hợp từ báo cáo CTCK — cần analyst review"
             )
-            _panel(
-                "Điểm MẤU CHỐT / thị trường dễ bỏ sót",
-                "💡",
-                "#1D4ED8",
-                synth["diem_mau_chot"],
+            col_l, col_r = st.columns(2)
+            with col_l:
+                _panel(
+                    "Điểm CHUNG các CTCK đồng thuận",
+                    "🤝",
+                    "#16A34A",
+                    synth["diem_chung"],
+                )
+                _panel(
+                    "Điểm MẤU CHỐT / thị trường dễ bỏ sót",
+                    "💡",
+                    "#1D4ED8",
+                    synth["diem_mau_chot"],
+                )
+            with col_r:
+                _panel(
+                    "Điểm RIÊNG / khác biệt giữa CTCK",
+                    "⚖️",
+                    "#D97706",
+                    synth["diem_rieng"],
+                )
+                _panel(
+                    "Đối chiếu mô hình nội bộ",
+                    "🧭",
+                    "#7C3AED",
+                    synth["doi_chieu_noi_bo"],
+                )
+        else:
+            st.caption(  # ghi chú trung tính, không phải cảnh báo (D58)
+                "🤖 Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
+                "sinh báo cáo qua DeepSeek** ở tab BCTC; cùng một lượt sẽ tạo luôn "
+                "phần tổng hợp CTCK tại đây."
             )
-        with col_r:
-            _panel(
-                "Điểm RIÊNG / khác biệt giữa CTCK", "⚖️", "#D97706", synth["diem_rieng"]
-            )
-            _panel(
-                "Đối chiếu mô hình nội bộ", "🧭", "#7C3AED", synth["doi_chieu_noi_bo"]
-            )
-    else:
-        st.info(
-            "Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
-            "sinh báo cáo qua DeepSeek** ở tab BCTC; cùng một lượt sẽ tạo luôn "
-            "phần tổng hợp CTCK tại đây.",
-            icon="🤖",
-        )

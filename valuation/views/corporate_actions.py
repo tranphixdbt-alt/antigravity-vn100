@@ -5,22 +5,37 @@ from __future__ import annotations
 import datetime
 import html
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from valuation.analysis.corporate_actions import (
+    _event_investment_note,
     analyze_corporate_action,
     analyze_historical_price_impact,
     assess_corporate_action,
+    dividend_opinion,
     explain_historical_price_impact,
     explain_upcoming_action,
 )
 from valuation.config import load_defaults
-from valuation.data_access.corporate_actions import load_corporate_actions
+from valuation.data_access.corporate_actions import (
+    load_corporate_actions,
+    load_dividend_track_records,
+    load_upcoming_vn100_corporate_actions,
+)
 from valuation.db.models import PricesDaily
 from valuation.ingest.corporate_actions import refresh_corporate_actions
+from valuation.services.ranking_store import latest_snapshot
+from valuation.views.device import phone_collapsible
+
+_VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
+
+
+def _today_vn() -> datetime.date:
+    return datetime.datetime.now(_VN_TZ).date()
+
 
 _EVENT_LABELS = {
     "CASH_DIVIDEND": "Cổ tức tiền mặt",
@@ -186,6 +201,72 @@ def _section_head(title: str, note: str) -> None:
     )
 
 
+_STOCK_PAYOUTS = ("STOCK_DIVIDEND", "BONUS_SHARE", "STOCK_BONUS_COMBO")
+
+
+def latest_payouts(rows: list[Any], today: datetime.date) -> dict[str, list[Any]]:
+    """Lần chia gần nhất đã thực hiện (mốc ≤ hôm nay): {"cash": [...], "stock": [...]}.
+
+    Gộp các sự kiện cùng mốc (vd cổ tức CP 25% + thưởng 20% cùng ngày GDKHQ) để hiện một lần chia.
+    """
+    out: dict[str, list[Any]] = {}
+    for key, types in (("cash", ("CASH_DIVIDEND",)), ("stock", _STOCK_PAYOUTS)):
+        past = [
+            r
+            for r in rows
+            if r.event_type in types and _anchor(r) and _anchor(r) <= today
+        ]
+        if past:
+            last = max(_anchor(r) for r in past)
+            out[key] = [r for r in past if _anchor(r) == last]
+    return out
+
+
+def _render_latest_payouts(rows: list[Any], today: datetime.date) -> None:
+    latest = latest_payouts(rows, today)
+    _section_head(
+        "Lần chia gần nhất",
+        "Cổ tức tiền mặt và cổ phiếu/thưởng đã thực hiện gần đây nhất trong dữ liệu đã lưu.",
+    )
+    cells = []
+    cash = latest.get("cash")
+    if cash:
+        r = cash[0]  # một lần chia; nhiều nguồn cùng mốc là bản trùng, không cộng dồn
+        sub = f"GDKHQ {_anchor(r):%d/%m/%Y}" + (
+            f" · thanh toán {r.payment_date:%d/%m/%Y}" if r.payment_date else ""
+        )
+        cells.append(("Tiền mặt", f"{_fmt_vnd(r.cash_amount_vnd_per_share)} đ/cp", sub))
+    else:
+        cells.append(("Tiền mặt", "Chưa có", "Không có trong dữ liệu đã lưu"))
+    stock = latest.get("stock")
+    if stock:
+        by_type = {r.event_type: r for r in stock}  # bỏ bản trùng cùng loại
+        value = " + ".join(
+            (
+                f"{float(r.exercise_ratio) * 100:g}%"
+                if r.exercise_ratio is not None
+                else "?"
+            )
+            for r in by_type.values()
+        )
+        kinds = " + ".join(_EVENT_LABELS.get(t, t) for t in by_type)
+        sub = f"{kinds} · GDKHQ {_anchor(stock[0]):%d/%m/%Y}"
+        cells.append(("Cổ phiếu / thưởng", value, sub))
+    else:
+        cells.append(("Cổ phiếu / thưởng", "Chưa có", "Không có trong dữ liệu đã lưu"))
+    body = "".join(
+        f'<div class="ca-mini"><div class="ca-mini-label">{_escape(label)}</div>'
+        f'<div class="ca-mini-value">{_escape(value)}</div>'
+        f'<div class="ca-mini-sub">{_escape(sub)}</div></div>'
+        for label, value, sub in cells
+    )
+    st.markdown(
+        '<div class="ca-card"><div class="ca-mini-grid" style="grid-template-columns: repeat(2, '
+        f'minmax(0, 1fr)); margin-top: 0; padding-top: 0; border-top: 0;">{body}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _style_impact_table(df: pd.DataFrame) -> Any:
     def pct_color(value: Any) -> str:
         text = str(value)
@@ -227,11 +308,37 @@ def _style_impact_table(df: pd.DataFrame) -> Any:
     )
 
 
+def _style_quick_opinion_table(df: pd.DataFrame) -> Any:
+    def opinion_color(value: Any) -> str:
+        text = str(value or "").upper()
+        if text.startswith("ĐẠT 3/3"):
+            return "color:#047857;font-weight:750;background-color:#ecfdf5;"
+        if text.startswith("THEO DÕI"):
+            return "color:#92400e;font-weight:750;background-color:#fffbeb;"
+        if text.startswith(
+            (
+                "CHƯA HẤP DẪN",
+                "CHƯA ĐẠT",
+                "CHƯA ĐỦ",
+                "CHƯA THỂ",
+                "CẦN ĐỐI CHIẾU",
+                "CẦN KIỂM TRA",
+            )
+        ):
+            return "color:#b91c1c;font-weight:750;background-color:#fef2f2;"
+        return "color:#334155;"
+
+    styler = df.style
+    if hasattr(styler, "map"):
+        return styler.map(opinion_color, subset=["Nhận định nhanh"])
+    return styler.applymap(opinion_color, subset=["Nhận định nhanh"])
+
+
 def _render_history_card(
     *,
     row: Any,
-    impact: Dict[str, Any],
-    story: Dict[str, str],
+    impact: dict[str, Any],
+    story: dict[str, str],
     expanded: bool,
 ) -> None:
     label = _EVENT_LABELS.get(row.event_type, row.event_type)
@@ -332,6 +439,20 @@ def _benefit_summary(row: Any) -> str:
     if row.event_type == "RIGHTS_ISSUE" and ratio is not None:
         text = f"Được mua {ratio * 100:g} cổ phiếu/100 cổ phiếu"
         return f"{text}, giá {_fmt_vnd(issue_price)} VND" if issue_price else text
+    # Phát hành không chia cho cổ đông hiện hữu: trước đây rơi xuống "Chưa đủ thông tin" dù có tỷ lệ.
+    dilutive = {
+        "ESOP": "Phát hành ESOP cho nhân viên",
+        "PRIVATE_PLACEMENT": "Phát hành riêng lẻ",
+        "SHARE_ISSUE": "Phát hành thêm",
+    }
+    if row.event_type in dilutive and ratio:
+        pct = f"{ratio * 100:.2f}".rstrip("0").rstrip(".")
+        text = f"{dilutive[row.event_type]} {pct}% số cổ phiếu (cổ đông hiện hữu không nhận)"
+        return f"{text}, giá {_fmt_vnd(issue_price)} VND" if issue_price else text
+    if row.event_type == "CASH_DIVIDEND":
+        return "Chưa công bố số tiền/cổ phiếu"
+    if not ratio:
+        return "Nguồn chưa ghi tỷ lệ"
     return "Chưa đủ thông tin"
 
 
@@ -392,15 +513,313 @@ def _historical_impact_rows(rows: list[Any]) -> list[Any]:
     return out
 
 
+def _render_historical_analysis(
+    *,
+    company: Any,
+    db: Any,
+    historical_rows: list[Any],
+    cfg: dict[str, Any],
+) -> None:
+    st.markdown(
+        """
+<div class="ca-table-note">
+    Cột <strong>Sau 1 tuần</strong> và <strong>Sau 1 tháng</strong> luôn tính từ
+    giá trong ngày chia quyền, tức mốc đã chia xong. Nếu dữ liệu giá đã được điều
+    chỉnh quyền, hệ thống không cộng thêm cổ phiếu lần nữa.
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    price_rows = (
+        db.query(PricesDaily.trade_date, PricesDaily.close)
+        .filter(PricesDaily.ticker == company.ticker)
+        .order_by(PricesDaily.trade_date)
+        .all()
+    )
+    prices = [
+        {"date": item.trade_date, "close": float(item.close)}
+        for item in price_rows
+        if item.close is not None
+    ]
+    max_history = int(cfg.get("historical_impact_max_events", 12))
+    impact_items = []
+    for row in _historical_impact_rows(historical_rows):
+        if row.event_type not in _PRICE_IMPACT_TYPES:
+            continue
+        ratio = float(row.exercise_ratio) if row.exercise_ratio is not None else None
+        cash = (
+            float(row.cash_amount_vnd_per_share)
+            if row.cash_amount_vnd_per_share is not None
+            else None
+        )
+        issue_price = (
+            float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
+        )
+        impact = analyze_historical_price_impact(
+            cash_dividend_prices_adjusted=bool(
+                cfg.get("cash_dividend_prices_adjusted", False)
+            ),
+            prices=prices,
+            event_date=_anchor(row),
+            event_type=row.event_type,
+            exercise_ratio=ratio,
+            cash_amount_vnd_per_share=cash,
+            issue_price_vnd=issue_price,
+            short_sessions=int(cfg.get("price_impact_short_sessions", 5)),
+            long_sessions=int(cfg.get("price_impact_long_sessions", 20)),
+        )
+        story = explain_historical_price_impact(
+            event_type=row.event_type,
+            impact=impact,
+            reaction_materiality_pct=float(cfg.get("reaction_materiality_pct", 2.0)),
+        )
+        impact_items.append((row, impact, story))
+        if len(impact_items) >= max_history:
+            break
+
+    available_items = [item for item in impact_items if item[1].get("available")]
+    if not available_items:
+        st.info("Chưa đủ dữ liệu giá trước và sau sự kiện để đo tác động lịch sử.")
+    else:
+        table_rows = []
+        for row, impact, story in available_items:
+            price_base = (
+                f"{_fmt_vnd(impact.get('price_before_vnd'))} → "
+                f"{_fmt_vnd(impact.get('price_event_vnd'))}"
+            )
+            if impact.get("price_series_adjusted"):
+                price_base += " (giá đã điều chỉnh)"
+            table_rows.append(
+                {
+                    "Ngày": _anchor(row),
+                    "Sự kiện": _EVENT_LABELS.get(row.event_type, row.event_type),
+                    "Mốc giá": price_base,
+                    "Quyền lợi": _benefit_summary(row),
+                    "Tài sản thực": _fmt_pct(
+                        impact.get("shareholder_wealth_change_pct")
+                    ),
+                    "Sau 1 tuần": _fmt_pct(impact.get("return_after_5_sessions_pct")),
+                    "Sau 1 tháng": _fmt_pct(impact.get("return_after_20_sessions_pct")),
+                    "Kết luận": story["reaction_label"],
+                }
+            )
+        impact_df = pd.DataFrame(table_rows)
+        st.dataframe(
+            _style_impact_table(impact_df),
+            width="stretch",
+            hide_index=True,
+            column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY")},
+        )
+        st.markdown("**Diễn giải từng sự kiện**")
+        for row, impact, story in available_items:
+            _render_history_card(
+                row=row,
+                impact=impact,
+                story=story,
+                expanded=False,
+            )
+
+    implementation_rows = [
+        row for row in historical_rows if row.event_type == "ADDITIONAL_LISTING"
+    ]
+    if implementation_rows:
+        with st.expander("Các mốc niêm yết bổ sung đã hoàn tất"):
+            st.caption(
+                "Các mốc này là bước thực hiện sau phát hành/chia cổ phiếu; không tính "
+                "thêm một lần pha loãng để tránh đánh giá trùng."
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Ngày": _anchor(row),
+                            "Nội dung": row.title,
+                            "Nguồn": f"{row.source_site} ({row.source_tier})",
+                        }
+                        for row in implementation_rows
+                    ]
+                ),
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY")
+                },
+            )
+
+
+def _render_vn100_upcoming_calendar(
+    *,
+    db: Any,
+    today: datetime.date,
+    future_days: int,
+    cfg: dict[str, Any],
+) -> None:
+    _section_head(
+        f"Lịch cổ tức & quyền mua VN100 trong {future_days} ngày tới",
+        "Danh sách toàn VN100, sắp xếp theo ngày gần nhất và có nhận định sàng lọc.",
+    )
+    items = load_upcoming_vn100_corporate_actions(
+        db,
+        as_of_date=today,
+        future_days=future_days,
+    )
+    if not items:
+        st.info(
+            f"Chưa có sự kiện VN100 nào đã công bố với mốc thực hiện từ "
+            f"{today.strftime('%d/%m/%Y')} đến "
+            f"{(today + datetime.timedelta(days=future_days)).strftime('%d/%m/%Y')}."
+        )
+        st.caption(
+            "Danh sách chỉ phản ánh dữ liệu đã lưu và không tự dự đoán sự kiện chưa công bố."
+        )
+        return
+
+    from valuation.analysis.investment_ranking import load_ranking_config
+    from valuation.views.vn100_ranking import market_data, ranking_table
+
+    snapshot = latest_snapshot() or {}
+    # Upside + lọc dữ liệu dùng chung với tab VN100 (D55); lịch sử cổ tức đọc một lượt cho cả nhóm (D56).
+    rank = (
+        ranking_table(
+            snapshot, market_data(db), snapshot.get("config", load_ranking_config())
+        ).set_index("Mã")
+        if snapshot
+        else pd.DataFrame()
+    )
+    post = int(cfg.get("price_impact_long_sessions", 20))
+    records = load_dividend_track_records(
+        db,
+        sorted({item.action.ticker for item in items}),
+        as_of=today,
+        history_years=int(cfg.get("history_years", 5)),
+        post_sessions=post,
+        consistency_years=int(cfg.get("dividend_consistency_years", 3)),
+    )
+    names = {r.get("ticker"): r.get("name") for r in snapshot.get("rows", [])}
+    table_rows = []
+    for item in items:
+        t = item.action.ticker
+        row = rank.loc[t] if t in rank.index else None
+        note = (
+            str(row["Ghi chú"])
+            if row is not None
+            else "chưa có trong đợt định giá VN100"
+        )
+        upside = (
+            float(row["Upside (%)"])
+            if row is not None and pd.notna(row["Upside (%)"])
+            else None
+        )
+        current_price = (
+            float(row["Giá (đ)"])
+            if row is not None and pd.notna(row["Giá (đ)"])
+            else 0.0
+        )
+        event_analysis = analyze_corporate_action(
+            event_type=item.action.event_type,
+            current_price_vnd=current_price,
+            shares_outstanding=1.0,
+            exercise_ratio=(
+                float(item.action.exercise_ratio)
+                if item.action.exercise_ratio is not None
+                else None
+            ),
+            cash_amount_vnd_per_share=(
+                float(item.action.cash_amount_vnd_per_share)
+                if item.action.cash_amount_vnd_per_share is not None
+                else None
+            ),
+            issue_price_vnd=(
+                float(item.action.issue_price_vnd)
+                if item.action.issue_price_vnd is not None
+                else None
+            ),
+        )
+        company_name = item.company_name
+        if company_name == t:
+            company_name = names.get(t) or company_name
+        liquidity_low = note.startswith("Thanh khoản")
+        table_rows.append(
+            {
+                "Ngày": item.event_date,
+                "Còn lại": (
+                    "Hôm nay"
+                    if item.event_date == today
+                    else f"{(item.event_date - today).days} ngày"
+                ),
+                "Mã": item.action.ticker,
+                "Nhận định nhanh": dividend_opinion(
+                    upside_pct=upside,
+                    data_note="" if liquidity_low else note,
+                    liquidity_low=liquidity_low,
+                    record=records.get(t, {}),
+                    event_note=_event_investment_note(
+                        item.action.event_type, event_analysis
+                    ),
+                    min_yield_pct=float(cfg.get("attractive_dividend_yield_pct", 5.0)),
+                    min_events=int(cfg.get("dividend_min_events", 3)),
+                    min_hit_rate=float(cfg.get("dividend_min_hit_rate", 0.6)),
+                    post_sessions=post,
+                ),
+                "Sự kiện": _EVENT_LABELS.get(
+                    item.action.event_type, item.action.event_type
+                ),
+                "Quyền lợi / điều kiện": _benefit_summary(item.action),
+                "Doanh nghiệp": company_name,
+            }
+        )
+    table = pd.DataFrame(table_rows)
+    opinions = table["Nhận định nhanh"].astype(str)
+    full_count = int(opinions.str.startswith("ĐẠT 3/3").sum())
+    watch_count = int(opinions.str.startswith("THEO DÕI").sum())
+    data_count = int(opinions.str.startswith("CHƯA ĐỦ CƠ SỞ").sum())
+    st.caption(
+        f"Tổng hợp: {full_count} sự kiện đạt 3/3 · {watch_count} đạt 2/3 · "
+        f"{len(table) - full_count - watch_count - data_count} chưa đạt/chưa hấp dẫn · "
+        f"{data_count} chưa đủ cơ sở dữ liệu."
+    )
+    st.dataframe(
+        _style_quick_opinion_table(table),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY", width="small"),
+            "Còn lại": st.column_config.TextColumn(width="small"),
+            "Mã": st.column_config.TextColumn(width="small"),
+            "Nhận định nhanh": st.column_config.TextColumn(
+                width="large",
+                help="3 tiêu chí: upside mô hình > 0; cổ tức tiền mặt tốt & đều; giá sau GDKHQ vượt VN-Index.",
+            ),
+        },
+    )
+    completed_at = snapshot.get("completed_at")
+    try:
+        ranking_time = datetime.datetime.fromisoformat(completed_at).strftime(
+            "%d/%m/%Y %H:%M"
+        )
+    except (TypeError, ValueError):
+        ranking_time = "chưa rõ thời gian"
+    st.caption(
+        f"3 tiêu chí: (1) upside theo đợt định giá VN100 {ranking_time} > 0, không có lỗi dữ liệu; "
+        f"(2) cổ tức tiền mặt 12 tháng ≥ {cfg.get('attractive_dividend_yield_pct', 5.0):g}% thị giá và "
+        f"trả đều {cfg.get('dividend_consistency_years', 3)} năm gần nhất (cổ tức cổ phiếu không tính — "
+        f"không tạo thêm giá trị); (3) giá {post} phiên sau GDKHQ vượt VN-Index ở ≥ "
+        f"{float(cfg.get('dividend_min_hit_rate', 0.6)) * 100:.0f}% số lần (tối thiểu "
+        f"{cfg.get('dividend_min_events', 3)} lần, giá đã điều chỉnh cổ tức). Lưu ý: giá giảm tương ứng "
+        "cổ tức vào ngày GDKHQ, cổ tức tiền chịu thuế 5%; quá khứ không bảo đảm tương lai. "
+        "Sàng lọc để nghiên cứu, không phải khuyến nghị mua."
+    )
+
+
 def render_corporate_actions(
     company: Any,
     db: Any,
     *,
-    refresh_result: Dict[str, Any] | None = None,
+    refresh_result: dict[str, Any] | None = None,
 ) -> None:
     _render_capital_actions_style()
     cfg = (load_defaults().get("corporate_actions") or {}).copy()
-    today = datetime.date.today()
+    today = _today_vn()
     rows = load_corporate_actions(
         db,
         company.ticker,
@@ -431,33 +850,38 @@ def render_corporate_actions(
         """,
         unsafe_allow_html=True,
     )
+    refresh_state_key = f"corporate_action_refresh_result_{company.ticker}"
+    manual_refresh_result = st.session_state.pop(refresh_state_key, None)
     if st.button(
-        "Làm mới dữ liệu",
-        help="Bỏ qua cache 24 giờ và kiểm tra nguồn sự kiện ngay.",
+        f"Cập nhật sự kiện {company.ticker}",
+        help="Bỏ qua cache 24 giờ, gọi nguồn sự kiện cho mã đang mở và lưu kết quả vào máy.",
     ):
         with st.spinner("Đang kiểm tra công bố mới..."):
-            refresh_corporate_actions(db, company.ticker, force=True)
+            result = refresh_corporate_actions(db, company.ticker, force=True)
+        st.session_state[refresh_state_key] = result
         st.rerun()
-    if refresh_result and refresh_result.get("status") == "BACKGROUND":
+
+    displayed_refresh = manual_refresh_result or refresh_result
+    if displayed_refresh and displayed_refresh.get("status") == "BACKGROUND":
         st.caption(
             "Đang kiểm tra công bố mới trong nền; dữ liệu đã lưu vẫn được hiển thị ngay."
         )
-    elif refresh_result and refresh_result.get("status") == "ERROR":
-        st.warning(f"Chưa kiểm tra được nguồn mới: {refresh_result.get('error')}")
-    elif refresh_result and refresh_result.get("checked"):
-        changed = int(refresh_result.get("inserted") or 0) + int(
-            refresh_result.get("updated") or 0
+    elif displayed_refresh and displayed_refresh.get("status") == "ERROR":
+        st.warning(f"Chưa kiểm tra được nguồn mới: {displayed_refresh.get('error')}")
+    elif displayed_refresh and displayed_refresh.get("checked"):
+        changed = int(displayed_refresh.get("inserted") or 0) + int(
+            displayed_refresh.get("updated") or 0
         )
         if changed:
             st.success(f"Đã nhận {changed} sự kiện mới hoặc được điều chỉnh.")
         else:
-            st.info("Nguồn không có sự kiện mới; dữ liệu lịch sử không bị ghi lại.")
+            seen = int(displayed_refresh.get("seen") or 0)
+            st.info(
+                f"Đã kiểm tra nguồn và đọc {seen} sự kiện; không có bản ghi mới "
+                "hoặc thay đổi."
+            )
     else:
         st.caption("Dữ liệu đang trong thời hạn cache; không phát sinh lượt tải mới.")
-
-    if not rows:
-        st.info("Chưa có sự kiện vốn hoặc quyền cổ đông trong cửa sổ theo dõi.")
-        return
 
     upcoming_rows = [row for row in rows if _anchor(row) and _anchor(row) > today]
     historical_rows = [row for row in rows if _anchor(row) and _anchor(row) <= today]
@@ -469,6 +893,7 @@ def render_corporate_actions(
         nearest_days=days_to_nearest,
         historical_count=len(historical_rows),
     )
+    _render_latest_payouts(rows, today)
 
     with st.expander("Hiểu nhanh các con số trong phần này"):
         st.markdown("""
@@ -484,7 +909,7 @@ def render_corporate_actions(
         "Chỉ hiển thị sự kiện đã có công bố và ngày thực hiện.",
     )
     if not upcoming_rows:
-        st.info(
+        st.caption(  # ghi chú trung tính, không phải cảnh báo (D58)
             "Hiện chưa có sự kiện cổ tức, quyền mua hoặc tăng vốn nào trong 12 tháng tới "
             "đã được nguồn dữ liệu công bố. Điều này không có nghĩa doanh nghiệp chắc chắn sẽ không phát sinh sự kiện mới."
         )
@@ -593,128 +1018,32 @@ def render_corporate_actions(
                     )
 
     _section_head(
-        "Sau sự kiện, bạn lãi hay lỗ?",
-        "Tách điều chỉnh kỹ thuật khỏi biến động giá để đọc đúng tổng tài sản.",
+        "Phân tích chuyên sâu các sự kiện đã qua",
+        "Mặc định ẩn để tab gọn và tải nhanh hơn.",
     )
-    st.markdown(
-        """
-<div class="ca-table-note">
-    Cột <strong>Sau 1 tuần</strong> và <strong>Sau 1 tháng</strong> luôn tính từ
-    giá trong ngày chia quyền, tức mốc đã chia xong. Nếu dữ liệu giá đã được điều
-    chỉnh quyền, hệ thống không cộng thêm cổ phiếu lần nữa.
-</div>
-        """,
-        unsafe_allow_html=True,
+    show_history = st.toggle(
+        "Xem tác động giá và lãi/lỗ sau các lần chia quyền",
+        value=False,
+        key=f"corporate_action_history_v2_{company.ticker}",
+        help="Chỉ khi bật, hệ thống mới đọc chuỗi giá và tính phân tích lịch sử.",
     )
-    price_rows = (
-        db.query(PricesDaily.trade_date, PricesDaily.close)
-        .filter(PricesDaily.ticker == company.ticker)
-        .order_by(PricesDaily.trade_date)
-        .all()
-    )
-    prices = [
-        {"date": item.trade_date, "close": float(item.close)}
-        for item in price_rows
-        if item.close is not None
-    ]
-    max_history = int(cfg.get("historical_impact_max_events", 12))
-    impact_items = []
-    for row in _historical_impact_rows(historical_rows):
-        if row.event_type not in _PRICE_IMPACT_TYPES:
-            continue
-        ratio = float(row.exercise_ratio) if row.exercise_ratio is not None else None
-        cash = (
-            float(row.cash_amount_vnd_per_share)
-            if row.cash_amount_vnd_per_share is not None
-            else None
+    if show_history:
+        _render_historical_analysis(
+            company=company,
+            db=db,
+            historical_rows=historical_rows,
+            cfg=cfg,
         )
-        issue_price = (
-            float(row.issue_price_vnd) if row.issue_price_vnd is not None else None
-        )
-        impact = analyze_historical_price_impact(
-            prices=prices,
-            event_date=_anchor(row),
-            event_type=row.event_type,
-            exercise_ratio=ratio,
-            cash_amount_vnd_per_share=cash,
-            issue_price_vnd=issue_price,
-            short_sessions=int(cfg.get("price_impact_short_sessions", 5)),
-            long_sessions=int(cfg.get("price_impact_long_sessions", 20)),
-        )
-        story = explain_historical_price_impact(
-            event_type=row.event_type,
-            impact=impact,
-            reaction_materiality_pct=float(cfg.get("reaction_materiality_pct", 2.0)),
-        )
-        impact_items.append((row, impact, story))
-        if len(impact_items) >= max_history:
-            break
-
-    available_items = [item for item in impact_items if item[1].get("available")]
-    if not available_items:
-        st.info("Chưa đủ dữ liệu giá trước và sau sự kiện để đo tác động lịch sử.")
     else:
-        table_rows = []
-        for row, impact, story in available_items:
-            price_base = (
-                f"{_fmt_vnd(impact.get('price_before_vnd'))} → "
-                f"{_fmt_vnd(impact.get('price_event_vnd'))}"
-            )
-            if impact.get("price_series_adjusted"):
-                price_base += " (giá đã điều chỉnh)"
-            table_rows.append(
-                {
-                    "Ngày": _anchor(row),
-                    "Sự kiện": _EVENT_LABELS.get(row.event_type, row.event_type),
-                    "Mốc giá": price_base,
-                    "Quyền lợi": _benefit_summary(row),
-                    "Tài sản thực": _fmt_pct(
-                        impact.get("shareholder_wealth_change_pct")
-                    ),
-                    "Sau 1 tuần": _fmt_pct(impact.get("return_after_5_sessions_pct")),
-                    "Sau 1 tháng": _fmt_pct(impact.get("return_after_20_sessions_pct")),
-                    "Kết luận": story["reaction_label"],
-                }
-            )
-        impact_df = pd.DataFrame(table_rows)
-        st.dataframe(
-            _style_impact_table(impact_df),
-            width="stretch",
-            hide_index=True,
-            column_config={"Ngày": st.column_config.DateColumn(format="DD/MM/YYYY")},
+        st.caption(
+            "Bật công tắc khi cần xem giá ngày chia quyền, tổng tài sản thực và "
+            "diễn biến sau khoảng 1 tuần/1 tháng."
         )
-        st.markdown("**Diễn giải từng sự kiện**")
-        for index, (row, impact, story) in enumerate(available_items):
-            _render_history_card(
-                row=row,
-                impact=impact,
-                story=story,
-                expanded=index == 0,
-            )
 
-    implementation_rows = [
-        row for row in historical_rows if row.event_type == "ADDITIONAL_LISTING"
-    ]
-    if implementation_rows:
-        with st.expander("Các mốc niêm yết bổ sung đã hoàn tất"):
-            st.caption(
-                "Các mốc này là bước thực hiện sau phát hành/chia cổ phiếu; không tính "
-                "thêm một lần pha loãng để tránh đánh giá trùng."
-            )
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "Ngày": _anchor(row),
-                            "Nội dung": row.title,
-                            "Nguồn": f"{row.source_site} ({row.source_tier})",
-                        }
-                        for row in implementation_rows
-                    ]
-                ),
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Ngày": st.column_config.DateColumn(format="DD/MM/YYYY")
-                },
-            )
+    with phone_collapsible("Lịch quyền VN100 sắp tới"):
+        _render_vn100_upcoming_calendar(
+            db=db,
+            today=today,
+            future_days=int(cfg.get("market_upcoming_days", 90)),
+            cfg=cfg,
+        )

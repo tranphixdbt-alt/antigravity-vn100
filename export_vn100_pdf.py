@@ -12,9 +12,10 @@ def generate_pdf():
     print("--- Bắt đầu định giá toàn bộ VN100 để xuất PDF ---")
     db = SessionLocalRead()
     try:
-        normal_env = MacroEnvironment(inflation_rate=0.03, sbv_stance="Neutral")
+        # Cùng nguồn vĩ mô với UI (CPI/TPCP/lãi suất trong DB), không hardcode lạm phát.
+        macro_env = MacroEnvironment.from_db(db)
         print("Đang định giá... (Quá trình này có thể mất 1-2 phút)")
-        results = value_all(db, macro_env=normal_env)
+        results = value_all(db, macro_env=macro_env)
     finally:
         db.close()
 
@@ -31,15 +32,8 @@ def generate_pdf():
         
     df['Upside (%)'] = df['upside'].apply(format_upside)
     
-    # Khuyến nghị
-    def get_rec(u):
-        if pd.isnull(u): return ""
-        if u > 0.2: return "STRONG BUY"
-        if u > 0.1: return "BUY"
-        if u < -0.1: return "SELL"
-        return "HOLD"
-    
-    df['Khuyến nghị'] = df['upside'].apply(get_rec)
+    # Khuyến nghị: mã chuẩn từ decision_engine (PDF font Helvetica không có dấu tiếng Việt).
+    df['Khuyến nghị'] = df['recommendation'].fillna("")
     
     # Cập nhật error thành ghi chú
     df['Ghi chú'] = df.apply(lambda row: row['error'] if pd.notnull(row.get('error')) else ", ".join(row.get('flags', [])), axis=1)
@@ -113,16 +107,13 @@ def generate_pdf():
     rec_col_idx = cols.index('Khuyến nghị')
     for i in range(1, len(data)):
         val = data[i][rec_col_idx]
-        if "STRONG BUY" in val:
-            style.add('TEXTCOLOR', (rec_col_idx, i), (rec_col_idx, i), colors.darkgreen)
-            style.add('FONTNAME', (rec_col_idx, i), (rec_col_idx, i), 'Helvetica-Bold')
-        elif "BUY" in val:
+        if val == "BUY":
             style.add('TEXTCOLOR', (rec_col_idx, i), (rec_col_idx, i), colors.green)
             style.add('FONTNAME', (rec_col_idx, i), (rec_col_idx, i), 'Helvetica-Bold')
-        elif "SELL" in val:
+        elif val == "SELL":
             style.add('TEXTCOLOR', (rec_col_idx, i), (rec_col_idx, i), colors.red)
             style.add('FONTNAME', (rec_col_idx, i), (rec_col_idx, i), 'Helvetica-Bold')
-        elif "HOLD" in val:
+        elif val in ("HOLD", "TRIM"):
             style.add('TEXTCOLOR', (rec_col_idx, i), (rec_col_idx, i), colors.orange)
             style.add('FONTNAME', (rec_col_idx, i), (rec_col_idx, i), 'Helvetica-Bold')
             

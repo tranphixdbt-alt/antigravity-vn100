@@ -4,10 +4,15 @@ Quy tắc:
 - Flow items (Doanh thu, LNST, Chi phí...): cộng 4 quý (TTM) hoặc sum 4 quý cùng năm (FY).
 - Stock items (Tài sản, Nợ, Vốn CSH...): lấy giá trị cuối kỳ của quý gần nhất.
 """
-from typing import List, Dict, Any, Optional, Tuple
+
+from collections import defaultdict
+from typing import Any
+from weakref import ref
+
 import pandas as pd
-from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
 from valuation.db.models import FinancialsQuarterly
 
 # Danh sách phân loại các line_items thông dụng
@@ -16,12 +21,95 @@ from valuation.db.models import FinancialsQuarterly
 # Nhưng tốt nhất ta định nghĩa rõ ràng.
 
 STOCK_KEYWORDS = [
-    "tài sản", "vốn", "nợ", "cho vay", "tiền gửi", "tiền và", "đầu tư tài chính",
-    "phải thu", "tồn kho", "phải trả", "assets", "equity", "loans", "deposits",
-    "cash", "borrowings", "investments", "receivable", "inventories", "payable"
+    "tài sản",
+    "vốn",
+    "nợ",
+    "cho vay",
+    "tiền gửi",
+    "tiền và",
+    "đầu tư tài chính",
+    "phải thu",
+    "tồn kho",
+    "phải trả",
+    "assets",
+    "equity",
+    "loans",
+    "deposits",
+    "cash",
+    "borrowings",
+    "investments",
+    "receivable",
+    "inventories",
+    "payable",
 ]
 
-def is_stock_item(line_item: str, statement: Optional[str] = None) -> bool:
+
+STATEMENT_PRIORITY = {"BS": 0, "IS": 1, "CF": 2}
+_RECORDS_CACHE: dict[int, tuple[ref[pd.DataFrame], list[dict[str, Any]]]] = {}
+
+
+def _has_value(value: Any) -> bool:
+    return value is not None and not pd.isna(value)
+
+
+def _statement_code(record: dict[str, Any]) -> str | None:
+    value = record.get("statement")
+    if not _has_value(value):
+        return None
+    text = str(value).strip().upper()
+    return text or None
+
+
+def _published_rank(value: Any) -> str:
+    if not _has_value(value):
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _row_rank(record: dict[str, Any]) -> tuple[int, str]:
+    return (
+        int(bool(record.get("is_restated"))),
+        _published_rank(record.get("published_at")),
+    )
+
+
+def _records_for(df_quarterly: pd.DataFrame) -> list[dict[str, Any]]:
+    key = id(df_quarterly)
+    cached = _RECORDS_CACHE.get(key)
+    if cached is not None and cached[0]() is df_quarterly:
+        return cached[1]
+    records = df_quarterly.to_dict("records")
+    _RECORDS_CACHE[key] = (
+        ref(
+            df_quarterly,
+            lambda _dead, cache_key=key: _RECORDS_CACHE.pop(cache_key, None),
+        ),
+        records,
+    )
+    return records
+
+
+def _preferred_statement(records: list[dict[str, Any]]) -> str | None:
+    statements = {code for record in records if (code := _statement_code(record))}
+    if len(statements) <= 1:
+        return next(iter(statements), None)
+    return min(statements, key=lambda code: STATEMENT_PRIORITY.get(code, 99))
+
+
+def _best_rows_by_quarter(
+    records: list[dict[str, Any]],
+) -> dict[tuple[int, int], dict[str, Any]]:
+    best: dict[tuple[int, int], dict[str, Any]] = {}
+    for record in records:
+        key = (int(record["fiscal_year"]), int(record["fiscal_quarter"]))
+        if key not in best or _row_rank(record) >= _row_rank(best[key]):
+            best[key] = record
+    return best
+
+
+def is_stock_item(line_item: str, statement: str | None = None) -> bool:
     """Kiểm tra line item là stock hay flow.
 
     Khi có loại báo cáo, dùng nó làm nguồn sự thật: BS là stock, IS/CF là
@@ -34,22 +122,37 @@ def is_stock_item(line_item: str, statement: Optional[str] = None) -> bool:
         return False
 
     item_lower = line_item.lower()
-    
+
     # Loại trừ một số khoản mục đặc thù của Lưu chuyển tiền tệ (Cash flow)
     # Vì chúng chứa từ "cash" hoặc "assets" nhưng lại là Flow item (cần được cộng dồn).
-    if any(x in item_lower for x in [
-        "cash_flow", "cash_inflow", "cash_outflow", "lưu chuyển", "payments",
-        "purchases", "proceeds", "acquisition", "disposal", "tiền chi", "chi trả",
-        "thu nhập",
-    ]):
+    if any(
+        x in item_lower
+        for x in [
+            "cash_flow",
+            "cash_inflow",
+            "cash_outflow",
+            "lưu chuyển",
+            "payments",
+            "purchases",
+            "proceeds",
+            "acquisition",
+            "disposal",
+            "tiền chi",
+            "chi trả",
+            "thu nhập",
+        ]
+    ):
         return False
-        
+
     for kw in STOCK_KEYWORDS:
         if kw in item_lower:
             return True
     return False
 
-def get_latest_quarters_for_ticker(db: Session, ticker: str, limit: int = 4) -> List[Tuple[int, int]]:
+
+def get_latest_quarters_for_ticker(
+    db: Session, ticker: str, limit: int = 4
+) -> list[tuple[int, int]]:
     """Lấy danh sách các quý gần nhất có dữ liệu của ticker (bỏ qua Q0)."""
     rows = (
         db.query(
@@ -70,90 +173,80 @@ def get_latest_quarters_for_ticker(db: Session, ticker: str, limit: int = 4) -> 
     )
     return [(r[0], r[1]) for r in rows]
 
+
 def periodize_quarters_to_annual(
-    df_quarterly: pd.DataFrame, 
-    target_year: int, 
-    mode: str = "TTM", 
-    latest_quarter: int = None
-) -> Dict[str, float]:
+    df_quarterly: pd.DataFrame,
+    target_year: int,
+    mode: str = "TTM",
+    latest_quarter: int | None = None,
+) -> dict[str, float]:
     """
     Quy đổi dữ liệu quý sang năm cho một năm mục tiêu.
     df_quarterly: DataFrame có các cột ['fiscal_year', 'fiscal_quarter', 'line_item', 'value']
     mode: 'TTM' hoặc 'FY'
     target_year: Năm tài chính hoặc năm kết thúc TTM
     latest_quarter: Quý kết thúc TTM (chỉ dùng khi mode == 'TTM')
-    
+
     Trả về Dict[line_item, value] đã được quy đổi.
     """
     if df_quarterly.empty:
         return {}
 
+    records = _records_for(df_quarterly)
+
     # Lọc dữ liệu theo chế độ
     if mode == "FY":
         # Ưu tiên lấy dữ liệu đã được tính sẵn cho cả năm (Q0)
-        df_fy = df_quarterly[(df_quarterly["fiscal_year"] == target_year) & (df_quarterly["fiscal_quarter"] == 0)]
-        if not df_fy.empty:
+        fy_records = [
+            record
+            for record in records
+            if record.get("fiscal_year") == target_year
+            and record.get("fiscal_quarter") == 0
+        ]
+        if fy_records:
             # Q0 có thể chỉ chứa một báo cáo: vẫn giữ các chỉ tiêu đủ bốn quý
             # của báo cáo khác, rồi ưu tiên số cả năm được công bố.
             result = periodize_quarters_to_annual(
                 df_quarterly[df_quarterly["fiscal_quarter"] != 0],
-                target_year, mode="FY",
+                target_year,
+                mode="FY",
             )
-            df_fy = df_fy.copy()
-            df_fy["_restated_rank"] = (
-                df_fy["is_restated"].fillna(False).astype(bool).astype(int)
-                if "is_restated" in df_fy.columns
-                else 0
-            )
-            df_fy["_published_rank"] = (
-                pd.to_datetime(df_fy["published_at"], errors="coerce")
-                if "published_at" in df_fy.columns
-                else pd.NaT
-            )
-            df_fy = df_fy.sort_values(
-                by=["line_item", "_restated_rank", "_published_rank"],
-                ascending=[True, True, True],
-                na_position="first",
-            )
-            rows = []
-            for _, df_item in df_fy.groupby("line_item", sort=False):
-                if "statement" in df_item.columns:
-                    statements = {
-                        str(value).strip().upper()
-                        for value in df_item["statement"].dropna().unique()
-                        if str(value).strip()
-                    }
-                    if len(statements) > 1:
-                        statement = next(
-                            code for code in ("BS", "IS", "CF") if code in statements
-                        )
-                        df_item = df_item[
-                            df_item["statement"].astype(str).str.upper() == statement
-                        ]
-                rows.append(df_item.iloc[-1])
-            df_fy = pd.DataFrame(rows)
-            for _, r in df_fy.iterrows():
-                val = r["value"]
-                if val is not None and not pd.isna(val):
-                    result[r["line_item"]] = float(val)
+            by_item: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for record in fy_records:
+                by_item[str(record["line_item"])].append(record)
+            for item, item_records in by_item.items():
+                statement = _preferred_statement(item_records)
+                if statement:
+                    item_records = [
+                        record
+                        for record in item_records
+                        if _statement_code(record) == statement
+                    ]
+                row = max(item_records, key=_row_rank)
+                val = row.get("value")
+                if _has_value(val):
+                    result[item] = float(val)
             return result
-            
+
         # Fallback: Lấy cả 4 quý của năm target_year
-        df_target = df_quarterly[df_quarterly["fiscal_year"] == target_year]
-        # Bỏ qua Q0 nếu có
-        df_target = df_target[df_target["fiscal_quarter"] > 0]
         quarters_in_period = [(target_year, q) for q in range(1, 5)]
-        if df_target.empty:
+        if not any(
+            record.get("fiscal_year") == target_year
+            and record.get("fiscal_quarter", 0) > 0
+            for record in records
+        ):
             return {}
         latest_yr, latest_q = target_year, 4
     else:  # TTM
         # Nếu không truyền latest_quarter, tìm quý lớn nhất của target_year có trong df
         if latest_quarter is None:
-            sub_year = df_quarterly[(df_quarterly["fiscal_year"] == target_year) & (df_quarterly["fiscal_quarter"] > 0)]
-            if not sub_year.empty:
-                latest_q = sub_year["fiscal_quarter"].max()
-            else:
-                latest_q = 4
+            quarters = [
+                int(record["fiscal_quarter"])
+                for record in records
+                if record.get("fiscal_year") == target_year
+                and record.get("fiscal_quarter", 0) > 0
+            ]
+            latest_q = max(quarters) if quarters else 4
             latest_yr = target_year
         else:
             latest_yr = target_year
@@ -169,72 +262,41 @@ def periodize_quarters_to_annual(
                 cq = 4
                 cy -= 1
 
-    # Tạo tập hợp dữ liệu trong kỳ
-    period_index = pd.MultiIndex.from_frame(df_quarterly[["fiscal_year", "fiscal_quarter"]])
-    df_period = df_quarterly[period_index.isin(quarters_in_period)]
-    
-    if df_period.empty:
+    period_keys = set(quarters_in_period)
+    by_item: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        key = (record.get("fiscal_year"), record.get("fiscal_quarter"))
+        if key in period_keys:
+            by_item[str(record["line_item"])].append(record)
+
+    if not by_item:
         return {}
 
     result = {}
-    # Lấy danh sách các khoản mục
-    line_items = df_period["line_item"].unique()
+    for item, item_records in by_item.items():
+        statement = _preferred_statement(item_records)
+        if statement:
+            item_records = [
+                record
+                for record in item_records
+                if _statement_code(record) == statement
+            ]
 
-    for item in line_items:
-        df_item = df_period[df_period["line_item"] == item]
-        statement = None
-        if "statement" in df_item.columns:
-            statements = {
-                str(value).strip().upper()
-                for value in df_item["statement"].dropna().unique()
-                if str(value).strip()
-            }
-            if len(statements) > 1:
-                # Một số provider dùng cùng item_id cho BS và IS, điển hình
-                # minority_interest. Chọn xác định theo ưu tiên BS > IS > CF
-                # thay vì phụ thuộc thứ tự trả về của DB.
-                statement = next(
-                    code for code in ("BS", "IS", "CF") if code in statements
-                )
-                df_item = df_item[
-                    df_item["statement"].astype(str).str.upper() == statement
-                ]
-            else:
-                statement = next(iter(statements), None)
-
-        # Cùng một kỳ có thể tồn tại cả bản ban đầu và bản đã soát xét/restated.
-        # Chỉ giữ một dòng mỗi quý, ưu tiên bản restated rồi tới ngày công bố mới.
-        df_item = df_item.copy()
-        df_item["_restated_rank"] = (
-            df_item["is_restated"].fillna(False).astype(bool).astype(int)
-            if "is_restated" in df_item.columns
-            else 0
-        )
-        df_item["_published_rank"] = (
-            pd.to_datetime(df_item["published_at"], errors="coerce")
-            if "published_at" in df_item.columns
-            else pd.NaT
-        )
-        df_item = df_item.sort_values(
-            by=[
-                "fiscal_year",
-                "fiscal_quarter",
-                "_restated_rank",
-                "_published_rank",
-            ],
-            ascending=[True, True, True, True],
-            na_position="first",
-        ).drop_duplicates(
-            subset=["fiscal_year", "fiscal_quarter"], keep="last"
-        )
+        # Cùng một kỳ có thể tồn tại cả bản ban đầu và bản đã soát xét/restated;
+        # chỉ giữ một dòng mỗi quý, ưu tiên bản restated rồi tới ngày công bố mới.
+        rows_by_quarter = _best_rows_by_quarter(item_records)
 
         if is_stock_item(item, statement=statement):
-            latest = df_item[(df_item["fiscal_year"] == latest_yr) & (df_item["fiscal_quarter"] == latest_q)]
-            if not latest.empty and pd.notna(latest.iloc[0]["value"]):
-                result[item] = float(latest.iloc[0]["value"])
+            latest = rows_by_quarter.get((latest_yr, latest_q))
+            if latest and _has_value(latest.get("value")):
+                result[item] = float(latest["value"])
         else:
             # Thiếu một quý của chính chỉ tiêu này thì chưa có FY/TTM thật.
-            if len(df_item) == 4 and df_item["value"].notna().all():
-                result[item] = float(df_item["value"].sum())
+            if len(rows_by_quarter) == 4 and all(
+                _has_value(record.get("value")) for record in rows_by_quarter.values()
+            ):
+                result[item] = float(
+                    sum(record["value"] for record in rows_by_quarter.values())
+                )
 
     return result
