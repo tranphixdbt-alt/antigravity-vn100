@@ -10,8 +10,10 @@
 [server]
 fileWatcherType = "none"
 runOnSave = false
-# Cổng mặc định cho app này (khớp URL localhost:8502 đang dùng)
-port = 8502
+# Cho phép điện thoại/máy khác cùng Wi-Fi truy cập qua IP của máy đang chạy app.
+address = "0.0.0.0"
+# Cổng mặc định cho app này (khớp URL localhost:8506 đang dùng)
+port = 8506
 headless = true
 
 [browser]

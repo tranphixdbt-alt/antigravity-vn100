@@ -80,13 +80,13 @@ set "STREAMLIT_SERVER_FILE_WATCHER_TYPE=none"
 set "STREAMLIT_BROWSER_GATHER_USAGE_STATS=false"
 
 echo.
-echo Ung dung dang chay tai: http://localhost:8502
+echo Ung dung dang chay tai: http://localhost:8506
 echo Neu trinh duyet khong tu mo, hay copy dia chi tren vao Chrome/Edge.
 echo De tat ung dung, dong cua so nay hoac bam Ctrl+C.
 echo.
 
-start "" "http://localhost:8502"
-python -m streamlit run streamlit_app.py --server.port 8502 --server.headless true --server.fileWatcherType none
+start "" "http://localhost:8506"
+python -m streamlit run streamlit_app.py --server.port 8506 --server.headless true --server.fileWatcherType none
 
 popd
 endlocal

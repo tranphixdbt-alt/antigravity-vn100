@@ -13,7 +13,7 @@
 1. Cài Python 3.11+ nếu máy chưa có.
 2. Tải repo về máy.
 3. Nhấp đúp `Chay_Dinh_Gia_VN100.command`.
-4. Mở `http://localhost:8502`.
+4. Mở `http://localhost:8506`.
 
 Launcher sẽ tự tạo môi trường Python tại `~/.venv`, cài thư viện từ `requirements.txt`, giải nén `vn100_full.db.gz` thành `vn100_full.db` nếu cần, rồi chạy app.
 
@@ -22,13 +22,27 @@ Launcher sẽ tự tạo môi trường Python tại `~/.venv`, cài thư viện
 1. Cài Python 3.11+ nếu máy chưa có. Khi cài, tick `Add python.exe to PATH`.
 2. Tải repo về máy và giải nén ZIP.
 3. Nhấp đúp `Chay_Dinh_Gia_VN100_Windows.bat`.
-4. Mở `http://localhost:8502`.
+4. Mở `http://localhost:8506`.
 
 Launcher Windows sẽ tự tạo môi trường Python tại `%USERPROFILE%\.venv`, cài thư
 viện từ `requirements.txt`, giải nén `vn100_full.db.gz` thành `vn100_full.db` nếu
 cần, rồi chạy app.
 
 Hướng dẫn gửi khách hàng: `docs/HUONG_DAN_GUI_KHACH_HANG.md`.
+
+## Tài liệu cho agent/kỹ thuật viên
+
+Nếu một agent hoặc kỹ thuật viên khác tiếp tục sửa dự án, đọc theo thứ tự:
+
+1. `AGENTS.md`
+2. `.agents/AGENT_HANDOFF.md`
+3. `.agents/rules/project-context.md`
+4. `.agents/rules/security-principles.md`
+5. `docs/AGENT_OPERATING_MANUAL.md`
+6. `docs/SECURITY_AND_SECRETS.md`
+
+Hai file quan trọng nhất để tránh sửa sai là `docs/AGENT_OPERATING_MANUAL.md`
+và `docs/SECURITY_AND_SECRETS.md`.
 
 ## Cách chạy bằng terminal
 
@@ -40,7 +54,7 @@ python -m pip install -r requirements.txt
 python scripts/ensure_portable_db.py
 export DATABASE_URL_READONLY="sqlite:///$PWD/vn100_full.db"
 export DATABASE_URL_WRITE="sqlite:///$PWD/vn100_full.db"
-python -m streamlit run streamlit_app.py --server.port 8502 --server.headless true
+python -m streamlit run streamlit_app.py --server.port 8506 --server.headless true
 ```
 
 ## Dữ liệu đi kèm
@@ -71,7 +85,25 @@ Các key quan trọng:
 - `VNSTOCK_API_KEY`: cập nhật dữ liệu mới từ vnstock.
 - `DEEPSEEK_API_KEY`: sinh báo cáo AI khi bấm nút trong app.
 - `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEET_MASTER_ID`, `GOOGLE_DRIVE_FOLDER_ID`: xuất Google.
-- `DISCORD_WEBHOOK_URL`: gửi cảnh báo.
+- `DISCORD_WEBHOOK_URL`: gửi cảnh báo và báo cáo sáng.
+- `DISCORD_BOT_TOKEN`, `DISCORD_OWNER_ID`, `DISCORD_CHANNEL_ID`: bot Discord nhận lệnh trong 1 kênh
+  (để trống `DISCORD_OWNER_ID` = mọi thành viên kênh; điền ID = chỉ 1 người).
+
+## Discord: báo cáo sáng và bot
+
+Chỉ cài trên host chủ dự án (cần `pip install -r requirements-integrations.txt` trong `~/.venv`).
+
+- **Báo cáo sáng** (`scripts/daily_report.py`, thứ 2–6 lúc 07:50 qua launchd): cập nhật giá VN100
+  và vĩ mô, rồi gửi 5 mã cơ hội định giá (cùng bộ lọc tab VN100), thay đổi so với báo cáo trước
+  và khung vĩ mô. Không gọi DeepSeek. Thử không gửi: `python scripts/daily_report.py --dry-run --no-refresh`.
+  Lịch sử lưu ở `.daily_report/history/`; ngưỡng ở `config/defaults.yaml → daily_report`.
+- **Bot / trợ lý** (`scripts/discord_bot.py`, launchd giữ chạy liên tục): chỉ phản hồi khi được **@bot**.
+  `@bot FPT` định giá 1 mã; `@bot !baocao` báo cáo ngay; câu tự do (`@bot so sánh MBB với TCB`,
+  `@bot top 10 ngân hàng`, `@bot tin về lãi suất`) → DeepSeek hiểu yêu cầu, Python lấy số, DeepSeek viết
+  lời kèm bảng số gốc. Giới hạn lượt/người/ngày ở `config/defaults.yaml → assistant`. Mã chưa qua cổng kiểm chứng chỉ hiện lý do, không hiện FV.
+  Cần bật *MESSAGE CONTENT INTENT* trong Discord Developer Portal. Bot offline khi máy ngủ.
+- Bật/tắt: `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/vn.antigravity-vn100.<discord-bot|daily-report>.plist`
+  / `launchctl bootout gui/$UID/vn.antigravity-vn100.<…>`. Log ở `logs/discord_bot.log`, `logs/daily_report.log`.
 
 ## Đẩy lên GitHub
 

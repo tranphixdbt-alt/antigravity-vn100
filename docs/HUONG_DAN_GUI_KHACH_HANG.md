@@ -45,12 +45,12 @@ Lần chạy đầu có thể mất vài phút vì hệ thống cần:
 - tạo môi trường Python riêng tại `C:\Users\<ten-user>\.venv`;
 - cài các thư viện cần thiết;
 - giải nén dữ liệu `vn100_full.db.gz` thành `vn100_full.db`;
-- mở giao diện tại `http://localhost:8502`.
+- mở giao diện tại `http://localhost:8506`.
 
 Nếu trình duyệt không tự mở, mở Chrome/Edge và nhập:
 
 ```text
-http://localhost:8502
+http://localhost:8506
 ```
 
 Để tắt ứng dụng, đóng cửa sổ terminal đang chạy hoặc bấm `Ctrl+C`.
@@ -72,7 +72,7 @@ Nếu macOS chặn vì file tải từ internet:
 Sau đó mở:
 
 ```text
-http://localhost:8502
+http://localhost:8506
 ```
 
 ## 5. Dữ liệu có sẵn
@@ -155,14 +155,14 @@ More info -> Run anyway
 Lần đầu chạy cần internet để cài thư viện. Nếu mạng yếu, đóng cửa sổ và chạy lại
 file `.bat`; hệ thống sẽ tiếp tục dùng môi trường đã tạo.
 
-### Cổng 8502 đang bị chiếm
+### Cổng 8506 đang bị chiếm
 
 Nếu app báo port/cổng đang được dùng, hãy đóng cửa sổ terminal cũ đang chạy app,
 rồi mở lại launcher.
 
 ## 8. Cách sử dụng cơ bản
 
-1. Mở app tại `http://localhost:8502`.
+1. Mở app tại `http://localhost:8506`.
 2. Chọn mã cổ phiếu ở thanh bên trái.
 3. Kiểm tra báo cáo tài chính, giả định và kết quả định giá.
 4. Xem biểu đồ kỹ thuật trong tab kết quả định giá.

@@ -44,7 +44,7 @@ export STREAMLIT_SERVER_FILE_WATCHER_TYPE="none"
 export STREAMLIT_BROWSER_GATHER_USAGE_STATS="false"
 
 # Tự động mở trình duyệt web sau 2 giây
-(sleep 2 && open "http://localhost:8502") &
+(sleep 2 && open "http://localhost:8506") &
 
 # Khởi chạy ứng dụng Streamlit
-python -m streamlit run streamlit_app.py --server.port 8502 --server.headless true --server.fileWatcherType none
+python -m streamlit run streamlit_app.py --server.port 8506 --server.headless true --server.fileWatcherType none

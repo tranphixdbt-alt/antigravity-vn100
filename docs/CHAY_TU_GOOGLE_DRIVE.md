@@ -4,7 +4,7 @@
 
 1. Mở thư mục dự án trên Google Drive/Google Drive Desktop.
 2. Nhấp đúp file `Chay_Dinh_Gia_VN100.command`.
-3. Trình duyệt sẽ mở `http://localhost:8502`.
+3. Trình duyệt sẽ mở `http://localhost:8506`.
 
 ## Dữ liệu portable
 
