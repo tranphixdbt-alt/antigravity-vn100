@@ -8951,3 +8951,103 @@ date,ticker,sector,label,vote_foreign,vote_pv,vote_prop,single_session
 2026-10-23,VRE,BĐS,gom,1.0,1.0,-1.0,False
 2026-10-23,VSC,Cảng,trung_tinh,0.0,1.0,,False
 2026-10-23,VTP,Công nghệ,trung_tinh,0.0,-1.0,-1.0,False
+2026-10-30,ACB,Ngân hàng,trung_tinh,-1.0,1.0,0.0,False
+2026-10-30,ANV,Dệt may/TS,trung_tinh,-1.0,1.0,,False
+2026-10-30,BAF,Cao su/NN,trung_tinh,-1.0,1.0,,False
+2026-10-30,BCM,KCN,trung_tinh,0.0,0.0,,False
+2026-10-30,BID,Ngân hàng,xa,-1.0,-1.0,0.0,False
+2026-10-30,BMP,Vật liệu xây dựng,xa,-1.0,-1.0,0.0,False
+2026-10-30,BSI,Chứng khoán,trung_tinh,0.0,1.0,,False
+2026-10-30,BSR,Dầu khí,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,BVH,Bảo hiểm,trung_tinh,1.0,0.0,,False
+2026-10-30,BWE,Nước,trung_tinh,-1.0,1.0,,False
+2026-10-30,CII,Xây dựng,trung_tinh,0.0,0.0,0.0,False
+2026-10-30,CMG,Công nghệ,xa,-1.0,-1.0,,False
+2026-10-30,CTD,Xây dựng,gom,1.0,1.0,0.0,False
+2026-10-30,CTG,Ngân hàng,trung_tinh,0.0,1.0,0.0,False
+2026-10-30,CTR,Công nghệ,trung_tinh,-1.0,1.0,,False
+2026-10-30,CTS,Chứng khoán,trung_tinh,0.0,0.0,,False
+2026-10-30,DBC,Cao su/NN,trung_tinh,0.0,0.0,,False
+2026-10-30,DCM,Hóa chất,gom,1.0,1.0,-1.0,False
+2026-10-30,DGW,Bán lẻ,trung_tinh,0.0,-1.0,,False
+2026-10-30,DIG,BĐS,trung_tinh,0.0,0.0,,False
+2026-10-30,DPM,Hóa chất,xa,-1.0,-1.0,0.0,False
+2026-10-30,DSE,Chứng khoán,xa,-1.0,-1.0,,False
+2026-10-30,DXG,BĐS,trung_tinh,0.0,0.0,0.0,False
+2026-10-30,EIB,Ngân hàng,xa,-1.0,-1.0,,False
+2026-10-30,EVF,Tài chính,chua_du,,1.0,,False
+2026-10-30,FPT,Công nghệ,xa,-1.0,-1.0,0.0,False
+2026-10-30,FRT,Bán lẻ,gom,1.0,0.0,1.0,False
+2026-10-30,FTS,Chứng khoán,trung_tinh,0.0,-1.0,,False
+2026-10-30,GAS,Dầu khí,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,GEE,Đa ngành,xa,-1.0,-1.0,,False
+2026-10-30,GEX,Điện,xa,-1.0,-1.0,0.0,False
+2026-10-30,GMD,Cảng,xa,-1.0,-1.0,0.0,False
+2026-10-30,GVR,Cao su/NN,trung_tinh,0.0,-1.0,0.0,True
+2026-10-30,HAG,Cao su/NN,noi_gom,0.0,1.0,,False
+2026-10-30,HCM,Chứng khoán,trung_tinh,0.0,1.0,0.0,False
+2026-10-30,HDB,Ngân hàng,trung_tinh,0.0,1.0,0.0,False
+2026-10-30,HDG,Điện,trung_tinh,0.0,0.0,,False
+2026-10-30,HHV,Xây dựng,trung_tinh,-1.0,1.0,0.0,False
+2026-10-30,HPG,Thép,trung_tinh,0.0,0.0,0.0,False
+2026-10-30,HSG,Thép,noi_gom,0.0,1.0,0.0,False
+2026-10-30,HT1,Vật liệu xây dựng,noi_gom,0.0,1.0,,False
+2026-10-30,KBC,KCN,trung_tinh,-1.0,1.0,0.0,False
+2026-10-30,KDC,Tiêu dùng,trung_tinh,0.0,1.0,,False
+2026-10-30,KDH,BĐS,trung_tinh,-1.0,1.0,1.0,False
+2026-10-30,KOS,BĐS,noi_xa,0.0,-1.0,,False
+2026-10-30,LPB,Ngân hàng,xa,-1.0,-1.0,-1.0,False
+2026-10-30,MBB,Ngân hàng,gom,1.0,1.0,-1.0,False
+2026-10-30,MCH,Tiêu dùng,trung_tinh,0.0,1.0,-1.0,False
+2026-10-30,MSB,Ngân hàng,trung_tinh,-1.0,1.0,-1.0,False
+2026-10-30,MSN,Đa ngành,chua_du,,-1.0,1.0,False
+2026-10-30,MWG,Bán lẻ,trung_tinh,0.0,1.0,1.0,False
+2026-10-30,NAB,Ngân hàng,noi_gom,0.0,1.0,,False
+2026-10-30,NKG,Thép,noi_gom,0.0,1.0,,False
+2026-10-30,NLG,BĐS,trung_tinh,-1.0,0.0,0.0,False
+2026-10-30,NT2,Điện,gom,1.0,1.0,0.0,False
+2026-10-30,NVL,BĐS,noi_gom,0.0,1.0,,False
+2026-10-30,OCB,Ngân hàng,trung_tinh,-1.0,1.0,0.0,False
+2026-10-30,PAN,Đa ngành,trung_tinh,-1.0,0.0,,False
+2026-10-30,PC1,Điện,trung_tinh,0.0,-1.0,,False
+2026-10-30,PDR,BĐS,trung_tinh,0.0,1.0,,False
+2026-10-30,PHR,Cao su/NN,trung_tinh,0.0,-1.0,,True
+2026-10-30,PLX,Dầu khí,trung_tinh,0.0,-1.0,,False
+2026-10-30,PNJ,Bán lẻ,xa,-1.0,-1.0,0.0,True
+2026-10-30,POW,Điện,trung_tinh,1.0,-1.0,,False
+2026-10-30,PVD,Dầu khí,trung_tinh,0.0,-1.0,,False
+2026-10-30,PVT,Dầu khí,trung_tinh,1.0,-1.0,0.0,False
+2026-10-30,REE,Đa ngành,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,SAB,Tiêu dùng,xa,-1.0,-1.0,1.0,False
+2026-10-30,SBT,Tiêu dùng,trung_tinh,-1.0,0.0,,False
+2026-10-30,SHB,Ngân hàng,trung_tinh,0.0,1.0,0.0,False
+2026-10-30,SIP,KCN,xa,-1.0,-1.0,,False
+2026-10-30,SJS,BĐS,trung_tinh,0.0,1.0,,False
+2026-10-30,SSB,Ngân hàng,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,SSI,Chứng khoán,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,STB,Ngân hàng,chua_du,,-1.0,0.0,False
+2026-10-30,TAL,BĐS,trung_tinh,0.0,0.0,,False
+2026-10-30,TCB,Ngân hàng,trung_tinh,0.0,1.0,-1.0,False
+2026-10-30,TCH,Đa ngành,trung_tinh,-1.0,1.0,,False
+2026-10-30,TCX,Chứng khoán,xa,-1.0,-1.0,0.0,False
+2026-10-30,TPB,Ngân hàng,trung_tinh,0.0,0.0,0.0,False
+2026-10-30,VCB,Ngân hàng,xa,-1.0,-1.0,0.0,False
+2026-10-30,VCG,Xây dựng,trung_tinh,0.0,1.0,,False
+2026-10-30,VCI,Chứng khoán,xa,-1.0,-1.0,0.0,False
+2026-10-30,VCK,Chứng khoán,trung_tinh,-1.0,1.0,,False
+2026-10-30,VGC,KCN,trung_tinh,0.0,-1.0,1.0,False
+2026-10-30,VHC,Dệt may/TS,trung_tinh,0.0,1.0,,False
+2026-10-30,VHM,BĐS,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,VIB,Ngân hàng,gom,1.0,1.0,0.0,False
+2026-10-30,VIC,Đa ngành,trung_tinh,0.0,-1.0,0.0,False
+2026-10-30,VIX,Chứng khoán,xa,-1.0,-1.0,,False
+2026-10-30,VJC,Hàng không,trung_tinh,-1.0,1.0,0.0,False
+2026-10-30,VND,Chứng khoán,xa,-1.0,-1.0,0.0,False
+2026-10-30,VNM,Tiêu dùng,xa,-1.0,-1.0,0.0,False
+2026-10-30,VPB,Ngân hàng,trung_tinh,-1.0,1.0,1.0,False
+2026-10-30,VPI,BĐS,trung_tinh,0.0,1.0,,False
+2026-10-30,VPL,Du lịch,trung_tinh,0.0,1.0,0.0,False
+2026-10-30,VPX,Chứng khoán,xa,-1.0,-1.0,,False
+2026-10-30,VRE,BĐS,gom,1.0,1.0,0.0,False
+2026-10-30,VSC,Cảng,trung_tinh,0.0,0.0,,False
+2026-10-30,VTP,Công nghệ,chua_du,,-1.0,,False
