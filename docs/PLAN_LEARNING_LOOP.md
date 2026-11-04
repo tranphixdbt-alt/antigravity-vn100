@@ -30,10 +30,10 @@ Máy chạy app (Mac / VPS)
   mỗi báo cáo DeepSeek ──► knowledge/ai_reports/<YYYY-MM>/<MÃ>_<ngày>_<fp8>.md + index.jsonl      (GĐ 1 — xong)
   Chủ nhật 18:00 (Python) ──► knowledge/weekly/<năm>-W<tuần>.md  + CSV trích từ DB (fv_history, calibration,
                               flow_labels, consensus_changes) — dạng ĐỌC ĐƯỢC, không phải file .db
-        │  Mac: thư mục dự án nằm sẵn trên Google Drive → tự đồng bộ
+        │  Mac (bản chính /Users/macos/antigravity-vn100, ngoài Drive): tóm tắt tuần chép knowledge/ → Drive (D85)
         │  VPS: tải lên đúng thư mục Drive bằng service account đã có (GOOGLE_SERVICE_ACCOUNT_JSON)
         ▼
-Google Drive: …/antigravity-vn100/knowledge/
+Google Drive: …/chứng khoán định giá/vn100_knowledge/   (learning.knowledge_mirror_dir; webhook vẫn ở antigravity-vn100/)
         ▼
 Chủ nhật 20:00 — routine Claude trên cloud (môi trường "chứng khoán", không phụ thuộc máy nào bật)
   - connector Google Drive: đọc digest tuần, CSV, LEARNINGS.md, đề xuất tuần trước

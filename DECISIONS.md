@@ -538,7 +538,7 @@ Còn lại sau thử: thư mục rỗng "VN100 - De xuat hang tuan" trong Drive 
 chỉ nhận URL `discord.com/api/webhooks/`, không in). Chạy thử đầu-cuối OK: Discord nhận → bot lưu
 `knowledge/proposals/2026-W44.md`. Routine BẬT, lần chạy đầu Chủ nhật 01/11/2026 20:00 VN.
 
-### D82 — Bản tóm tắt tuần cho vòng học (GĐ 2–4) + phát hiện lỗi pandas trên Python 3.14 (2026-10-26)
+### D82 — Bản tóm tắt tuần cho vòng học (GĐ 2–4) + lỗi numpy 2.2.6 tự build trên Python 3.14 (2026-10-26)
 `scripts/weekly_learning_digest.py` + `valuation/services/learning_digest.py` (không AI, chỉ đọc DB, ~4 phút) ghi
 `knowledge/weekly/<tuần>.md` (~100 dòng) + `_valuation.csv`/`_flow_stats.csv`/`_summary.json`, nối `fv_history.csv`
 (chạy lại cùng tuần thay, không nhân đôi) và đệm `flow_backtest_labels.csv` (chỉ tính tuần mới). Nội dung: chất lượng
@@ -547,7 +547,141 @@ kiểm chứng nhãn tính lùi 91 tuần (as_of; trong mẫu < 01/04/2026 ≤ n
 (`deploy/launchd/…weekly-digest.plist`, người dùng tự nạp) / systemd `vn100-weekly-digest.timer` (setup_vps.sh).
 **Kết quả kiểm chứng dòng tiền (26/10):** tỷ lệ lợi nhuận 20 phiên vượt trung vị VN100 ≈ 50% ở mọi nhãn; ngoài mẫu
 "gom" 54,7%, "xa" 55,0% — nhãn hiện chưa có giá trị dự báo lợi nhuận tương đối (mô tả, không phải tín hiệu).
-**Lỗi môi trường:** pandas 2.3.3 trên Python 3.14 trả nhãn index SAI/lặp với `pivot`/`pivot_table`/`unstack` khi bảng
-≥ ~32.768 ô (2^15; thử tổng hợp 328×100). `close_matrix` dựng bằng numpy + test hồi quy 544×100. Chỗ khác:
-`market_overview.load_market_data` pivot 273×100 = 27.300 ô — đang đúng nhưng sát ngưỡng; VPS (Python 3.12) không bị.
-Panel `load_flow_panel(days≈700)` còn trùng chỉ mục dòng → đặt lại chỉ mục trước khi lọc.
+**Lỗi môi trường (gốc rễ xác minh 26/10, đã sửa):** KHÔNG phải pandas. `~/.venv` (Python 3.14.5) chạy numpy 2.2.6 tự
+build từ source (nhánh 2.2 không có wheel cp314), thiếu bản sửa Python 3.14 của numpy (PR #28748, có từ 2.3): numpy coi
+biến cục bộ là mảng tạm khi ≥ 256 KiB (32.768 phần tử int64/float64) và ghi kết quả đè lên nó — `y = x + 1.0` trong hàm
+làm đổi `x`. Trong pandas trúng `_Unstacker` → `pivot`/`pivot_table`/`unstack`/`crosstab` cho nhãn index SAI/lặp (giá
+trị ô vẫn đúng); 30 phép pandas khác (stack, melt, groupby, rolling, rank, merge…) đúng. Python 3.12 + numpy 2.2.6
+(wheel, như VPS) và Python 3.14 + numpy 2.3.5/2.5.4 đều đúng. Kẹt ở 2.2.6 vì mọi `vnstock` 4.x cần `vnstock-ezchart>=1.0.2`
+ghim `numpy<2.3` → không khai `numpy>=2.3` trong requirements được (ezchart vốn không import được vì thiếu `squarify`,
+dự án không dùng). **Sửa:** `pip install --no-deps numpy==2.3.5` trong `~/.venv` (`pip check` báo xung đột ezchart —
+chấp nhận); chốt chặn `valuation/__init__.py::_numpy_keeps_locals` → RuntimeError khi import nếu numpy còn lỗi (vd cập
+nhật vnstock/installer hạ lại về 2.2.6, hoặc máy portable dùng Python 3.14); test `tests/test_numpy_env.py`
+(pivot/pivot_table/unstack 544×100). **Ảnh hưởng số liệu:** so vi sai trên bản sao DB giữa numpy 2.2.6 và 2.5.4 — dòng
+tiền, nhãn, `close_matrix`, `label_stats`, dữ liệu xếp hạng giống hệt → kết quả ở trên không bị ảnh hưởng. Chỉ
+`market_overview.load_market_data` sai khi `history_days` ≳ 475 (thử 800: ngày cuối thành 27/08/2024); hiện 400 ngày ≈
+273×100 = 27.300 ô. Bộ test 1139 passed như nhau trên 2.2.6/2.3.5/2.5.4 (5 lỗi `test_discord_bot_gate` có sẵn từ trước).
+`close_matrix` giữ cách dựng numpy. Trùng chỉ mục `load_flow_panel(days≈700)`: thử lại 827 ngày không tái hiện (index
+duy nhất trên cả hai bản numpy); vẫn giữ `reset_index` phòng hờ.
+
+### D83 — Thực hiện 3 đề xuất vòng học W44 (2026-10-27, người dùng duyệt cả 3)
+Nguyên tắc đo trước, sửa sau. **#1 tín dụng ngân hàng:** bác bỏ — 4 NH bị kẹp (EIB sàn; HDB, MBB, VPB trần 25%), nới
+trần 30%/bỏ trần đổi FV ≤ 4,5% (HDB), HDB/MBB đã cao hơn CTCK → giữ dải 5–25%, không sửa code. **#2 BCTC BSI & dòng
+tiền:** bác bỏ — CFO+CFI+CFF = Δ tiền 2022–2025 ở BSI, CTD, PC1, CII (PC1 lệch = tỷ giá); BSI dùng mô hình P/B CTCK, không
+lỗi; lỗi DeepSeek là của báo cáo cũ 30/08. **#3 trình bày:** sửa `verified_summary._compact_payload`: mỗi dòng BCTC có
+`period` ("TTM (4 quý gần nhất, năm …)" / "FY…") + `is_actual`; thêm `quality_metrics_period`, `metric_definitions`
+(roe, debt_to_equity, roic + lưu ý khác kỳ với mã cùng ngành), `metric_period` cho mã cùng ngành. Gốc "hai ROE" (MWG
+0,2887 vs 0,2331) = TTM vs FY, cùng định nghĩa. Fingerprint bộ đệm DeepSeek đổi (dữ liệu gửi đổi) — chỉ tốn phí khi bấm.
+Đo thêm: trung vị |lệch CTCK| 16,9% (1 CTCK) / 18,7% (2) / 11,3% (≥ 3). Kết quả ghi `knowledge/LEARNINGS.md` để routine
+tuần không đề xuất lại #1, #2.
+
+### D84 — Kiểm tra cổ tức/quyền mua cả rổ mỗi sáng (2026-10-28, người dùng chọn "Giá + sự kiện 100 mã")
+**Gốc:** `corporate_actions` chỉ được làm mới khi có người mở mã trên app (TTL 24h) → TCB cổ tức CP 50% (GDKHQ 29/10)
+chưa có trong DB. VNM: VCI chưa có thông báo mới — người dùng chọn chờ VCI. **Sửa:** `daily_report.refresh_all_corporate_actions`
+chạy trong `refresh_market()` (sau vĩ mô, dưới DATA_LOCK) cho 100 mã; báo cáo sáng thêm mục "📅 Cổ tức / quyền mua 7
+ngày tới" + cảnh báo mã chưa kiểm tra được. Config `daily_report.corporate_actions_refresh`, `ca_pause_seconds`,
+`ca_upcoming_days`. **Lỗi tự gây, đã sửa cùng ngày:** `FRESH` (đã kiểm tra trong TTL / lỗi < 30 phút) bị tính là lỗi và
+lần thử lại không `force` nên luôn bị chặn → thử lại có `force=True`, `FRESH` không phải lỗi (test tái hiện trước).
+**Đo 28/10:** nghỉ 1s → 24/100 timeout iq.vietcap (nửa sau lượt); thử lại nghỉ 2s → còn 5; 6s → 0 → `ca_pause_seconds`
+3,0 (báo cáo sáng chậm thêm ~5–8 phút). Kết quả: 100/100 OK, cập nhật thêm 4 sự kiện, mới có PC1 cổ tức CP 15% GDKHQ
+04/11. ANV hai dòng cùng ngày 29/10 là hai đợt khác nhau (đợt 2/2025 + đợt 1/2026, mỗi đợt 500đ), không trùng. Mã
+BROKER_SYNTH (PC1): `shares_used_mn` cố định nên giá trị vốn không đổi, FV/cp tự pha loãng khi engine nhận số cổ phiếu
+sau GDKHQ. **Phát hiện kèm:** job launchd `flow-daily` chạy ở bản sao `/Users/macos/antigravity-vn100` (không phải bản
+Drive này) và lỗi FlowRateLimited 27/10 → `flow_daily` bản Drive dừng ở 23/10; hai bản dự án lệch nhau — đang so sánh
+để gộp (người dùng duyệt "Claude so sánh rồi đề xuất").
+**Bổ sung 28/10 — bản chính:** người dùng chốt bản `/Users/macos/antigravity-vn100` là bản chính (mọi job launchd
+đã chạy ở đây từ 26/10), bản Google Drive không đụng tới nữa. Đã chép sang bản máy phần việc 27–28/10 chỉ có ở bản Drive
+(D83, D84, chốt chặn numpy, PROGRESS, LEARNINGS; bản cũ lưu ở `backups/truoc_gop_tu_drive_20261028/`); phần giao diện
+đang sửa dở ở bản máy (views, streamlit_app) giữ nguyên. DB bản máy thiếu TCB 50% → làm mới lại trên bản máy.
+
+### D85 — Vòng học đọc thư mục Drive riêng `vn100_knowledge` (2026-10-28, người dùng chọn "Thư mục Drive riêng")
+**Gốc:** bản chính chuyển về `/Users/macos/antigravity-vn100` (ngoài Google Drive); routine cloud Chủ nhật vẫn đọc
+`antigravity-vn100/knowledge/` trên Drive → từ 01/11 sẽ đọc dữ liệu cũ. **Sửa:** `learning_digest.mirror_knowledge(src,
+dst)` chép `knowledge/` (chỉ .md/.csv/.jsonl/.json, bỏ file ẩn, bỏ file không đổi, không xóa ở đích) sang
+`learning.knowledge_mirror_dir` = `…/chứng khoán định giá/vn100_knowledge/`; `scripts/weekly_learning_digest.py` gọi sau
+khi ghi bản tóm tắt (Chủ nhật 18:00); máy không có thư mục cha (VPS) → bỏ qua, có in ra. Đã chép lần đầu 21 file.
+Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (cấm đọc bản cũ); webhook vẫn lấy từ
+`antigravity-vn100/learning_webhook.env` — **xóa bản Drive cũ thì vòng học mất webhook**. Test
+`test_mirror_knowledge_copies_only_text_and_skips_unchanged`.
+
+### D86 — CORPORATE_ACTION_UNDATED chỉ cảnh báo, không chặn xếp hạng (2026-10-30, người dùng yêu cầu)
+- Bỏ cờ khỏi `DATA_FLAGS_EXTRA` (`valuation/views/vn100_ranking.py`): mã có cổ tức CP/thưởng thiếu
+  GDKHQ vẫn được xếp hạng; cờ vẫn hiện mức cảnh báo ở tab định giá.
+- Rủi ro chấp nhận: nếu sự kiện đã GDKHQ mà chưa có override số cp, giá trị/cp có thể phóng đại theo
+  tỷ lệ chia (vd TCB 50%, PC1 15%). Vẫn nên thêm override VSDC vào `config/corporate_actions.yaml`.
+
+### D87 — Mở/đổi mã trên app tự tải mới dữ liệu mã đó (2026-10-30, người dùng yêu cầu)
+- `render_select_ticker` tự chạy đúng luồng nút "Tải mới <mã>" (giá + BCTC incremental, báo cáo CTCK)
+  một lần cho mỗi mã trong phiên trình duyệt (`_claim_auto_refresh`, đánh dấu trước khi tải để lỗi mạng
+  không lặp). Sự kiện quyền (số cp) vẫn làm mới nền như trước. Đổi mã mất thêm ~10–20 giây.
+
+### D88 — Dòng tiền cập nhật đầu phiên + theo nút "Quét VN100" (2026-11-03, người dùng yêu cầu)
+- **Lỗi:** tab Dòng tiền dừng ở 30/10. Job 18:00 ngày 02/11 kéo VCI nhưng nguồn chưa công bố phiên 02/11
+  (13:00 hôm sau đã có) → luôn trễ 1 phiên; thêm lỗi vnai `threading` UnboundLocalError mất ~4 mã/lượt
+  và FlowRateLimited một số tối.
+- **Sửa:** (1) lịch flow-daily 08:30 T2–T6 (`deploy/launchd`, `deploy/systemd`); (2) `update_flow_daily.run`
+  thử lại 1 lần mỗi mã lỗi không chí mạng (bug vnai reset bộ đếm trước khi lỗi nên lần 2 qua);
+  (3) nút "Quét VN100" chạy thêm `scripts/update_flow_daily.py` sau giá/BCTC, kết quả hiện ở dòng trạng thái.
+
+### D89 — Tin công bố doanh nghiệp trong tab Cổ tức & quyền mua (2026-11-04, người dùng chọn)
+- **Gốc:** lịch quyền lấy từ VCI events vào chậm hơn tin công bố (FPT tạm ứng cổ tức 1.000 đ/cp, chốt
+  30/11, trả 10/12 — HOSE đăng 28/10 — chưa có trong lịch ngày 04/11). Không cào web từng công ty
+  (100 cấu trúc, dễ hỏng, phải mở allowlist từng domain); dùng VCI news `mode="detail"` (tin sàn HOSE/HNX
+  kèm link PDF chính thức + tin báo chí).
+- **Làm:** `valuation/ingest/company_disclosures.py` tải 90 ngày/30 tin, cache JSON `.disclosures/<MÃ>.json`
+  TTL 24h, lỗi nguồn giữ bản cũ và chờ 30 phút mới thử lại; tải nền cùng lượt sự kiện quyền + nút "Cập nhật
+  sự kiện". `valuation/analysis/company_disclosures.py` phân loại theo từ khóa tiêu đề (người dùng chọn luật
+  cố định, không AI), rút số (đ/cp, tỷ lệ, ngày chốt, ngày trả) ghi rõ "máy đọc, đối chiếu bản gốc".
+  Tab hiện danh sách bấm mở (`<details>`); tin báo chí chỉ hiện 400 ký tự đầu + link (bản quyền).
+- **Cảnh báo (người dùng chọn "hiện cảnh báo", không tự ghi DB):** tin cổ tức tiền/quyền mua ≤45 ngày,
+  ngày chốt chưa qua, mà lịch quyền chưa có sự kiện khớp → dòng cảnh báo vàng dưới "Lần chia gần nhất".
+- Không đi vào số định giá. Test `tests/test_company_disclosures.py`.
+
+### D90 — Biểu đồ dòng tiền kiểu TradingView bằng Lightweight Charts (2026-11-04, người dùng chọn)
+- Thay Plotly ở tab Dòng tiền (chi tiết mã) bằng TradingView Lightweight Charts **v5.2.1** (Apache-2.0),
+  file `valuation/views/assets/vendor/lightweight-charts.standalone.production.js` tải từ npm, đã khớp
+  sha512 của registry; nhúng thẳng vào HTML nên không gọi CDN lúc chạy. Không thêm gói Python.
+- Giữ đủ tầng/dữ liệu cũ: nến + MA20/MA50, "TT" thỏa thuận lớn, mũi tên GDKHQ; khối lượng (+ thỏa thuận
+  tím ở chế độ Gồm); khối ngoại/tự doanh ròng (trục trái) + lũy kế (trục phải); CMF20 nền xanh/đỏ +
+  3 đường lũy kế (0 hai trục trùng nhau); MACD. Thỏa thuận xếp chồng giả lập barmode="relative"
+  (`stacked_deal`). Chú thích từng tầng + giá trị theo con trỏ, dấu (?) giải thích như bản cũ.
+- Quay lại Plotly: `money_flow_chart.engine: plotly`. Test `tests/test_lw_chart.py`.
+
+### D91 — Volume profile trên biểu đồ dòng tiền (2026-11-04, người dùng yêu cầu, mặc định tắt)
+- `lw_chart.volume_profile`: 24 hàng giá trên khung đang chọn; KL khớp mỗi phiên rải đều trên [thấp, cao];
+  nến tăng = xanh, nến giảm = vàng (xấp xỉ từ nến ngày, không có dữ liệu khung nhỏ); POC = hàng lớn nhất;
+  vùng giá trị 70% mở rộng từ POC thêm hàng kề lớn hơn. Vẽ bằng primitive Lightweight Charts dưới nến;
+  đường POC/VAH/VAL + số dưới biểu đồ. Cố định theo khung, zoom không tính lại. Config
+  `money_flow_chart.volume_profile`. Test tính tay trong `tests/test_lw_chart.py`.
+
+### D92 — "Tải mới" một mã: tải nhẹ + song song; dọn thư mục dự án (2026-11-04, người dùng chọn)
+- **Đo trước khi sửa (bản sao DB):** mỗi lượt tự tải khi mở/đổi mã 8–13 s, chạy tuần tự ~8 lời gọi mạng:
+  giá, khối ngoại, tự doanh, BCTC BS/IS/CF (mỗi lời gọi `Finance(get_all=True)` kéo lại toàn bộ lịch sử,
+  cộng ghi DB ≈ 5 s), 2 nguồn CTCK; thêm ~6–8 s import vnstock/vnai ở lượt đầu mỗi tiến trình.
+- **Làm:** `run_ingest(..., parallel=True)` gửi mọi lời gọi mạng cùng lúc qua `ThreadPoolExecutor`, ghi DB vẫn
+  tuần tự như cũ (kết quả y hệt chạy tuần tự — test). Nút/tự tải trong `select_ticker.py` chạy `run_ingest` song
+  song với các nguồn CTCK. Tự tải khi mở mã chỉ kéo BCTC khi `financials_due`: DB chưa có quý gần nhất đã kết
+  thúc (`latest_ended_quarter`); bấm "Tải mới" luôn kéo đủ. Bản soát xét/kiểm toán sửa quý cũ đến qua nút này
+  và đợt quét VN100. Đợt quét VN100 giữ tuần tự (`parallel=False`) để không vượt 60 request/phút của vnai
+  (vượt → ngủ 65 s; đã gặp khi đo dồn dập).
+- **Kết quả:** tự tải 1,2–4,5 s (cũ 9,5–12,9 s); bấm nút 5–6 s; mở app tới lúc ra giá mục tiêu (server ấm,
+  MBB) 7,5 s so với 12,0 s.
+- **Dọn đĩa (người dùng chọn):** `venv/`, `.venv/` (app/launchd dùng `~/.venv`), `dist/`, `build/` chuyển vào
+  Thùng rác (`~/.Trash/vn100-*-20261104`); `backups/` dời sang `~/vn100_backups` (17 bản). Thư mục 5,6 GB →
+  931 MB. Bản clone GitHub vốn chỉ ~145 MB.
+- Test: `tests/test_ingest.py::test_latest_ended_quarter_and_financials_due`,
+  `::test_run_ingest_parallel_fetches_concurrently_with_same_result`.
+
+### D93 — Job dòng tiền: chờ rồi thử lại khi vượt hạn mức; giữ lịch 18:00 (2026-11-04, người dùng chọn)
+- **Gốc (bản đồ nhiệt Ngành × Ngày dừng ở 02/11):** `flow_daily` chỉ có tới 02/11. Lượt 18:00 ngày 03/11 chạy
+  đủ 100 mã nhưng VCI chưa có số của chính ngày 03/11 (mỗi mã 6 dòng, tới 02/11). Lượt 18:11 ngày 04/11 vượt
+  hạn mức vnai ngay ở mã đầu (ACB) → `FlowRateLimited` dừng cả job (D73), mất trọn ngày. Thử lúc 21:50 ngày
+  04/11: nguồn đã có 03/11, vẫn chưa có 04/11. Đã chạy tay job lúc 21:52 để nạp 03/11.
+- **Làm:** `scripts/update_flow_daily.py::fetch_with_wait` — vượt hạn mức thì chờ
+  `flow_ingest.rate_limit_wait_sec` (65 s) rồi thử lại chính mã đó, tối đa `rate_limit_retries` (2) lần; hết
+  lượt vẫn lỗi mới dừng cả job, mã thoát 5 như D73. Không đặt trong `FlowClient` vì tab Cổ tức (D89) dùng chung
+  client và có cơ chế chờ 30 phút riêng.
+- **Lịch:** launchd trên máy đang nạp plist cũ 18:00 thứ 2–6; plist trong repo là 08:30 (D88). Người dùng chọn
+  giữ 18:00, nên bản đồ nhiệt thường trễ 1 phiên (số khối ngoại của phiên T có vào sáng T+1, lượt 18:00 ngày T+1
+  mới lấy được).
+- Test: `tests/test_flow_ingest.py::test_rate_limit_waits_then_retries_same_ticker`.

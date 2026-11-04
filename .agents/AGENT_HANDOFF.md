@@ -33,7 +33,13 @@
    - `docs/GITHUB_UPDATE_WORKFLOW.md` — trước khi push.
    - `docs/SECURITY_AND_SECRETS.md` — trước khi commit/push hoặc xử lý key.
 
+## 1a. PROGRESS.md (BẮT BUỘC)
+- Đọc `PROGRESS.md` ở gốc repo khi vào phiên. Xong MỖI việc → đánh `[x]` + ngày + số D, chuyển xuống "Đã xong";
+  việc mới/chờ người dùng → thêm vào "Đang chờ".
+
 ## 1b. Trạng thái hiện tại (cập nhật 2026-10-23)
+- **Bản chính = `/Users/macos/antigravity-vn100`** (máy Mac; mọi job launchd chạy ở đây). Bản sao trên Google Drive
+  (`DATA-G/.../antigravity-vn100`) KHÔNG đụng tới nữa — người dùng chốt 28/10/2026. Việc 27–28/10 (D83, D84) đã chép sang.
 - 91/100 mã công bố; 30 mã qua BROKER_SYNTH (`config/broker_synth/<MÃ>.yaml`, D68–D71; D71 = nhiều CTCK, TARGET_PRICE).
 - Chưa công bố 9: PNJ (sự kiện P-Lab thật), DIG DSE KDC KOS NAB SJS VIC VPI (không có báo cáo CTCK).
 - Review ủy quyền: `config/valuation_reviews.yaml` (TTL 180 ngày → hết hạn ~21/04/2027).

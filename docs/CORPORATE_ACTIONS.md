@@ -66,7 +66,7 @@
 - Cách xử lý: thêm số cp sau sự kiện vào `config/corporate_actions.yaml` (`effective_date` = ngày
   GDKHQ, `source_url` VSDC). Khi VSDC chưa công bố số chính thức, dùng số đăng ký trước sự kiện ×
   (1 + tỷ lệ) và ghi "tạm tính" trong `note`; thay bằng số chính thức khi có.
-- Cờ `CORPORATE_ACTION_UNDATED` nhắc khi một sự kiện như vậy (công bố trong 180 ngày) chưa có override.
+- Cờ `CORPORATE_ACTION_UNDATED` nhắc khi một sự kiện như vậy (công bố trong 180 ngày) chưa có override. Từ D86 (30/10) cờ chỉ cảnh báo, không chặn bảng xếp hạng.
 - Quyền mua thiếu ngày GDKHQ mang cờ riêng `RIGHTS_ISSUE_UNDATED` (mức thông tin): quyền mua không vào hệ
   số chia (đi kèm tiền, chờ BCTC) nên không làm sai số cp; bảng xếp hạng không coi là lỗi dữ liệu (fx1).
 - Định giá theo `as_of` quá khứ (golden/registry): giá `prices_daily` đã điều chỉnh lùi theo các đợt cổ tức

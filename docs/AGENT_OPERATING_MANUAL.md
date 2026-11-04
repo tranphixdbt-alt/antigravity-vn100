@@ -292,7 +292,8 @@ Mô tả đầy đủ ở `valuation/engine/flag_descriptions.py`; level dưới
   `SOTP_HOLDINGS_INCOMPLETE` (quay về proxy nên `VALUATION_PROXY` vẫn chặn).
 - **Thông tin:** `INCONSISTENT_YEAR_DROPPED`, `MULTIPLE_PRE_ISSUE_EXCLUDED`, `MULTIPLE_PRE_ISSUE_PROFORMA`,
   `PE_LEG_TTM`, `SOTP_HOLDINGS_MODE`, `SOTP_UNLISTED_AT_BOOK`, `RIGHTS_ISSUE_UNDATED` (tách khỏi
-  `CORPORATE_ACTION_UNDATED`, không tính là "Lỗi dữ liệu" ở bảng xếp hạng).
+  `CORPORATE_ACTION_UNDATED`, không tính là "Lỗi dữ liệu" ở bảng xếp hạng). Từ D86, `CORPORATE_ACTION_UNDATED`
+  cũng chỉ là cảnh báo, không chặn xếp hạng.
 - **Lỗi cấu hình (raise, không phải cờ):** `PE_LEG_CYCLICAL_UNSUPPORTED` (mã chu kỳ + P/E phụ), stake/holder
   sai trong `sotp_holdings.yaml`, `reviewed_by` thiếu `as_of`, khóa lạ của `dcf.wacc_tax_mode`.
 - Ngưỡng do claude đề xuất, CHƯA được người dùng duyệt (đổi số không cần sửa code): `bank_terminal.
