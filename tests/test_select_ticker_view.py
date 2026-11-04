@@ -18,3 +18,13 @@ def test_format_run_option_formats_created_at():
     )
 
     assert _format_run_option(run) == "Vòng 18 - Phi (29/08 14:35)"
+
+
+def test_auto_refresh_runs_once_per_ticker_per_session():
+    from valuation.views.select_ticker import _claim_auto_refresh
+
+    state: dict = {}
+    assert _claim_auto_refresh(state, "FPT") is True  # mở mã lần đầu → tự tải mới
+    assert _claim_auto_refresh(state, "FPT") is False  # rerun cùng mã → không tải lại
+    assert _claim_auto_refresh(state, "VCB") is True  # đổi sang mã khác → tải mã đó
+    assert _claim_auto_refresh(state, "FPT") is False  # quay lại mã đã tải trong phiên

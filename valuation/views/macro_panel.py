@@ -206,7 +206,7 @@ def render_macro_panel(db) -> None:
                 help=f"Ngày số liệu {obs.date:%d/%m/%Y}"
                 + (" — ĐÃ CŨ" if stale else ""),
             )
-            col.caption(("⚠️ cũ · " if stale else "") + f"{obs.date:%d/%m/%Y}")
+            col.caption(("cũ · " if stale else "") + f"{obs.date:%d/%m/%Y}")
 
         takes = quick_takes(snap, cfg, today)
         if takes:

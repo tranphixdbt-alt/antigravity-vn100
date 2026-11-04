@@ -48,6 +48,38 @@ def _ddmm(iso: str | None) -> str:
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y") if iso else "?"
 
 
+def refresh_all_corporate_actions(tickers: list[str], pause_s: float, sleep=None) -> dict:
+    """Kiểm tra cổ tức/quyền mua (VCI) cho cả rổ — trước đây chỉ kiểm khi có người mở mã trên app (TCB có ngày
+    GDKHQ 29/10 mà DB chưa biết, 28/10/2026). Nghỉ `pause_s` giữa các mã, thử lại 1 lần sau 5× pause khi lỗi
+    (lượt hàng loạt 23/10 dồn dập → 15 mã lỗi kết nối). Lỗi từng mã được liệt kê, không chặn báo cáo."""
+    import time
+
+    from valuation.db.session import SessionLocalWrite
+    from valuation.ingest.corporate_actions import refresh_corporate_actions
+
+    sleep = sleep or time.sleep
+    out: dict[str, Any] = {"checked": 0, "inserted": 0, "updated": 0, "errors": []}
+    for i, t in enumerate(tickers):
+        res: dict[str, Any] = {}
+        for attempt in range(2):
+            with SessionLocalWrite() as db:
+                # Lần thử lại phải force: lỗi vừa ghi last_checked_at nên không force sẽ bị chặn (FRESH < 30 phút).
+                res = refresh_corporate_actions(db, t, force=attempt > 0)
+            if res.get("status") in ("OK", "FRESH"):  # FRESH = đã kiểm tra trong TTL (vd mở trên app), không lỗi
+                break
+            if attempt == 0:
+                sleep(pause_s * 5)
+        out["checked"] += 1
+        if res.get("status") in ("OK", "FRESH"):
+            out["inserted"] += int(res.get("inserted") or 0)
+            out["updated"] += int(res.get("updated") or 0)
+        else:
+            out["errors"].append(f"{t}: {str(res.get('error') or res.get('status'))[:80]}")
+        if i < len(tickers) - 1:
+            sleep(pause_s)
+    return out
+
+
 def refresh_market() -> dict:
     """Kéo giá VN100 + VNINDEX và vĩ mô (FRED, yfinance — giống nút "Cập nhật vĩ mô").
 
@@ -110,6 +142,11 @@ def refresh_market() -> dict:
                         )
             finally:
                 db_w.close()
+            cfg = _cfg()
+            if cfg.get("corporate_actions_refresh", True):
+                info["corporate_actions"] = refresh_all_corporate_actions(
+                    tickers, float(cfg.get("ca_pause_seconds", 1.0))
+                )
     except BlockingIOError:
         info["skipped"] = 'Job "Quét VN100" đang chạy nên chưa cập nhật giá và vĩ mô'
     return info
@@ -208,6 +245,23 @@ def collect(today: date) -> dict:
     finally:
         db.close()
 
+    from valuation.data_access.corporate_actions import (
+        load_upcoming_vn100_corporate_actions,
+    )
+
+    db = SessionLocalRead()
+    try:
+        upcoming = load_upcoming_vn100_corporate_actions(
+            db, as_of_date=today, future_days=int(_cfg().get("ca_upcoming_days", 7))
+        )
+        upcoming_ca = [
+            {"ticker": u.action.ticker, "date": u.event_date.isoformat(), "role": u.date_role,
+             "title": (u.action.title or u.action.event_type or "")[:80]}
+            for u in sorted(upcoming, key=lambda u: (u.event_date, u.action.ticker))
+        ]
+    finally:
+        db.close()
+
     max_per_sector = int(rank_cfg.get("max_per_sector", 2))
     picks = accumulation_picks(table, max_per_sector, n=int(_cfg()["top_n"]))
     return {
@@ -231,6 +285,7 @@ def collect(today: date) -> dict:
         "notes": {r["Mã"]: r["Ghi chú"] for _, r in table.iterrows()},
         "moves": session_moves(rows, price_date) if price_date else {},
         "macro_lines": _macro_lines(macro, macro_cfg, today),
+        "upcoming_ca": upcoming_ca,
     }
 
 
@@ -299,6 +354,11 @@ def build_message(
             )
         for e in info["macro_errors"]:
             warn.append(f"⚠️ Vĩ mô lỗi — {e}")
+        ca = info.get("corporate_actions") or {}
+        if ca.get("errors"):
+            names = ", ".join(e.split(":")[0] for e in ca["errors"][:limit])
+            more = "…" if len(ca["errors"]) > limit else ""
+            warn.append(f"⚠️ {len(ca['errors'])}/{ca['checked']} mã chưa kiểm tra được cổ tức/quyền mua: {names}{more}")
 
     picks = [
         f"**{p['ticker']}** {_num(p['price'])} → FV {_num(p['fair_value'])} ({_pct(p['upside'])}) · {p['sector']}"
@@ -348,6 +408,17 @@ def build_message(
                 "value": "\n".join(picks),
             },
             {"name": "🔄 Thay đổi", "value": "\n".join(diff)},
+            {
+                "name": f"📅 Cổ tức / quyền mua {cfg.get('ca_upcoming_days', 7)} ngày tới",
+                "value": "\n".join(
+                    _capped(
+                        [f"**{u['ticker']}** {_ddmm(u['date'])} · {u['role']}: {u['title']}"
+                         for u in state.get("upcoming_ca") or []],
+                        limit,
+                    )
+                )
+                or "Không có mã nào có mốc GDKHQ / chốt quyền / thanh toán trong kỳ.",
+            },
             {
                 "name": "🌐 Vĩ mô",
                 "value": "\n".join(state["macro_lines"]) or "Chưa có dữ liệu vĩ mô.",

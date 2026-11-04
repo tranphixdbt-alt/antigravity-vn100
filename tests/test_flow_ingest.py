@@ -500,3 +500,39 @@ def test_status_saved_when_job_aborted(tmp_path: Path) -> None:
     assert (
         saved[0]["fatal"] == "bị dừng: KeyboardInterrupt" and "finished_at" in saved[0]
     )
+
+
+def test_transient_ticker_error_retried_once(tmp_path: Path) -> None:
+    # vnai beam/quota.py: `import threading` cục bộ → UnboundLocalError ở lượt đồng bộ (~50 lời gọi/lần);
+    # bộ đếm đã reset trước khi lỗi nên gọi lại ngay là qua. Timeout mạng cũng thử lại 1 lần.
+    engine = _flow_engine(tmp_path)
+    frame = to_flow_frame("MCH", _price(), _prop(), TOL)
+    bug = UnboundLocalError("cannot access local variable 'threading'")
+    client = _Client(bug, frame)
+    status = update.run(engine, client, ["MCH"], *_SPAN, False)
+    assert client.calls == 2 and status["errors"] == [] and status["inserted"] == 1
+
+    # Lỗi cả 2 lần → ghi lỗi, chạy tiếp mã sau.
+    client = _Client(ConnectionError("timeout"), ConnectionError("timeout"), frame)
+    status = update.run(engine, client, ["MCH", "FPT"], *_SPAN, False)
+    assert [e["ticker"] for e in status["errors"]] == ["MCH"] and client.calls == 3
+
+
+def test_rate_limit_waits_then_retries_same_ticker(tmp_path: Path) -> None:
+    # D93 (người dùng chọn 04/11): lượt 18:11 ngày 04/11 vượt hạn mức ngay ở mã đầu (ACB) và mất trọn
+    # ngày dữ liệu → giờ chờ rồi thử lại chính mã đó; hết số lần mới dừng cả job như D73.
+    engine = _flow_engine(tmp_path)
+    frame = to_flow_frame("MCH", _price(), _prop(), TOL)
+    limited = FlowRateLimited("vượt hạn mức")
+    waits: list[float] = []
+    retry = {"rate_limit_wait": 65, "rate_limit_retries": 2, "sleep": waits.append}
+    client = _Client(limited, limited, frame)
+    status = update.run(engine, client, ["MCH"], *_SPAN, False, **retry)
+    assert waits == [65, 65] and client.calls == 3
+    assert status["fatal"] is None and status["inserted"] == 1
+
+    waits.clear()
+    client = _Client(limited)
+    status = update.run(engine, client, ["MCH", "FPT"], *_SPAN, False, **retry)
+    assert waits == [65, 65] and client.calls == 3
+    assert status["fatal_kind"] == "FlowRateLimited" and update.exit_code(status) == 5

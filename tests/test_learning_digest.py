@@ -73,9 +73,25 @@ def test_close_matrix_chi_muc_dong_trung():
 
 
 def test_close_matrix_khung_lon_dung_nhan_ngay():
-    # Hồi quy lỗi pandas 2.3.3/Python 3.14: unstack/pivot_table khung ~544×100 cho nhãn ngày sai/lặp.
+    # Hồi quy D82 (numpy 2.2.6/Python 3.14): unstack/pivot_table khung ~544×100 cho nhãn ngày sai/lặp.
     days = pd.bdate_range("2024-08-19", periods=544)
     rows = [(t, d, float(i)) for i, d in enumerate(days) for t in (f"T{k:02d}" for k in range(100))]
     m = ld.close_matrix(pd.DataFrame(rows, columns=["ticker", "trade_date", "close"]))
     assert m.shape == (544, 100) and m.index.is_unique and m.index.is_monotonic_increasing
     assert m.index[-1] == days[-1].date() and m.loc[days[300].date(), "T42"] == 300.0
+
+
+def test_mirror_knowledge_copies_only_text_and_skips_unchanged(tmp_path):
+    src, dst = tmp_path / "knowledge", tmp_path / "drive" / "vn100_knowledge"
+    (src / "weekly").mkdir(parents=True)
+    (src / "weekly" / "2026-W44.md").write_text("# tuần", encoding="utf-8")
+    (src / "fv_history.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    (src / "secret.env").write_text("X=1", encoding="utf-8")   # không phải .md/.csv/.jsonl/.json → bỏ
+    (src / ".hidden.md").write_text("x", encoding="utf-8")     # file ẩn → bỏ
+    dst.mkdir(parents=True)
+    (dst / "cu.md").write_text("giữ", encoding="utf-8")        # đích có sẵn → không xóa
+    assert ld.mirror_knowledge(src, dst) == 2
+    assert (dst / "weekly" / "2026-W44.md").read_text(encoding="utf-8") == "# tuần"
+    assert not (dst / "secret.env").exists() and not (dst / ".hidden.md").exists()
+    assert (dst / "cu.md").exists()
+    assert ld.mirror_knowledge(src, dst) == 0  # chạy lại: không đổi → không chép

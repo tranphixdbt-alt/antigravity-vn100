@@ -13,7 +13,7 @@ def render_input_assumptions(company: Company | CompanyBank):
     """
     Render giao diện nhập giả định cho Analyst.
     """
-    st.header("⚙️ Giả định Dự phóng & Tham số Định giá")
+    st.header("Giả định dự phóng & tham số định giá")
 
     is_bank = isinstance(company, CompanyBank)
     assumptions = company.assumptions
@@ -310,7 +310,7 @@ def render_input_assumptions(company: Company | CompanyBank):
             float(val) / 100.0 for val in edited_schedule["Vay mới / Doanh thu (%)"]
         ]
 
-    st.subheader("3. Tham số vĩnh viễn & Pha trộn")
+    st.subheader("3. Tham số vĩnh viễn & pha trộn")
     from valuation.engine.router import ValuationRouter
 
     route = ValuationRouter().get_routing(company.ticker)
@@ -418,7 +418,7 @@ def render_input_assumptions(company: Company | CompanyBank):
             )
 
     if primary_method in ["RNAV", "SOTP"]:
-        st.subheader("4. Tham số Khối Dự án & Trợ lý AI Bóc tách")
+        st.subheader("4. Tham số khối dự án & trợ lý AI bóc tách")
 
         col_rnav1, col_rnav2 = st.columns(2)
         with col_rnav1:
@@ -564,7 +564,7 @@ def render_input_assumptions(company: Company | CompanyBank):
             "Áp dụng cho DN nông nghiệp/cao su/KCN có quỹ đất ghi nhận theo giá gốc "
             "(thấp hơn nhiều giá đền bù/chuyển đổi thực tế). Giá trị quỹ đất được "
             "**cộng thêm** vào giá mục tiêu, không thay đổi phương pháp định giá chính. "
-            "⚠️ Vui lòng tự nhập diện tích/giá đền bù từ báo cáo thật — hệ thống KHÔNG tự đoán số liệu."
+            "Vui lòng tự nhập diện tích/giá đền bù từ báo cáo thật — hệ thống KHÔNG tự đoán số liệu."
         )
         land_projects = getattr(assumptions, "land_bank_projects", []) or []
         df_land = (

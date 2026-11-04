@@ -102,8 +102,8 @@ def _football_field(data: dict[str, Any]) -> go.Figure:
     return fig
 
 
-def _panel(title: str, icon: str, color: str, items) -> None:
-    """Panel gạch đầu dòng có viền màu (điểm chung/riêng/mấu chốt)."""
+def _panel(title: str, items) -> None:
+    """Một nhóm gạch đầu dòng (điểm chung/riêng/mấu chốt): tiêu đề + danh sách, không đóng khung màu."""
     if not items:
         return
     if isinstance(items, str):
@@ -111,9 +111,8 @@ def _panel(title: str, icon: str, color: str, items) -> None:
     lis = "".join(f"<li style='margin-bottom:6px;'>{it}</li>" for it in items)
     st.markdown(
         f"""
-        <div style="border-left:4px solid {color}; background:{color}12;
-                    border-radius:0 8px 8px 0; padding:12px 16px; margin-bottom:12px;">
-          <div style="font-weight:700; color:{color}; margin-bottom:6px;">{icon} {title}</div>
+        <div style="border-top:1px solid var(--ag-line); padding:12px 0 4px; margin-bottom:8px;">
+          <div style="font-weight:700; margin-bottom:6px;">{title}</div>
           <ul style="margin:0; padding-left:18px; font-size:14px;">{lis}</ul>
         </div>
         """,
@@ -137,7 +136,7 @@ def _render_calibration(data: dict, dev: float) -> None:
         if data.get("flag_high"):
             st.warning(
                 f"Mô hình lệch **{dev:+.1%}** so với trung vị CTCK (>25%) — rà soát giả định.",
-                icon="🚨",
+                icon=":material/error:",
             )
         return
 
@@ -145,7 +144,7 @@ def _render_calibration(data: dict, dev: float) -> None:
         st.success(
             f"Mô hình lệch **{dev:+.1%}** — nằm trong ngưỡng chấp nhận {band_txt} "
             f"so với đồng thuận CTCK.",
-            icon="✅",
+            icon=":material/check_circle:",
         )
         return
 
@@ -153,7 +152,7 @@ def _render_calibration(data: dict, dev: float) -> None:
         st.info(
             f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **lệch có chủ ý, "
             f"đã được giải trình**:",
-            icon="🧭",
+            icon=":material/explore:",
         )
         st.markdown(f"> {cal.get('thesis')}")
         ev = cal.get("evidence") or []
@@ -169,27 +168,27 @@ def _render_calibration(data: dict, dev: float) -> None:
             f"Mô hình lệch **{dev:+.1%}** (ngoài ngưỡng {band_txt}) — **đây là LỖI ĐÃ BIẾT** "
             f"của phương pháp định giá cho mã này, đang trong hàng đợi sửa. "
             f"Đừng dùng con số định giá này để ra quyết định.",
-            icon="🛠️",
+            icon=":material/build:",
         )
         if cal.get("decision_ref"):
             st.caption(f"Tham chiếu: {cal['decision_ref']}")
     elif status == "DATA_BLOCKED":
         st.warning(
             f"Chưa đủ dữ liệu để kết luận mô hình đúng hay sai: {cal.get('thesis')}",
-            icon="📭",
+            icon=":material/inbox:",
         )
     elif status == "STALE_JUSTIFICATION":
         st.warning(
             f"Mô hình lệch **{dev:+.1%}** — có luận điểm giải trình nhưng **đã quá hạn "
             f"rà soát** ({cal.get('reviewed_on')}). Cần xem lại còn đúng không.",
-            icon="🕒",
+            icon=":material/schedule:",
         )
     else:  # MISSING_JUSTIFICATION
         st.warning(
             f"Mô hình lệch **{dev:+.1%}**, vượt ngưỡng {band_txt} so với đồng thuận CTCK "
             f"và **chưa có luận điểm giải trình**. Theo quy ước hiệu chuẩn, cần hoặc "
             f"giải trình được, hoặc coi là lỗi giả định và sửa.",
-            icon="⚠️",
+            icon=":material/warning:",
         )
 
 
@@ -209,16 +208,16 @@ def render_consensus_compare(
             + company.ticker
             + "'** hoặc **'Quét VN100 Hàng Tuần'** "
             "ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô ») để thu thập báo cáo CTCK (Simplize/24hmoney) cho mã này.",
-            icon="ℹ️",
+            icon=":material/info:",
         )
         return
 
     # ---- 1. KPI hàng đầu -------------------------------------------------
     dev = data["deviation"]
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🎯 FV mô hình VN100", f"{_fmt_vnd(data['our_target'])} đ")
+    c1.metric("FV mô hình VN100", f"{_fmt_vnd(data['our_target'])} đ")
     c2.metric(
-        "🏦 Median CTCK",
+        "Median CTCK",
         f"{_fmt_vnd(data['consensus_median'])} đ",
         help=f"Trung vị {data['n_reports']} CTCK trong 180 ngày "
         f"(từ {data.get('n_reports_raw', data['n_reports'])} báo cáo, "
@@ -228,7 +227,7 @@ def render_consensus_compare(
         "↔️ Mô hình vs CTCK", f"{dev:+.1%}", delta=f"{dev:+.1%}", delta_color="normal"
     )
     c4.metric(
-        "📄 Số CTCK theo dõi",
+        "Số CTCK theo dõi",
         f"{data['n_brokers']}",
         help=f"Dải giá mục tiêu: {_fmt_vnd(data['range_min'])} – {_fmt_vnd(data['range_max'])} đ",
     )
@@ -244,7 +243,7 @@ def render_consensus_compare(
                     "bên trên thực chất là ý kiến đơn lẻ, không đại diện quan điểm thị trường. "
                     "Hãy đọc kèm luận điểm thay vì chỉ nhìn độ lệch."
                 ),
-                "⚠️",
+                ":material/warning:",
             )
         )
     if data.get("consensus_stale"):
@@ -255,7 +254,7 @@ def render_consensus_compare(
                     "Báo cáo CTCK mới nhất đã cũ hơn 120 ngày — có thể chưa phản ánh "
                     "kết quả kinh doanh gần đây."
                 ),
-                "🕒",
+                ":material/schedule:",
             )
         )
     # D54: số CTCK đã có ở KPI c4; kết luận hiệu chuẩn bên dưới luôn hiện.
@@ -324,38 +323,30 @@ def render_consensus_compare(
             gen_str = gen_at.strftime("%d/%m/%Y") if gen_at else "—"
             st.caption(
                 f"Tổng hợp từ {synth['n_reports']} báo cáo ({synth['brokers']}) · "
-                f"sinh ngày {gen_str} · ⚠️ AI tổng hợp từ báo cáo CTCK — cần analyst review"
+                f"sinh ngày {gen_str} · AI tổng hợp từ báo cáo CTCK — cần analyst review"
             )
             col_l, col_r = st.columns(2)
             with col_l:
                 _panel(
-                    "Điểm CHUNG các CTCK đồng thuận",
-                    "🤝",
-                    "#16A34A",
+                    "Điểm chung các CTCK đồng thuận",
                     synth["diem_chung"],
                 )
                 _panel(
-                    "Điểm MẤU CHỐT / thị trường dễ bỏ sót",
-                    "💡",
-                    "#1D4ED8",
+                    "Điểm mấu chốt thị trường dễ bỏ sót",
                     synth["diem_mau_chot"],
                 )
             with col_r:
                 _panel(
-                    "Điểm RIÊNG / khác biệt giữa CTCK",
-                    "⚖️",
-                    "#D97706",
+                    "Điểm khác biệt giữa các CTCK",
                     synth["diem_rieng"],
                 )
                 _panel(
                     "Đối chiếu mô hình nội bộ",
-                    "🧭",
-                    "#7C3AED",
                     synth["doi_chieu_noi_bo"],
                 )
         else:
             st.caption(  # ghi chú trung tính, không phải cảnh báo (D58)
-                "🤖 Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
+                "Chưa có bản AI tổng hợp cho mã này. Dùng nút **Kiểm chứng dữ liệu & "
                 "sinh báo cáo qua DeepSeek** ở tab BCTC; cùng một lượt sẽ tạo luôn "
                 "phần tổng hợp CTCK tại đây."
             )

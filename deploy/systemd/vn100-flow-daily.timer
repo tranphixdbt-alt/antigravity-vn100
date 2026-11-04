@@ -1,8 +1,8 @@
 [Unit]
-Description=VN100 - kéo dòng tiền 18:00 thứ 2-6 (giờ Việt Nam), sau giờ tự doanh chốt số 17:30
+Description=VN100 - kéo dòng tiền 08:30 thứ 2-6 (giờ Việt Nam), đầu phiên: VCI đã công bố đủ số phiên trước (18:00 thường chưa có, D88)
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 18:00:00 Asia/Ho_Chi_Minh
+OnCalendar=Mon..Fri *-*-* 08:30:00 Asia/Ho_Chi_Minh
 Persistent=true
 
 [Install]

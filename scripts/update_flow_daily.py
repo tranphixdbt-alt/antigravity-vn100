@@ -2,7 +2,7 @@
 
     ~/.venv/bin/python scripts/update_flow_daily.py --dry-run --tickers MCH FPT
     ~/.venv/bin/python scripts/update_flow_daily.py --backfill   # lần đầu: backfill_days
-    ~/.venv/bin/python scripts/update_flow_daily.py              # hằng ngày, sau 17:30 giờ VN
+    ~/.venv/bin/python scripts/update_flow_daily.py              # hằng ngày 08:30 (đầu phiên, D88)
 
 --dry-run vẫn gọi VCI (tốn quota) nhưng không ghi DB lẫn status.json.
 
@@ -26,6 +26,7 @@ import json
 import logging
 import math
 import sys
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -193,6 +194,35 @@ def upsert_flow(
     return stats
 
 
+def fetch_with_wait(
+    client: FlowClient,
+    ticker: str,
+    start: dt.date,
+    end: dt.date,
+    wait_sec: float,
+    retries: int,
+    sleep: Callable[[float], None],
+) -> pd.DataFrame:
+    """Vượt hạn mức → chờ `wait_sec` rồi thử lại chính mã đó, tối đa `retries` lần (D93);
+    hết lượt vẫn ném FlowRateLimited để run() dừng cả job như D73."""
+    attempt = 0
+    while True:
+        try:
+            return client.fetch(ticker, start, end)
+        except FlowRateLimited:
+            if attempt >= retries:
+                raise
+            attempt += 1
+            logger.warning(
+                "%s: vượt hạn mức API — chờ %.0fs rồi thử lại (%d/%d)",
+                ticker,
+                wait_sec,
+                attempt,
+                retries,
+            )
+            sleep(wait_sec)
+
+
 def run(
     engine: Engine,
     client: FlowClient,
@@ -204,6 +234,9 @@ def run(
     dry_run: bool,
     clock: Callable[[], dt.datetime] = now_vn,
     save: Callable[[dict[str, Any]], None] | None = None,
+    rate_limit_wait: float = 0.0,
+    rate_limit_retries: int = 0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """Kéo từng mã; `save(status)` chạy trong finally (cả khi job bị dừng giữa chừng)."""
     status: dict[str, Any] = {
@@ -222,10 +255,23 @@ def run(
         "fatal": None,
         "fatal_kind": None,
     }
+    def fetch(ticker: str) -> pd.DataFrame:
+        return fetch_with_wait(
+            client, ticker, start, end, rate_limit_wait, rate_limit_retries, sleep
+        )
+
     try:
         for ticker in tickers:
             try:
-                frame = client.fetch(ticker, start, end)
+                try:
+                    frame = fetch(ticker)
+                except tuple(FATAL_EXIT):
+                    raise
+                # Thử lại 1 lần: timeout mạng, và lỗi vnai `threading` UnboundLocalError (bug thư viện ở
+                # lượt đồng bộ quota; bộ đếm đã reset trước khi lỗi nên gọi lại ngay là qua).
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("%s: %s — thử lại 1 lần", ticker, type(exc).__name__)
+                    frame = fetch(ticker)
             except tuple(FATAL_EXIT) as exc:  # schema / hạn mức / cấu hình: dừng cả job
                 logger.error("DỪNG: %s: %s", ticker, exc)
                 status["fatal"] = f"{ticker}: {exc}"
@@ -342,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
                 batch_id,
                 args.dry_run,
                 save=None if args.dry_run else save_status,
+                rate_limit_wait=float(ingest["rate_limit_wait_sec"]),
+                rate_limit_retries=int(ingest["rate_limit_retries"]),
             )
     except BlockingIOError:
         logger.error("Job flow_daily khác đang chạy (%s)", STATE_DIR / "worker.lock")

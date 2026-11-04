@@ -16,13 +16,22 @@ def test_worker_writes_progress_then_done(tmp_path, monkeypatch):
         return {"total": 3, "success_count": 2, "partial_count": 1, "fail_count": 0, "message": "xong"}
 
     monkeypatch.setattr(weekly_updater, "run_weekly_auto_update", fake_update)
+    flow_seen = []
+
+    def fake_flow():  # bước 2: dòng tiền chạy sau giá/BCTC, trạng thái vẫn RUNNING
+        flow_seen.append(json.loads((tmp_path / "status.json").read_text(encoding="utf-8")))
+        return 0
+
+    monkeypatch.setattr(job, "_run_flow_update", fake_flow)
     job.main(store=tmp_path)
+    assert flow_seen and flow_seen[0]["status"] == "RUNNING" and "dòng tiền" in flow_seen[0]["message"]
 
     assert [s["completed"] for s in seen] == [0, 1, 2]  # đang xử lý mã thứ i → đã xong i−1
     assert all(s["status"] == "RUNNING" and s["total"] == 3 for s in seen)
     final = job.job_status(tmp_path)
     assert final["status"] == "DONE" and final["completed"] == 3
     assert (final["success"], final["partial"], final["failed"]) == (2, 1, 0)
+    assert final["flow_exit"] == 0 and "dòng tiền" in final["message"]
 
 
 def test_running_status_without_worker_is_reported_interrupted(tmp_path):

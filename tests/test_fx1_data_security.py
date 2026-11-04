@@ -416,6 +416,8 @@ def test_undated_rights_issue_has_own_info_flag(monkeypatch):
     flags = ttm_helper.undated_split_flags(db, "ZZR", datetime.date(2026, 10, 20))
     assert flags == ["RIGHTS_ISSUE_UNDATED"]
     assert "RIGHTS_ISSUE_UNDATED" not in DATA_FLAGS_EXTRA
+    # Người dùng quyết 30/10: cổ tức CP/thưởng thiếu GDKHQ chỉ cảnh báo, không chặn xếp hạng.
+    assert "CORPORATE_ACTION_UNDATED" not in DATA_FLAGS_EXTRA
     assert describe_flags(flags)[0]["level"] == "info"
 
 

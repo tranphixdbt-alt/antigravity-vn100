@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
@@ -335,6 +336,18 @@ def _incremental_price_start(ticker: str) -> str:
         db.close()
 
 
+def latest_ended_quarter(today: date) -> tuple[int, int]:
+    """(năm, quý) của quý gần nhất đã kết thúc trước `today`."""
+    q = (today.month - 1) // 3
+    return (today.year, q) if q else (today.year - 1, 4)
+
+
+def financials_due(latest_in_db: tuple[int, int] | None, today: date) -> bool:
+    """BCTC chỉ có kỳ mới khi sang quý mới: DB đã có quý gần nhất đã kết thúc → tự tải khi mở mã
+    bỏ qua BCTC. Bản soát xét/kiểm toán sửa quý cũ vẫn được kéo khi bấm "Tải mới" và đợt quét VN100 (D92)."""
+    return latest_in_db is None or tuple(latest_in_db) < latest_ended_quarter(today)
+
+
 def run_ingest(
     ticker: str,
     data_types: list,
@@ -342,6 +355,7 @@ def run_ingest(
     include_yearly: bool = True,
     include_market_flows: bool = True,
     is_vn100: bool = False,
+    parallel: bool = False,
 ):
     """
     Orchestrator hàm lấy dữ liệu, chuẩn hóa và lưu DB.
@@ -351,6 +365,8 @@ def run_ingest(
     is_vn100: cờ rổ cho mã MỚI. Mặc định False (AGENTS §5): mã lạ gửi qua API/bot không được tự vào rổ;
               thành viên VN100 do universe.sync_vn100_membership (scripts/sync_vn100_universe.py) đặt,
               hoặc caller truyền True khi danh sách nguồn chính là rổ VN100. Mã đã có giữ nguyên cờ.
+    parallel: True (nút "Tải mới"/tự tải khi mở mã, D92) → mọi lời gọi mạng chạy cùng lúc, ghi DB
+              vẫn tuần tự như dưới. Đợt quét VN100 giữ False để không vượt giới hạn request/phút của vnstock.
     """
     # 1. Đảm bảo ticker tồn tại (để foreign key ko báo lỗi)
     db = SessionLocalWrite()
@@ -387,15 +403,41 @@ def run_ingest(
     last_price = None
     last_fin = None
 
+    prefetched: dict[str, Future] = {}
+    prefetch_start = None
+    pool = None
+    if parallel:
+        jobs: dict[str, tuple] = {}
+        if "prices" in data_types and incremental:
+            prefetch_start = _incremental_price_start(ticker)
+            jobs["prices"] = (vnstock_client.get_historical_prices, ticker, prefetch_start)
+            if include_market_flows:
+                jobs["foreign"] = (market_client.fetch_foreign_flow, ticker, prefetch_start)
+                jobs["prop"] = (market_client.fetch_proprietary_flow, ticker, prefetch_start)
+        if "financials" in data_types:
+            for stmt in ("BS", "IS", "CF"):
+                for period in ("quarter", "year") if include_yearly else ("quarter",):
+                    jobs[f"{stmt}/{period}"] = (vnstock_client.get_financials, ticker, stmt, period)
+        if jobs:
+            pool = ThreadPoolExecutor(max_workers=len(jobs))
+            prefetched = {k: pool.submit(*job) for k, job in jobs.items()}
+
+    def fetch(key: str, fn, *args):
+        """Kết quả đã tải trước khi chạy song song; còn lại gọi ngay như cũ."""
+        fut = prefetched.pop(key, None)
+        return fut.result() if fut else fn(*args)
+
     if "prices" in data_types:
         try:
-            price_start = (
+            price_start = prefetch_start or (
                 _incremental_price_start(ticker)
                 if incremental
                 else _earliest_price_start(ticker)
             )
             flow_start = price_start
-            df_prices = vnstock_client.get_historical_prices(ticker, price_start)
+            df_prices = fetch(
+                "prices", vnstock_client.get_historical_prices, ticker, price_start
+            )
             df_norm = normalize_daily_prices(df_prices)
             if df_norm.empty:
                 raise ValueError("Nguồn không trả dữ liệu giá")
@@ -417,11 +459,11 @@ def run_ingest(
             if include_market_flows:
                 # Kéo thêm dòng tiền ngoại & tự doanh (cùng cửa sổ incremental).
                 try:
-                    df_foreign = market_client.fetch_foreign_flow(
-                        ticker, start=flow_start
+                    df_foreign = fetch(
+                        "foreign", market_client.fetch_foreign_flow, ticker, flow_start
                     )
-                    df_prop = market_client.fetch_proprietary_flow(
-                        ticker, start=flow_start
+                    df_prop = fetch(
+                        "prop", market_client.fetch_proprietary_flow, ticker, flow_start
                     )
                     upsert_market_flows(ticker, df_foreign, df_prop)
                     result["market_flows"] = {
@@ -450,8 +492,12 @@ def run_ingest(
             }
             try:
                 # Lấy dữ liệu quý (Quarterly)
-                df_fin_q = vnstock_client.get_financials(
-                    ticker, stmt_type, period="quarter"
+                df_fin_q = fetch(
+                    f"{stmt_type}/quarter",
+                    vnstock_client.get_financials,
+                    ticker,
+                    stmt_type,
+                    "quarter",
                 )
                 df_long_q = unpivot_financials(df_fin_q, stmt_type)
                 if df_long_q.empty:
@@ -492,8 +538,12 @@ def run_ingest(
                 # Dữ liệu năm chỉ cần cho mã chưa có lịch sử; các mã hiện hữu
                 # đã có Q0 và mỗi lần chạy chỉ cần cập nhật quý mới.
                 try:
-                    df_fin_y = vnstock_client.get_financials(
-                        ticker, stmt_type, period="year"
+                    df_fin_y = fetch(
+                        f"{stmt_type}/year",
+                        vnstock_client.get_financials,
+                        ticker,
+                        stmt_type,
+                        "year",
                     )
                     df_long_y = unpivot_financials(df_fin_y, stmt_type)
                     if df_long_y.empty:
@@ -523,6 +573,9 @@ def run_ingest(
                     )
             result["financials"][stmt_type] = statement_result
 
+    if pool:
+        # Lời gọi chưa dùng tới (vd giá lỗi nên bỏ dòng tiền) chỉ tải mạng, không ghi DB → không cần chờ.
+        pool.shutdown(wait=False, cancel_futures=True)
     if result["errors"]:
         result["status"] = "PARTIAL" if successful_units else "FAILED"
     update_backfill_status(ticker, result["status"], last_price, last_fin)

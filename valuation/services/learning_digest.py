@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import shutil
 import statistics
 from collections import Counter
 from pathlib import Path
@@ -162,7 +163,7 @@ def compute_flow_labels(panel: dict, sectors: dict, cfg: dict, dates: list[dt.da
 
 def close_matrix(prices: pd.DataFrame) -> pd.DataFrame:
     """Ma trận giá đóng cửa ngày × mã (index = date, dòng sau ghi đè dòng trước cùng ngày-mã).
-    Dựng bằng numpy, KHÔNG dùng pivot_table/unstack: pandas 2.3.3 trên Python 3.14 trả nhãn index sai và lặp với
+    Dựng bằng numpy, KHÔNG dùng pivot_table/unstack: numpy 2.2.6 tự build/Python 3.14 (D82) làm nhãn index sai và lặp với
     khung lớn (thử 544 ngày × 100 mã, 26/10/2026) — bảng nhỏ vẫn đúng nên test thường không bắt được."""
     days = pd.to_datetime(prices["trade_date"]).dt.date.to_numpy()
     tickers = prices["ticker"].to_numpy()
@@ -234,3 +235,24 @@ def read_index(path: Path) -> list[dict]:
     if not path.exists():
         return []
     return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+MIRROR_SUFFIXES = (".md", ".csv", ".jsonl", ".json")
+
+
+def mirror_knowledge(src: Path, dst: Path) -> int:
+    """Chép knowledge/ sang thư mục Google Drive riêng để routine Claude cloud đọc (bản chính trên máy không nằm
+    trong Drive — D85). Chỉ file văn bản .md/.csv/.jsonl/.json, bỏ file ẩn; bỏ qua file không đổi; không xóa ở đích."""
+    n = 0
+    for f in sorted(src.rglob("*")):
+        rel = f.relative_to(src)
+        if not f.is_file() or f.suffix not in MIRROR_SUFFIXES or any(x.startswith(".") for x in rel.parts):
+            continue
+        out = dst / rel
+        st = f.stat()
+        if out.exists() and out.stat().st_size == st.st_size and out.stat().st_mtime >= st.st_mtime:
+            continue
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, out)
+        n += 1
+    return n

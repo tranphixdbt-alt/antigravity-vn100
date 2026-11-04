@@ -6,8 +6,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict
 
 from valuation.db.session import SessionLocalWrite
+from valuation.ingest.company_disclosures import refresh_disclosures
 from valuation.ingest.corporate_actions import refresh_corporate_actions
-
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="corporate-actions")
 _FUTURES: Dict[str, Future] = {}
@@ -16,7 +16,9 @@ _LOCK = threading.Lock()
 
 def _refresh(ticker: str) -> Dict[str, Any]:
     with SessionLocalWrite() as db:
-        return refresh_corporate_actions(db, ticker)
+        result = refresh_corporate_actions(db, ticker)
+    refresh_disclosures(ticker)  # tin công bố (D89): tự kiểm TTL, lỗi nguồn không raise
+    return result
 
 
 def schedule_corporate_actions_refresh(ticker: str) -> Dict[str, Any]:

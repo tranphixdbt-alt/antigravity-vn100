@@ -544,3 +544,16 @@ def test_parse_first_json_object_ignores_trailing_extra_data():
         parse_first_json_object('{"a": ')
     with _pytest.raises(ValueError):
         parse_first_json_object("[1, 2]")
+
+
+def test_ai_payload_ghi_ky_ttm_va_dinh_nghia_chi_so():
+    # Đề xuất W44 #3: dòng TTM phải ghi rõ kỳ để DeepSeek không đọc thành số dự phóng.
+    company = _company()
+    company.historical_cf[-1].is_ttm_period = True
+    payload = _compact_payload(company, blended_fv=25_000, current_price=20_000, upside=25.0,
+                               recommendation="BUY", deterministic_issues=[])
+    rows = payload["income_statements"]
+    assert rows[-1]["period"].startswith("TTM") and all(r["is_actual"] for r in rows)
+    assert all(r["period"].startswith("FY") for r in rows[:-1])
+    assert payload["quality_metrics_period"] == rows[-1]["period"]
+    assert set(payload["metric_definitions"]) >= {"roe", "debt_to_equity", "roic"}

@@ -24,6 +24,7 @@ from valuation.report.verified_summary import (
     verified_summary_session_key,
 )
 from valuation.views.device import phone_collapsible, render_alerts
+from valuation.views.theme import CHART_LAYOUT, SERIES, SERIES_OTHER
 
 _UI_HANDLED_EXCEPTIONS = (
     SQLAlchemyError,
@@ -314,7 +315,7 @@ def render_input_financials(
                     (
                         "info",
                         "Chưa có dữ liệu CTCK đủ dùng; các phần báo cáo còn lại vẫn đã được tạo.",
-                        "ℹ️",
+                        ":material/info:",
                     )
                 )
             if result.get("consensus_collection_warning"):
@@ -406,7 +407,7 @@ def render_input_financials(
             x=years,
             y=rev_total,
             name=rev_name,
-            marker_color=["#3b82f6"] * len(rev_hist) + ["#60a5fa"] * len(rev_proj),
+            marker_color=[SERIES[0]] * len(rev_hist) + ["#8fb3e6"] * len(rev_proj),
             opacity=0.9,
         ),
         secondary_y=False,
@@ -419,7 +420,7 @@ def render_input_financials(
             y=ni_total,
             name="Lợi nhuận sau thuế (Net Income)",
             mode="lines+markers",
-            marker_color="#10b981",
+            marker_color=SERIES[3],
             line={"width": 3},
         ),
         secondary_y=True,
@@ -427,9 +428,7 @@ def render_input_financials(
 
     fig_overview.update_layout(
         height=450,
-        paper_bgcolor="#0F172A",
-        plot_bgcolor="#1E293B",
-        font={"color": "#F8FAFC", "family": "Inter"},
+        **CHART_LAYOUT,
         hovermode="x unified",
         legend={
             "orientation": "h",
@@ -437,10 +436,6 @@ def render_input_financials(
             "y": -0.2,
             "xanchor": "left",
             "x": 0,
-            "font": {"color": "#F8FAFC"},
-            "bgcolor": "rgba(15, 23, 42, 0.9)",
-            "bordercolor": "#334155",
-            "borderwidth": 1,
         },
         margin={"l": 40, "r": 40, "t": 60, "b": 40},
     )
@@ -448,7 +443,6 @@ def render_input_financials(
         title_text=f"{rev_name} (Tỷ VNĐ)",
         secondary_y=False,
         showgrid=True,
-        gridcolor="#334155",
     )
     fig_overview.update_yaxes(
         title_text="Lợi nhuận (Tỷ VNĐ)", secondary_y=True, showgrid=False
@@ -460,7 +454,7 @@ def render_input_financials(
     # PHÂN ĐOẠN 1: BÁO CÁO KẾT QUẢ KINH DOANH (IS)
     # ----------------------------------------------------
     with phone_collapsible("1. Kết quả kinh doanh (IS)"):
-        st.subheader("1. Báo cáo Kết quả Kinh doanh (IS)")
+        st.subheader("1. Báo cáo kết quả kinh doanh (IS)")
 
         # 1.1. Dữ liệu lịch sử IS
         is_hist_data = []
@@ -502,20 +496,14 @@ def render_input_financials(
         st.dataframe(apply_financial_styling(df_is_hist), width="stretch")
 
         # --- BIỂU ĐỒ 1: Xu hướng IS lịch sử ---
-        _dark_theme = {
-            "paper_bgcolor": "#0F172A",
-            "plot_bgcolor": "#1E293B",
-            "font": {"color": "#F8FAFC", "family": "Inter"},
+        _chart_theme = {
+            **CHART_LAYOUT,
             "legend": {
                 "orientation": "h",
                 "yanchor": "top",
                 "y": -0.2,
                 "xanchor": "left",
                 "x": 0,
-                "font": {"color": "#F8FAFC"},
-                "bgcolor": "rgba(15, 23, 42, 0.9)",
-                "bordercolor": "#334155",
-                "borderwidth": 1,
             },
         }
         hist_years = [str(item.year) for item in company.historical_is]
@@ -539,7 +527,7 @@ def render_input_financials(
                     x=hist_years,
                     y=nii_vals,
                     name="Thu nhập lãi thuần (Net Interest Income)",
-                    marker_color="#3B82F6",
+                    marker_color=SERIES[0],
                 ),
                 secondary_y=False,
             )
@@ -548,7 +536,7 @@ def render_input_financials(
                     x=hist_years,
                     y=toi_vals,
                     name="Tổng thu nhập HĐ (TOI)",
-                    marker_color="#10B981",
+                    marker_color=SERIES[3],
                     opacity=0.6,
                 ),
                 secondary_y=False,
@@ -558,7 +546,7 @@ def render_input_financials(
                     x=hist_years,
                     y=cir_vals,
                     name="Tỷ lệ chi phí/thu nhập (CIR %)",
-                    line={"color": "#F59E0B", "width": 3},
+                    line={"color": SERIES[1], "width": 3},
                     mode="lines+markers",
                 ),
                 secondary_y=True,
@@ -566,10 +554,10 @@ def render_input_financials(
             fig_is_trend.update_yaxes(title_text="Tỷ đồng", secondary_y=False)
             fig_is_trend.update_yaxes(title_text="CIR (%)", secondary_y=True)
             fig_is_trend.update_layout(
-                title="Xu hướng Thu nhập & CIR (Lịch sử)",
+                title="Xu hướng thu nhập & CIR (lịch sử)",
                 barmode="group",
                 height=420,
-                **_dark_theme,
+                **_chart_theme,
             )
         else:
             # Phi tài chính: cột Revenue + đường EBIT Margin
@@ -585,7 +573,7 @@ def render_input_financials(
                     x=hist_years,
                     y=rev_vals,
                     name="Doanh thu thuần (Net Revenue)",
-                    marker_color="#3B82F6",
+                    marker_color=SERIES[0],
                 ),
                 secondary_y=False,
             )
@@ -594,7 +582,7 @@ def render_input_financials(
                     x=hist_years,
                     y=ebit_margins,
                     name="Biên lợi nhuận EBIT (EBIT Margin %)",
-                    line={"color": "#10B981", "width": 3},
+                    line={"color": SERIES[3], "width": 3},
                     mode="lines+markers",
                 ),
                 secondary_y=True,
@@ -602,10 +590,10 @@ def render_input_financials(
             fig_is_trend.update_yaxes(title_text="Tỷ đồng", secondary_y=False)
             fig_is_trend.update_yaxes(title_text="Biên EBIT (%)", secondary_y=True)
             fig_is_trend.update_layout(
-                title="Xu hướng Doanh thu & Biên EBIT (Lịch sử)",
+                title="Xu hướng doanh thu & biên EBIT (lịch sử)",
                 barmode="group",
                 height=420,
-                **_dark_theme,
+                **_chart_theme,
             )
 
         st.plotly_chart(fig_is_trend, width="stretch", theme=None, config=PLOTLY_CONFIG)
@@ -648,7 +636,7 @@ def render_input_financials(
 
         df_is_proj = pd.DataFrame(is_proj_data).set_index("Năm")
 
-        st.caption("🟢 Phần Dự phóng (Cho phép hiệu chỉnh):")
+        st.caption("Phần dự phóng (chỉnh được):")
         # Cho phép chỉnh sửa bảng dự phóng
         edited_is_proj = st.data_editor(
             df_is_proj,
@@ -670,7 +658,7 @@ def render_input_financials(
     # PHÂN ĐOẠN 2: BẢNG CÂN ĐỐI KẾ TOÁN (BS)
     # ----------------------------------------------------
     with phone_collapsible("2. Cân đối kế toán (BS)"):
-        st.subheader("2. Bảng Cân đối Kế toán (BS)")
+        st.subheader("2. Bảng cân đối kế toán (BS)")
 
         # 2.1. Dữ liệu lịch sử BS
         bs_hist_data = []
@@ -729,7 +717,7 @@ def render_input_financials(
                     x=bs_years,
                     y=loans_vals,
                     name="Cho vay khách hàng (Customer Loans)",
-                    marker_color="#3B82F6",
+                    marker_color=SERIES[0],
                 )
             )
             fig_bs_comp.add_trace(
@@ -737,17 +725,15 @@ def render_input_financials(
                     x=bs_years,
                     y=other_ea_vals,
                     name="Tài sản sinh lời khác (Other Earning Assets)",
-                    marker_color="#10B981",
+                    marker_color=SERIES[3],
                 )
             )
             fig_bs_comp.update_layout(
-                title="Cấu trúc Tài sản Ngân hàng (Lịch sử)",
+                title="Cấu trúc tài sản ngân hàng (lịch sử)",
                 barmode="stack",
                 height=420,
                 yaxis_title="Tỷ đồng",
-                paper_bgcolor="#0F172A",
-                plot_bgcolor="#1E293B",
-                font={"color": "#F8FAFC", "family": "Inter"},
+                **CHART_LAYOUT,
                 margin={"l": 40, "r": 20, "t": 50, "b": 40},
                 legend={
                     "orientation": "h",
@@ -755,10 +741,6 @@ def render_input_financials(
                     "y": -0.2,
                     "xanchor": "left",
                     "x": 0,
-                    "font": {"color": "#F8FAFC"},
-                    "bgcolor": "rgba(15, 23, 42, 0.9)",
-                    "bordercolor": "#334155",
-                    "borderwidth": 1,
                 },
             )
         else:
@@ -779,7 +761,7 @@ def render_input_financials(
                     x=bs_years,
                     y=cash_vals,
                     name="Tiền & Tương đương tiền (Cash & Equivalents)",
-                    marker_color="#3B82F6",
+                    marker_color=SERIES[0],
                 )
             )
             fig_bs_comp.add_trace(
@@ -787,7 +769,7 @@ def render_input_financials(
                     x=bs_years,
                     y=recv_vals,
                     name="Phải thu (Receivables)",
-                    marker_color="#10B981",
+                    marker_color=SERIES[3],
                 )
             )
             fig_bs_comp.add_trace(
@@ -795,7 +777,7 @@ def render_input_financials(
                     x=bs_years,
                     y=inv_vals,
                     name="Hàng tồn kho (Inventory)",
-                    marker_color="#F59E0B",
+                    marker_color=SERIES[1],
                 )
             )
             fig_bs_comp.add_trace(
@@ -803,7 +785,7 @@ def render_input_financials(
                     x=bs_years,
                     y=fa_vals,
                     name="Tài sản cố định (Fixed Assets)",
-                    marker_color="#8B5CF6",
+                    marker_color=SERIES[2],
                 )
             )
             fig_bs_comp.add_trace(
@@ -811,17 +793,15 @@ def render_input_financials(
                     x=bs_years,
                     y=other_vals,
                     name="Tài sản khác (Other Assets)",
-                    marker_color="#64748B",
+                    marker_color=SERIES_OTHER,
                 )
             )
             fig_bs_comp.update_layout(
-                title="Cấu trúc Tài sản (Lịch sử)",
+                title="Cấu trúc tài sản (lịch sử)",
                 barmode="stack",
                 height=420,
                 yaxis_title="Tỷ đồng",
-                paper_bgcolor="#0F172A",
-                plot_bgcolor="#1E293B",
-                font={"color": "#F8FAFC", "family": "Inter"},
+                **CHART_LAYOUT,
                 margin={"l": 40, "r": 20, "t": 50, "b": 40},
                 legend={
                     "orientation": "h",
@@ -829,10 +809,6 @@ def render_input_financials(
                     "y": -0.2,
                     "xanchor": "left",
                     "x": 0,
-                    "font": {"color": "#F8FAFC"},
-                    "bgcolor": "rgba(15, 23, 42, 0.9)",
-                    "bordercolor": "#334155",
-                    "borderwidth": 1,
                 },
             )
 
@@ -902,7 +878,7 @@ def render_input_financials(
 
         df_bs_proj = pd.DataFrame(bs_proj_data).set_index("Năm")
 
-        st.caption("🟢 Phần Dự phóng (Cho phép hiệu chỉnh):")
+        st.caption("Phần dự phóng (chỉnh được):")
         edited_bs_proj = st.data_editor(
             df_bs_proj,
             width="stretch",
@@ -1003,7 +979,7 @@ def render_input_financials(
     # 4. Kiểm tra tính cân đối của BS và in cảnh báo
     st.markdown("---")
     with phone_collapsible("Kiểm tra cân đối BCĐKT"):
-        st.subheader("🔍 Kiểm tra Tính Cân Đối Bảng Cân Đối Kế Toán")
+        st.subheader("Kiểm tra tài sản = nợ + vốn chủ")
 
         warnings = []
         # 4.1. Lịch sử BS
@@ -1042,6 +1018,6 @@ def render_input_financials(
 
         if warnings:
             for warn in warnings:
-                st.warning(warn, icon="⚠️")
+                st.warning(warn, icon=":material/warning:")
         else:
-            st.caption("✅ Bảng cân đối kế toán (lịch sử & dự phóng) cân đối.")  # D58
+            st.caption("Bảng cân đối kế toán (lịch sử & dự phóng) cân đối.")  # D58

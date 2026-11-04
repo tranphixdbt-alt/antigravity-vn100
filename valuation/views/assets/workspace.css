@@ -60,7 +60,7 @@ html, body, .stApp {
 .stButton button, .stDownloadButton button {
     min-height: 44px;
     border: 1px solid #cad6ce;
-    border-radius: 24px;
+    border-radius: 6px;
     background: #fff;
     color: var(--ag-ink);
     padding: 10px 20px;
@@ -71,11 +71,11 @@ html, body, .stApp {
     border-color: var(--ag-green-text); background: var(--ag-mint); color: var(--ag-green-text);
 }
 .stButton button[kind="primary"], .stDownloadButton button[kind="primary"] {
-    background: linear-gradient(105deg, var(--ag-blue), #00843d);
-    border-color: transparent; color: #fff;
+    background: var(--ag-green-text);
+    border-color: var(--ag-green-text); color: #fff;
 }
 .stButton button[kind="primary"]:hover, .stDownloadButton button[kind="primary"]:hover {
-    background: linear-gradient(105deg, #16366f, #006b31); color: #fff;
+    background: #006b31; border-color: #006b31; color: #fff;
 }
 .stButton button:disabled, .stDownloadButton button:disabled { opacity: .5; cursor: not-allowed; }
 [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="textarea"] {
@@ -126,18 +126,11 @@ img, svg, canvas, iframe {
 }
 hr { border-color: var(--ag-line); margin: 1.4rem 0; }
 .ag-shell-header { margin-bottom: 4px; }
-.ag-utility-bar {
-    display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    padding: 12px 24px; min-height: 46px;
-    background: linear-gradient(100deg, #1d4289, #00b74f); color: #fff;
-    font-size: 13px;
-}
 .ag-brand-row { display: flex; align-items: center; gap: 22px; padding: 22px 0; border-bottom: 1px solid var(--ag-line); }
 .ag-wordmark { font-size: 29px; font-weight: 700; line-height: 1; color: var(--ag-green-text); }
 .ag-wordmark span { color: var(--ag-ink); }
 .ag-brand-caption { font-size: 14px; color: var(--ag-muted); border-left: 1px solid #cbd4d0; padding-left: 22px; }
 .ag-page-heading { padding: 22px 0 14px; }
-.ag-page-heading .ag-breadcrumb { font-size: 12px; color: var(--ag-muted); margin: 0 0 10px; }
 .ag-page-heading h1 { margin: 0; padding: 0; }
 .ag-summary-band {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px;
@@ -171,7 +164,7 @@ hr { border-color: var(--ag-line); margin: 1.4rem 0; }
 @media (max-width: 768px) {
     [data-testid="stExpandSidebarButton"] {
         width: auto; min-height: 44px; padding: 0 14px 0 8px; gap: 4px;
-        border: 1px solid #cad6ce; border-radius: 22px; background: var(--ag-mint);
+        border: 1px solid #cad6ce; border-radius: 6px; background: var(--ag-mint);
     }
     [data-testid="stExpandSidebarButton"]::after {
         content: "Chọn mã · Vĩ mô";
@@ -236,14 +229,13 @@ hr { border-color: var(--ag-line); margin: 1.4rem 0; }
         width: 100%;
         min-height: 42px;
         padding: 9px 14px;
-        border-radius: 22px;
+        border-radius: 6px;
     }
     .stButton button p, .stDownloadButton button p {
         font-size: 13px;
         white-space: normal;
     }
     /* Header gọn: branding từng chiếm ~39% màn hình trước khi tới thanh tổng quan mã. */
-    .ag-utility-bar, .ag-page-heading .ag-breadcrumb { display: none; }
     .ag-brand-row { align-items: baseline; padding: 4px 0 10px; gap: 10px; }
     .ag-wordmark { font-size: 22px; }
     .ag-brand-caption { font-size: 12px; border-left: 0; padding-left: 0; }

@@ -101,8 +101,9 @@ def test_build_message_format_and_stale_warnings():
         CFG,
         date(2026, 10, 20),
     )
-    picks, diff, _ = (f["value"] for f in msg["fields"])
+    picks, diff, ca, _ = (f["value"] for f in msg["fields"])
     assert picks == "**FPT** 57.100 → FV 87.848 (+53,9%) · Công nghệ"
+    assert ca.startswith("Không có mã nào")
     assert diff == "Chưa có báo cáo trước để so sánh."
     assert "21 ngày trước" in msg["embed_desc"]  # 29/09 → 20/10 > 14 ngày
     assert "1/102 mã không cập nhật được giá: XYZ" in msg["embed_desc"]
@@ -114,3 +115,44 @@ def test_previous_report_skips_today(tmp_path):
         write_json(tmp_path / "history" / f"{day}.json", {"date": day})
     assert previous_report(date(2026, 10, 20), tmp_path) == {"date": "2026-10-19"}
     assert previous_report(date(2026, 10, 16), tmp_path) is None
+
+
+def test_build_message_lists_upcoming_corporate_actions_and_errors():
+    state = _state(["FPT"], {"FPT": ""}, {}, completed="2026-10-27T09:00:00+07:00")
+    state["picks"] = []
+    state["upcoming_ca"] = [
+        {"ticker": "TCB", "date": "2026-10-29", "role": "Ngày GDKHQ", "title": "Cổ tức bằng cổ phiếu 50%"}
+    ]
+    info = {"skipped": None, "price_errors": [], "macro_errors": [], "price_total": 101,
+            "corporate_actions": {"checked": 100, "inserted": 1, "updated": 3, "errors": ["GAS: timeout"]}}
+    msg = build_message(state, None, info, CFG, date(2026, 10, 28))
+    ca = msg["fields"][2]["value"]
+    assert ca == "**TCB** 29/10/2026 · Ngày GDKHQ: Cổ tức bằng cổ phiếu 50%"
+    assert "1/100 mã chưa kiểm tra được cổ tức/quyền mua: GAS" in msg["embed_desc"]
+
+
+def test_refresh_all_corporate_actions_retry_and_pause(monkeypatch):
+    import valuation.ingest.corporate_actions as ca_mod
+    from valuation.services import daily_report as dr
+
+    calls = []
+
+    def fake_refresh(db, ticker, force=False):
+        # Như hàm thật: không force mà mã vừa kiểm tra (OK < 24h, lỗi < 30 phút) → FRESH, không gọi VCI.
+        if ticker == "SEEN" or (not force and ticker in calls):
+            return {"status": "FRESH", "checked": False, "inserted": 0, "updated": 0}
+        calls.append(ticker)
+        if ticker == "BAD":
+            return {"status": "ERROR", "error": "HTTPSConnectionPool"}
+        if ticker == "FLAKY" and calls.count("FLAKY") == 1:
+            return {"status": "ERROR", "error": "timeout"}
+        return {"status": "OK", "inserted": 1, "updated": 0}
+
+    monkeypatch.setattr(ca_mod, "refresh_corporate_actions", fake_refresh)
+    sleeps = []
+    out = dr.refresh_all_corporate_actions(["AAA", "SEEN", "FLAKY", "BAD"], 1.0, sleep=sleeps.append)
+    # FLAKY lỗi lần đầu → thử lại (force) thành công; BAD lỗi cả 2 lần → liệt kê, không dừng;
+    # SEEN đã kiểm tra trong 24h (FRESH) → không phải lỗi.
+    assert calls == ["AAA", "FLAKY", "FLAKY", "BAD", "BAD"]
+    assert out == {"checked": 4, "inserted": 2, "updated": 0, "errors": ["BAD: HTTPSConnectionPool"]}
+    assert sleeps == [1.0, 1.0, 5.0, 1.0, 5.0]  # nghỉ giữa các mã, 5× khi thử lại, không nghỉ sau mã cuối

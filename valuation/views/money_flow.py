@@ -315,7 +315,7 @@ def flow_alerts(meta: dict) -> list[tuple[str, str, str | None]]:
                     f"Cửa sổ có {meta['gap_sessions']} phiên thiếu số khối ngoại (có giá) — mã bị thủng "
                     f"có phiếu Ngoại ◌. Bấm {_SCAN} ở thanh bên để cập nhật."
                 ),
-                "⚠️",
+                ":material/warning:",
             )
         )
     if meta.get("flow_date") and meta["flow_date"] != meta.get("price_date"):
@@ -326,7 +326,7 @@ def flow_alerts(meta: dict) -> list[tuple[str, str, str | None]]:
                     f"Dòng tiền mới đến {_d(meta['flow_date'])}, giá đến {_d(meta['price_date'])}: "
                     "nhãn và tổng tính đến ngày dòng tiền."
                 ),
-                "ℹ️",
+                ":material/info:",
             )
         )
     if meta.get("provisional_prop"):
@@ -337,7 +337,7 @@ def flow_alerts(meta: dict) -> list[tuple[str, str, str | None]]:
                     f"Tự doanh {_d(meta['provisional_prop'])} là số tạm (chưa chốt), không tính vào "
                     "phiếu và tổng."
                 ),
-                "ℹ️",
+                ":material/info:",
             )
         )
     return out
@@ -1029,12 +1029,56 @@ def _chart_block(t: str, key: tuple, db: Any, mode: str) -> None:
         "Các tầng", list(LAYERS), default=default, key="flow_layers"
     )
     v = chart_slice(h, int(ccfg["ranges"][rng]))
-    st.plotly_chart(
-        flow_chart(v, layers, mode, st.context.theme.type == "dark"),
-        width="stretch",
-        theme=None,
-        config={"displaylogo": False, "scrollZoom": True},
-    )
+    dark = st.context.theme.type == "dark"
+    if ccfg.get("engine", "lightweight") == "lightweight":
+        # D90: Lightweight Charts (TradingView) — cùng dữ liệu/tầng; "plotly" trong config để quay lại bản cũ.
+        import streamlit.components.v1 as components
+
+        from valuation.views import lw_chart
+
+        vp_cfg = ccfg["volume_profile"]
+        # Volume profile: tắt mặc định, người dùng bật khi cần (D91).
+        profile = (
+            lw_chart.volume_profile(v, int(vp_cfg["rows"]), float(vp_cfg["value_area"]))
+            if st.toggle(
+                "Volume profile",
+                value=False,
+                key="flow_vp",
+                help="Khối lượng khớp theo vùng giá trong khung đang chọn (rải đều KL mỗi phiên "
+                "trên biên độ cao–thấp). Xanh = phiên tăng, vàng = phiên giảm; đậm = vùng giá trị "
+                f"{float(vp_cfg['value_area']):.0%}. POC = vùng giá khớp nhiều nhất.",
+            )
+            else None
+        )
+        if profile:
+            profile["width"] = float(vp_cfg["width"])
+        payload = lw_chart.build_payload(
+            v,
+            layers,
+            mode,
+            titles=_LAYER_TITLE,
+            helps=lessons.CHART_HELP,
+            order=LAYERS,
+            profile=profile,
+        )
+        components.html(
+            lw_chart.render_html(payload, dark), height=lw_chart.chart_height(payload)
+        )
+        if profile:
+            st.caption(
+                f"Volume profile {len(v)} phiên: POC {profile['poc']:,.0f} · VAH {profile['vah']:,.0f} · "
+                f"VAL {profile['val']:,.0f} · tổng KL khớp {profile['total']:,.0f} cp. "
+                "Cố định theo khung thời gian đang chọn (zoom không tính lại).".replace(
+                    ",", "."
+                )
+            )
+    else:
+        st.plotly_chart(
+            flow_chart(v, layers, mode, dark),
+            width="stretch",
+            theme=None,
+            config={"displaylogo": False, "scrollZoom": True},
+        )
     src = (
         "VCI khớp lệnh/thỏa thuận (flow_daily)"
         if (v["source"] == "exact").all()

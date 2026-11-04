@@ -44,10 +44,10 @@ if os.path.exists(env_cwd):
 else:
     load_dotenv(env_bundled)
 
-# Cấu hình giao diện Streamlit (Premium Styling)
+# Cấu hình trang Streamlit
 st.set_page_config(
-    page_title="VN100 Valuation - Hệ thống định giá tự động chuẩn quỹ",
-    page_icon="📈",
+    page_title="Định giá VN100",
+    page_icon=":material/query_stats:",
     layout="wide",
     initial_sidebar_state="auto",
 )
@@ -158,7 +158,7 @@ try:
                 st.info(
                     f"**{freshness_headline}.** {freshness_details} "
                     "Dùng nút cập nhật ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô ») khi cần.",
-                    icon="⚠️",
+                    icon=":material/warning:",
                 )
         st.session_state["auto_weekly_check_done"] = True
 
@@ -307,7 +307,7 @@ try:
         # Khối định giá (thẻ khuyến nghị + cảnh báo + cờ): CSS ẩn khi đang mở tab Cổ tức / VN100
         # để 2 tab không liên quan định giá hiển thị gọn (D55).
         with st.container(key="valuation_head"):
-            # 3. Hiển thị Summary Banner (Premium Styling)
+            # 3. Dải tổng quan định giá
             # NOT_RATED phải TRUNG TÍNH (xám), không tô đỏ: "chưa đủ cơ sở định giá"
             # hoàn toàn khác "khuyến nghị bán" — tô đỏ sẽ khiến người đọc hiểu nhầm
             # thành tín hiệu tiêu cực (D28).
@@ -360,7 +360,7 @@ try:
                 alerts.append(
                     (
                         "error",
-                        "🚨 **HARD GATES BỊ VI PHẠM (Chỉ định: HARD REJECT)**\n"
+                        "**Hard gates bị vi phạm — chỉ định: hard reject**\n"
                         + "\n".join(f"- {v}" for v in violations),
                         None,
                     )
@@ -373,7 +373,7 @@ try:
                             "Chưa công bố giá mục tiêu: dữ liệu đầu vào chưa đạt kiểm tra "
                             "hoặc mô hình còn thiếu dữ liệu chuyên ngành."
                         ),
-                        "🚫",
+                        ":material/block:",
                     )
                 )
                 alerts += [
@@ -381,12 +381,12 @@ try:
                     for i in _res.get("data_checks", [])
                     if i["severity"] == "error"
                 ]
-            icons = {"error": "🚨", "warning": "⚠️"}
+            icons = {"error": ":material/error:", "warning": ":material/warning:"}
             alerts += [
                 (
                     vf["level"] if vf["level"] in icons else "info",
                     f"`{vf['code']}` — {vf['message']}",
-                    icons.get(vf["level"], "ℹ️"),
+                    icons.get(vf["level"], ":material/info:"),
                 )
                 for vf in valuation_flags
             ]
@@ -405,7 +405,7 @@ try:
             ]
             render_alerts(alerts)
             st.caption(
-                ("" if violations else "✅ Không vi phạm Hard Gates · ")
+                ("" if violations else "Không vi phạm hard gates · ")
                 + f"MOS mục tiêu ({decision.get('business_nature', 'Unknown')}): "
                 f"{decision.get('target_mos', 0) * 100:.0f}%"
             )
@@ -414,6 +414,7 @@ try:
         from valuation.data_access.corporate_actions import (
             should_refresh_corporate_actions,
         )
+        from valuation.ingest.company_disclosures import disclosures_stale
         from valuation.ingest.corporate_actions_background import (
             schedule_corporate_actions_refresh,
         )
@@ -427,7 +428,7 @@ try:
             company.ticker,
             ttl_hours=int(_corporate_cfg.get("refresh_ttl_hours", 24)),
             error_retry_minutes=int(_corporate_cfg.get("error_retry_minutes", 30)),
-        ):
+        ) or disclosures_stale(company.ticker):
             corporate_refresh = schedule_corporate_actions_refresh(company.ticker)
         else:
             corporate_refresh = {
@@ -503,7 +504,7 @@ try:
     else:
         st.info(
             "Chọn mã ở thanh bên (điện thoại: nút « Chọn mã · Vĩ mô » góc trên trái) rồi nhấn **'Nạp lại mô hình đã lưu'** để bắt đầu phân tích định giá.",
-            icon="ℹ️",
+            icon=":material/info:",
         )
         from valuation.views.money_flow import render_money_flow
         from valuation.views.vn100_ranking import render_vn100_ranking

@@ -299,3 +299,97 @@ def test_weekly_update_refreshes_sotp_subsidiaries_outside_vn100(monkeypatch):
     assert out["sotp_subs"] == {"SUB": "SUCCESS"}
     assert ("SUB", False) in calls
     assert [t for t, _ in calls].count("LIST") == 1
+
+
+def test_latest_ended_quarter_and_financials_due():
+    # Tính tay: 04/11/2026 → quý vừa kết thúc là Q3/2026; tháng 1–3 → Q4 năm trước.
+    import datetime as dt
+
+    assert pipeline.latest_ended_quarter(dt.date(2026, 11, 4)) == (2026, 3)
+    assert pipeline.latest_ended_quarter(dt.date(2026, 3, 31)) == (2025, 4)
+    assert pipeline.latest_ended_quarter(dt.date(2026, 4, 1)) == (2026, 1)
+    assert pipeline.latest_ended_quarter(dt.date(2027, 1, 15)) == (2026, 4)
+    today = dt.date(2026, 11, 4)
+    assert pipeline.financials_due(None, today) is True  # chưa có BCTC nào
+    assert pipeline.financials_due((2026, 2), today) is True  # thiếu Q3/2026 → kéo
+    assert pipeline.financials_due((2026, 3), today) is False  # đã có quý mới nhất → bỏ qua
+
+
+def test_run_ingest_parallel_fetches_concurrently_with_same_result(monkeypatch):
+    # D92: nút "Tải mới"/tự tải khi mở mã gọi mạng cùng lúc; ghi DB vẫn tuần tự nên kết quả
+    # phải y hệt chạy tuần tự (đợt quét VN100 vẫn dùng parallel=False).
+    import threading
+    import time
+
+    lock = threading.Lock()
+    inflight = {"now": 0, "max": 0}
+
+    def slow(frame):
+        def fetch(*_args, **_kwargs):
+            with lock:
+                inflight["now"] += 1
+                inflight["max"] = max(inflight["max"], inflight["now"])
+            time.sleep(0.1)
+            with lock:
+                inflight["now"] -= 1
+            return frame.copy()
+
+        return fetch
+
+    prices = pd.DataFrame(
+        {
+            "time": ["2026-09-10"],
+            "open": [10.0],
+            "high": [10.0],
+            "low": [10.0],
+            "close": [10.0],
+            "volume": [100],
+        }
+    )
+    fin = pd.DataFrame(
+        {"item": ["Tiền mặt"], "item_en": ["Cash"], "item_id": ["cash"], "2026-Q3": [1000.0]}
+    )
+    flow = pd.DataFrame(
+        {
+            "time": [pd.Timestamp("2026-09-10").date()],
+            "buy_vol": [1.0],
+            "buy_val": [10.0],
+            "sell_vol": [0.0],
+            "sell_val": [0.0],
+            "net_vol": [1.0],
+            "net_val": [10.0],
+        }
+    )
+    monkeypatch.setattr(pipeline.vnstock_client, "get_historical_prices", slow(prices))
+    monkeypatch.setattr(pipeline.vnstock_client, "get_financials", slow(fin))
+    monkeypatch.setattr(pipeline.market_client, "fetch_foreign_flow", slow(flow))
+    monkeypatch.setattr(pipeline.market_client, "fetch_proprietary_flow", slow(flow))
+
+    out = {}
+    for parallel in (False, True):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine)
+        monkeypatch.setattr(pipeline, "SessionLocalWrite", factory)
+        with factory() as db:
+            db.add(Ticker(ticker="AAA", company_name="AAA", is_vn100=True))
+            db.commit()
+        inflight["max"] = 0
+        result = pipeline.run_ingest(
+            "AAA",
+            data_types=["prices", "financials"],
+            incremental=True,
+            include_yearly=True,
+            parallel=parallel,
+        )
+        with factory() as db:
+            stored = (
+                db.query(PricesDaily.close, PricesDaily.foreign_net_val).one(),
+                db.query(FinancialsQuarterly).count(),
+            )
+        out[parallel] = (result, inflight["max"], stored)
+
+    (seq, seq_max, seq_db), (par, par_max, par_db) = out[False], out[True]
+    assert seq_max == 1 and par_max >= 2
+    assert par == seq and par["status"] == "SUCCESS"
+    assert par_db == seq_db and par_db[1] > 0

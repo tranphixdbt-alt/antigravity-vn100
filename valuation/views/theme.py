@@ -15,6 +15,21 @@ def escape_html(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+# Thứ tự màu chuỗi cố định, đã qua kiểm tra mù màu (dataviz validate_palette, nền sáng).
+SERIES = ["#2a6fc9", "#d9691f", "#7b61c9", "#12945a", "#d0679a"]
+SERIES_OTHER = "#8a94a6"
+
+# Biểu đồ Plotly nền sáng cùng font/màu chữ với app. Trước đây nền slate tối + font "Inter"
+# không hề được nạp → trục rơi về font Times, lạc tông với app nền trắng.
+CHART_LAYOUT: dict[str, Any] = {
+    "template": "plotly_white",
+    "paper_bgcolor": "rgba(0,0,0,0)",
+    "plot_bgcolor": "rgba(0,0,0,0)",
+    "font": {"color": "#2e3a5b", "family": 'Manrope, "Segoe UI", Arial, sans-serif'},
+    "colorway": SERIES,
+}
+
+
 @lru_cache(maxsize=1)
 def _theme_css() -> str:
     """Đọc font một lần, không cần kết nối Google Fonts khi mở ứng dụng."""
@@ -66,15 +81,11 @@ def render_shell_header() -> None:
     st.markdown(
         """
 <header class="ag-shell-header">
-    <div class="ag-utility-bar">
-        <span>Phân tích &amp; đầu tư</span><span>Thị trường Việt Nam</span>
-    </div>
     <div class="ag-brand-row">
         <div class="ag-wordmark">VN<span>100</span></div>
         <span class="ag-brand-caption">Nghiên cứu cổ phiếu</span>
     </div>
     <div class="ag-page-heading">
-        <p class="ag-breadcrumb">Đầu tư / Cổ phiếu Việt Nam</p>
         <h1>Định giá cổ phiếu</h1>
     </div>
 </header>

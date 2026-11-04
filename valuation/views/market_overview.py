@@ -23,7 +23,7 @@ from valuation.views.macro_panel import MacroObs, _pct, _pts
 _INDEX_SCALE = 1000.0
 _ROUTING = Path(__file__).resolve().parents[1] / "config" / "routing.json"
 _SECTOR_NAMES = {"NH": "Ngân hàng", "CK": "Chứng khoán", "BH": "Bảo hiểm"}
-_LEVELS = {1: "✅", 0: "➖", -1: "❌", None: "⚪"}
+_LEVELS = {1: ":green[**✓**]", 0: ":gray[–]", -1: ":red[**✗**]", None: ":gray[·]"}  # ký hiệu chữ có màu, không dùng emoji
 
 
 @dataclass(frozen=True)
@@ -459,7 +459,7 @@ def render_market_overview(db) -> None:
         oldest = min(dates).date()
         stale = (today - oldest).days > int(cfg["stale_days"])
         st.sidebar.caption(
-            ("⚠️ Dữ liệu giá cũ — bấm Quét VN100 / Cập nhật vĩ mô · " if stale else "")
+            ("Dữ liệu giá cũ — bấm Quét VN100 / Cập nhật vĩ mô · " if stale else "")
             + f"Giá đến {oldest:%d/%m/%Y}"
         )
     if view:
@@ -473,11 +473,11 @@ def render_market_overview(db) -> None:
         if view.support:
             lv.append(f"Hỗ trợ {_vi(view.support[0])} ({view.support[1]})")
         st.sidebar.markdown(
-            f"📊 **VN-Index {_vi(view.last, 2)}** ({view.date:%d/%m}) · {chg}  \n"
+            f"**VN-Index {_vi(view.last, 2)}** ({view.date:%d/%m}) · {chg}  \n"
             f"Xu hướng: {trend}{rsi}  \n" + " · ".join(lv)
         )
         st.sidebar.markdown(
-            "🔭 **Sắp tới** _(kịch bản, không phải dự báo)_\n"
+            "**Sắp tới** _(kịch bản, không phải dự báo)_\n"
             + "\n".join(f"- {x}" for x in outlook(view, label, pillars, cfg))
         )
     st.sidebar.markdown(
@@ -488,18 +488,18 @@ def render_market_overview(db) -> None:
     if not sec.empty:
         strong = sec[sec.state == 1].index[:3].tolist()
         weak = sec[sec.state == -1].sort_values("rel").index[:3].tolist()
-        lines.append(f"📈 **Ngành mạnh:** {', '.join(strong) or '—'}")
-        lines.append(f"📉 **Ngành yếu:** {', '.join(weak) or '—'}")
+        lines.append(f"**Ngành mạnh:** {', '.join(strong) or '—'}")
+        lines.append(f"**Ngành yếu:** {', '.join(weak) or '—'}")
     if not tk.empty:
         picks = tk[tk.support]["Mã"].head(int(cfg["top_n"])).tolist()
-        lines.append(f"🎯 **Mã có lực (giá + khối ngoại):** {', '.join(picks) or '—'}")
+        lines.append(f"**Mã có lực (giá + khối ngoại):** {', '.join(picks) or '—'}")
     tags = latest_news_tags()
     if tags is None:
-        lines.append("📰 Bấm *Làm mới tin tức* để có nhãn tin")
+        lines.append("Bấm *Làm mới tin tức* để có nhãn tin")
     else:
         good, bad = tags["tich_cuc"], tags["tieu_cuc"]
-        lines.append(f"📰 **Tin tích cực:** {', '.join(good) or '—'}")
-        lines.append(f"📰 **Tin tiêu cực:** {', '.join(bad) or '—'}")
+        lines.append(f"**Tin tích cực:** {', '.join(good) or '—'}")
+        lines.append(f"**Tin tiêu cực:** {', '.join(bad) or '—'}")
     st.sidebar.markdown("  \n".join(lines))
 
     with st.sidebar.expander("Xem chi tiết"):

@@ -183,6 +183,12 @@ corporate_actions:
   dividend_min_events: 3
   dividend_min_hit_rate: 0.6
   dilution_warning_pct: 10.0
+  # Tin công bố doanh nghiệp (VCI news detail) trong tab Cổ tức & quyền mua — chỉ hiển thị (D89).
+  disclosures_days: 90
+  disclosures_max_items: 30
+  disclosures_visible: 5          # số tin hiện sẵn; còn lại sau nút "Hiện thêm"
+  disclosure_alert_days: 45        # tin cổ tức tiền/quyền mua mới hơn mốc này mà lịch chưa có → cảnh báo
+  press_excerpt_chars: 400         # tin báo chí chỉ hiện đoạn đầu + link gốc (bản quyền); tin sàn hiện toàn văn
   # Vốn điều lệ BCTC đã tăng ≥ (1+tỷ lệ)×(1−tol) so với trước GDKHQ → coi như đã phản ánh.
   split_reflected_tolerance: 0.02
 
@@ -617,6 +623,9 @@ daily_report:
   snapshot_stale_days: 14   # snapshot FV cũ hơn số ngày này → cảnh báo chạy lại xếp hạng tuần
   price_stale_days: 4       # giá đóng cửa mới nhất cũ hơn số ngày này → cảnh báo
   max_lines: 10             # tối đa số dòng mỗi danh sách (giới hạn 1024 ký tự/field của Discord)
+  corporate_actions_refresh: true  # kiểm tra cổ tức/quyền mua (VCI) cả rổ mỗi sáng (28/10/2026, người dùng chọn)
+  ca_pause_seconds: 3.0     # nghỉ giữa các mã; lỗi thử lại (force) sau 5×. 28/10: 1s → 24/100 timeout, 2s → 5, 6s → 0
+  ca_upcoming_days: 7       # báo cáo sáng liệt kê mã có mốc GDKHQ/chốt quyền/thanh toán trong số ngày này
 
 # ===================================================================
 # Trợ lý Discord (@bot + câu hỏi tự do) — valuation/services/assistant.py.
@@ -716,10 +725,19 @@ flow_ingest:
   backfill_days: 730              # lịch sử ~2 năm khi chạy lần đầu
   incremental_lookback_days: 10   # mỗi ngày kéo lại 10 ngày gần nhất (vá phiên thủng)
   max_calls_per_minute: 20        # theo hạn mức vnai
-  run_after: "17:30"              # giờ VN; sau giờ chốt tự doanh
+  rate_limit_wait_sec: 65         # vượt hạn mức → chờ rồi thử lại chính mã đó (D93); vnai mở lại sau ~1 phút
+  rate_limit_retries: 2           # hết số lần vẫn vượt hạn mức → dừng cả job (D73)
+  run_after: "17:30"              # giờ VN; sau giờ chốt tự doanh. Lịch thật 08:30 sáng hôm sau (D88): 18:00 VCI thường chưa có số
 # Biểu đồ dòng tiền chi tiết từng mã (D74): khung thời gian → số phiên; mặc định 3 tháng.
 money_flow_chart:
   history_days: 760               # ngày lịch nạp khi mở chi tiết (đủ 2 năm flow_daily)
   ranges: {"1T": 21, "3T": 63, "6T": 126, "1N": 252, "2N": 504}
   default_range: "1N"
+  volume_profile: {rows: 24, value_area: 0.70, width: 0.30}  # hàng giá · vùng giá trị · bề rộng tối đa (phần khung) — D91
+  engine: lightweight             # lightweight (TradingView Lightweight Charts, D90) | plotly (bản cũ)
   spark_sessions: 20              # dải cột khối ngoại trên thẻ mã
+
+learning:
+  # Chép knowledge/ (.md/.csv/.jsonl/.json) sang thư mục Drive riêng sau mỗi bản tóm tắt tuần — routine Claude cloud
+  # Chủ nhật 20:00 đọc ở đây (D85). Máy không có thư mục cha (VPS) → bỏ qua. Để trống = tắt.
+  knowledge_mirror_dir: "~/Library/CloudStorage/GoogleDrive-tranphixdbt@gmail.com/.shortcut-targets-by-id/18agtU6fpR5TUOQ34MscdIETims-hoTsa/DATA-G/Phi/1 Antigravity/chứng khoán định giá/vn100_knowledge"

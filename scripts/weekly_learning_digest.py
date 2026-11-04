@@ -153,6 +153,20 @@ def main() -> None:
     md = ld.render_digest(week, today, val, prev_val, top_dev, ai, ctck, flow, _proposals())
     (out_dir / f"{week}.md").write_text(md, encoding="utf-8")
     print(f"Đã ghi {out_dir / f'{week}.md'} ({len(md.splitlines())} dòng)")
+    _mirror()
+
+
+def _mirror() -> None:
+    from valuation.config import load_defaults
+
+    mirror = (load_defaults().get("learning") or {}).get("knowledge_mirror_dir")
+    if not mirror:
+        return
+    dst = Path(mirror).expanduser()
+    if not dst.parent.is_dir():
+        print(f"Bỏ qua chép knowledge: không thấy {dst.parent} (máy không gắn Google Drive)")
+        return
+    print(f"Đã chép {ld.mirror_knowledge(ld.KNOWLEDGE, dst)} file knowledge sang {dst}")
 
 
 if __name__ == "__main__":

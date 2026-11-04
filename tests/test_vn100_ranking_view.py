@@ -62,7 +62,7 @@ def test_ranking_table_hand_calculated():
     assert t.loc["AAA", "Ghi chú"] == ""
 
 
-def test_data_error_flags_excluded_including_undated_corporate_action():
+def test_data_error_flags_excluded_but_undated_corporate_action_only_warns():
     snap = {
         "rows": [
             _row("AAA", 15000, "X", ["CORPORATE_ACTION_UNDATED"]),
@@ -74,7 +74,8 @@ def test_data_error_flags_excluded_including_undated_corporate_action():
     }
     market = {t: (10000, D, LIQ) for t in ("AAA", "BBB", "CCC")}
     t = ranking_table(snap, market, CFG).set_index("Mã")
-    assert t.loc["AAA", "Ghi chú"] == "Lỗi dữ liệu: CORPORATE_ACTION_UNDATED"
+    # D86: cổ tức CP/thưởng thiếu GDKHQ chỉ cảnh báo, vẫn được xếp hạng.
+    assert t.loc["AAA", "Ghi chú"] == "" and t.loc["AAA", "Hạng"] == 1
     assert t.loc["BBB", "Ghi chú"] == "Lỗi dữ liệu: NOT_RATED"
     assert t.loc["CCC", "Ghi chú"] == ""
 

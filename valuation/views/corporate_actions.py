@@ -10,6 +10,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from valuation.analysis.company_disclosures import (
+    describe_disclosure,
+    uncalendared_payouts,
+)
 from valuation.analysis.corporate_actions import (
     _event_investment_note,
     analyze_corporate_action,
@@ -26,6 +30,10 @@ from valuation.data_access.corporate_actions import (
     load_upcoming_vn100_corporate_actions,
 )
 from valuation.db.models import PricesDaily
+from valuation.ingest.company_disclosures import (
+    load_cached_disclosures,
+    refresh_disclosures,
+)
 from valuation.ingest.corporate_actions import refresh_corporate_actions
 from valuation.services.ranking_store import latest_snapshot
 from valuation.views.device import phone_collapsible
@@ -110,6 +118,20 @@ def _render_capital_actions_style() -> None:
     .ca-explain p { color: #2e3a5b; font-size: 14px; line-height: 1.7; margin: 0 0 12px; }
     .ca-explain p:last-child { margin-bottom: 0; }
     .ca-table-note { border-left: 3px solid #1d4289; background: #f5f7fb; color: #2e3a5b; padding: 12px 16px; margin: 12px 0; font-size: 13px; line-height: 1.7; }
+    .ca-news-list { border: 1px solid #e4e9ec; border-radius: 8px; padding: 0 14px; background: #fff; }
+    .ca-news-more > summary { cursor: pointer; color: #1d4289; font-weight: 700; font-size: 14px; padding: 12px 0; }
+    .ca-news-more[open] > summary { border-bottom: 1px solid #e4e9ec; }
+    .ca-news-more > summary:focus-visible { outline: 2px solid #1d4289; outline-offset: 2px; }
+    .ca-news { border-bottom: 1px solid #e4e9ec; padding: 12px 0; }
+    .ca-news:last-child { border-bottom: 0; }
+    .ca-news summary { cursor: pointer; line-height: 1.6; }
+    .ca-news summary:focus-visible { outline: 2px solid #1d4289; outline-offset: 2px; }
+    .ca-news .ca-verdict { padding: 1px 8px; margin-right: 6px; }
+    .ca-news-date { color: #596481; font-size: 13px; font-variant-numeric: tabular-nums; margin-right: 8px; }
+    .ca-news-title { color: #2e3a5b; font-size: 15px; font-weight: 700; }
+    .ca-news-sum { color: #2e3a5b; font-size: 14px; margin-top: 4px; }
+    .ca-news-impact { color: #596481; font-size: 13px; }
+    .ca-news a { color: #1d4289; font-weight: 700; }
     @media (max-width: 900px) {
         .ca-mini-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -811,6 +833,112 @@ def _render_vn100_upcoming_calendar(
     )
 
 
+_DILUTION_LABELS = {"Phát hành thêm", "Quyền mua"}
+
+
+def _render_disclosure_alerts(
+    items: list[dict[str, Any]], rows: list[Any], today: datetime.date, cfg: dict[str, Any]
+) -> None:
+    """Tin cổ tức tiền/quyền mua đã công bố mà lịch quyền (VCI events, vào chậm) chưa có — D89."""
+    alerts = uncalendared_payouts(
+        items, rows, today=today, alert_days=int(cfg.get("disclosure_alert_days", 45))
+    )
+    for alert in alerts:
+        when = f", chốt {alert['record_date']:%d/%m/%Y}" if alert["record_date"] else ""
+        link = (
+            f' <a href="{_escape(alert["url"])}" target="_blank" rel="noopener noreferrer">Đọc tin gốc</a>'
+            if alert["url"]
+            else ""
+        )
+        st.markdown(
+            f'<div class="ca-table-note" style="border-left-color:#885800;background:#fff6df;">'
+            f"<b>Có công bố {_escape(alert['label'].lower())} chưa vào lịch{_escape(when)}</b> "
+            f"(tin {alert['published']:%d/%m}): {_escape(alert['title'])}. {_escape(alert['summary'])}.{link}<br>"
+            "Lịch quyền lấy từ VCI thường vào chậm vài ngày; số trên do máy đọc từ văn bản, đối chiếu bản gốc."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_disclosures(cache: dict[str, Any] | None, cfg: dict[str, Any]) -> None:
+    _section_head(
+        "Thông tin doanh nghiệp công bố",
+        f"Tin {int(cfg.get('disclosures_days', 90))} ngày gần nhất từ sàn (chính thức) và báo chí, qua VCI. "
+        "Nhãn và tóm tắt do máy phân loại theo từ khóa; bấm từng tin để đọc kỹ và mở bản gốc.",
+    )
+    if not cache:
+        st.caption(
+            "Chưa có tin công bố đã lưu cho mã này: hệ thống đang tải trong nền, "
+            "hoặc bấm nút Cập nhật sự kiện ở trên."
+        )
+        return
+    checked = cache.get("checked_at")
+    saved = f"lúc {datetime.datetime.fromisoformat(checked):%H:%M %d/%m}" if checked else ""
+    if cache.get("error"):
+        st.caption(
+            f"Lần tải tin gần nhất lỗi ({cache['error']}, thường do VCI chậm); "
+            + (
+                f"đang hiện bản lưu {saved}."
+                if checked
+                else "chưa có bản lưu, hệ thống tự thử lại sau ít phút."
+            )
+        )
+        if not checked:
+            return
+    elif checked:
+        st.caption(f"Cập nhật {saved}.")
+    items = cache.get("items") or []
+    if not items:
+        st.caption("Nguồn không có tin công bố nào trong khoảng này.")
+        return
+    excerpt = int(cfg.get("press_excerpt_chars", 400))
+    blocks = []
+    for item in items:
+        view = describe_disclosure(item, press_excerpt_chars=excerpt)
+        date = f"{view['published']:%d/%m/%Y}" if view["published"] else "-"
+        source_tone = "ca-good" if view["official"] else "ca-flat"
+        label_tone = "ca-warn" if view["label"] in _DILUTION_LABELS else "ca-flat"
+        summary = (
+            f'<div class="ca-news-sum">{_escape(view["summary"])}</div>' if view["summary"] else ""
+        )
+        detail = []  # nhãn + ảnh hưởng đã hiện ở dòng tóm tắt, phần mở chỉ thêm nội dung và link gốc
+        if view["facts"]:
+            detail.append(
+                f"<p><b>Số đọc từ văn bản:</b> {_escape(view['summary'])} (máy đọc, đối chiếu bản gốc).</p>"
+            )
+        if view["body"]:
+            detail.append(f"<p>{_escape(view['body'])}</p>")
+        if view["attachments"]:
+            detail.append(
+                "<p>Tài liệu đính kèm: " + ", ".join(_escape(a) for a in view["attachments"]) + "</p>"
+            )
+        if view["url"]:
+            text = "Mở công bố gốc trên trang sàn" if view["official"] else "Đọc bài gốc"
+            detail.append(
+                f'<p><a href="{_escape(view["url"])}" target="_blank" rel="noopener noreferrer">{text}</a></p>'
+            )
+        blocks.append(
+            '<details class="ca-news"><summary>'
+            f'<span class="ca-news-date">{date}</span>'
+            f'<span class="ca-verdict {source_tone}">{_escape(view["source"])}</span>'
+            f'<span class="ca-verdict {label_tone}">{_escape(view["label"])}</span>'
+            f'<span class="ca-news-title">{_escape(view["title"])}</span>{summary}'
+            f'<div class="ca-news-impact">{_escape(view["impact"])}</div>'
+            f'</summary><div class="ca-explain">{"".join(detail)}</div></details>'
+        )
+    # Chỉ hiện các tin mới nhất; phần còn lại gom sau nút "Hiện thêm" (người dùng yêu cầu, không rerun app).
+    visible = int(cfg.get("disclosures_visible", 5))
+    shown, rest = blocks[:visible], blocks[visible:]
+    more = (
+        f'<details class="ca-news-more"><summary>Hiện thêm {len(rest)} tin</summary>{"".join(rest)}</details>'
+        if rest
+        else ""
+    )
+    st.markdown(
+        f'<div class="ca-news-list">{"".join(shown)}{more}</div>', unsafe_allow_html=True
+    )
+
+
 def render_corporate_actions(
     company: Any,
     db: Any,
@@ -858,6 +986,7 @@ def render_corporate_actions(
     ):
         with st.spinner("Đang kiểm tra công bố mới..."):
             result = refresh_corporate_actions(db, company.ticker, force=True)
+            refresh_disclosures(company.ticker, force=True)
         st.session_state[refresh_state_key] = result
         st.rerun()
 
@@ -894,6 +1023,8 @@ def render_corporate_actions(
         historical_count=len(historical_rows),
     )
     _render_latest_payouts(rows, today)
+    disclosures = load_cached_disclosures(company.ticker)
+    _render_disclosure_alerts((disclosures or {}).get("items") or [], rows, today, cfg)
 
     with st.expander("Hiểu nhanh các con số trong phần này"):
         st.markdown("""
@@ -1016,6 +1147,8 @@ def render_corporate_actions(
                     st.caption(
                         "Nguồn tổng hợp; cần đối chiếu VSDC/HOSE/HNX/IR trước quyết định đầu tư."
                     )
+
+    _render_disclosures(disclosures, cfg)
 
     _section_head(
         "Phân tích chuyên sâu các sự kiện đã qua",

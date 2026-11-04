@@ -40,6 +40,7 @@ from valuation.report.verified_summary import (
     verified_summary_session_key,
 )
 from valuation.views.device import phone_collapsible, render_alerts
+from valuation.views.theme import CHART_LAYOUT, SERIES, SERIES_OTHER
 
 PLOTLY_CONFIG = {
     "modeBarButtonsToAdd": [
@@ -357,34 +358,12 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
         if _lbl:
             st.info(_lbl)
 
-    # 2. Render Kênh Khuyến Nghị (Premium Card Layout)
-    from valuation.engine.decision_engine import REC_LABELS_VI
-
+    # Thẻ khuyến nghị tối từng lặp lại đúng khuyến nghị/giá mục tiêu/thị giá của dải tổng quan
+    # đầu trang → bỏ. rec_color còn dùng cho biểu đồ và báo cáo PDF (màu chữ đọc được trên nền trắng).
     rec_color = (
-        "#10B981"
+        "#00843d"
         if rec == "BUY"
-        else ("#F59E0B" if rec in ["HOLD", "TRIM"] else "#EF4444")
-    )
-    rec_label = REC_LABELS_VI.get(rec, rec)
-
-    st.markdown(
-        f"""
-        <div style="background-color: #1E293B; padding: 24px; border-radius: 12px; border-left: 8px solid {rec_color}; margin-bottom: 24px;">
-            <h3 style="color: #F8FAFC; margin: 0 0 8px 0; font-family: 'Inter', sans-serif;">KHUYẾN NGHỊ ĐẦU TƯ</h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; align-items: center;">
-                <div>
-                    <h1 style="color: {rec_color}; margin: 0; font-size: clamp(30px, 9vw, 48px); font-weight: 800; font-family: 'Outfit', sans-serif;">{rec_label}</h1>
-                    <p style="color: #94A3B8; margin: 4px 0 0 0;">Upside kỳ vọng: <b>{upside:+.1f}%</b></p>
-                </div>
-                <div style="text-align: right;">
-                    <p style="color: #94A3B8; margin: 0;">Giá trị hợp lý (Blended):</p>
-                    <h2 style="color: #F8FAFC; margin: 0; font-family: 'Outfit', sans-serif;">{format_vnd(blended_fv)} VND</h2>
-                    <p style="color: #64748B; margin: 0;">Giá thị trường: {format_vnd(company.current_price)} VND</p>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+        else ("#b45309" if rec in ["HOLD", "TRIM"] else "#b91c1c")
     )
 
     # Cờ định giá (giải thích TẠI SAO kết quả bất thường thay vì để người
@@ -392,13 +371,13 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
     from valuation.engine.flag_descriptions import describe_flags
 
     # Điện thoại: khối đầu trang đã hiện 2 cờ nặng nhất → ở đây gom hết vào nhóm (D54).
-    icons = {"error": "🚨", "warning": "⚠️"}
+    icons = {"error": ":material/error:", "warning": ":material/warning:"}
     render_alerts(
         [
             (
                 vf["level"] if vf["level"] in icons else "info",
                 f"`{vf['code']}` — {vf['message']}",
-                icons.get(vf["level"], "ℹ️"),
+                icons.get(vf["level"], ":material/info:"),
             )
             for vf in describe_flags(_res.get("flags", []))
         ],
@@ -407,11 +386,11 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
 
     # Hiển thị bảng so sánh 2 phương pháp
     with phone_collapsible("Phương pháp & khoảng giá"):
-        st.subheader("Pha Trộn Các Phương Pháp Định Giá")
+        st.subheader("Pha trộn các phương pháp định giá")
         col1, col2 = st.columns(2)
         with col1:
             st.metric(
-                label=f"Giá trị Định giá Chính ({primary_method}):",
+                label=f"Định giá chính ({primary_method})",
                 value=f"{format_vnd(int_fv)} VND",
                 delta=(
                     f"{((int_fv - company.current_price)/company.current_price)*100:+.1f}% so với thị giá"
@@ -421,7 +400,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
             )
         with col2:
             st.metric(
-                label=f"Giá trị Định giá Phụ ({secondary_method}):",
+                label=f"Định giá phụ ({secondary_method})",
                 value=f"{format_vnd(rel_fv)} VND",
                 delta=(
                     f"{((rel_fv - company.current_price)/company.current_price)*100:+.1f}% so với thị giá"
@@ -441,7 +420,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
             y0=-0.5,
             x1=company.current_price,
             y1=2.5,
-            line={"color": "#64748B", "width": 3, "dash": "dash"},
+            line={"color": SERIES_OTHER, "width": 3, "dash": "dash"},
         )
         # Range Định giá Nội tại (giả lập biên an toàn ±15%)
         fig_ff.add_trace(
@@ -449,22 +428,20 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 y=[
                     f"Phương pháp Phụ ({secondary_method})",
                     f"Phương pháp Chính ({primary_method})",
-                    "Blended Giá trị (Blended)",
+                    "Giá trị pha trộn (Blended)",
                 ],
                 x=[rel_fv * 0.3, int_fv * 0.3, blended_fv * 0.3],
                 base=[rel_fv * 0.85, int_fv * 0.85, blended_fv * 0.85],
                 orientation="h",
-                marker={"color": ["#3B82F6", "#10B981", rec_color], "opacity": 0.8},
+                marker={"color": [SERIES[0], SERIES[3], rec_color], "opacity": 0.8},
                 name="Khoảng giá hợp lý (Fair Value Range ±15%)",
                 hoverinfo="x",
             )
         )
 
         fig_ff.update_layout(
-            paper_bgcolor="#0F172A",
-            plot_bgcolor="#1E293B",
-            font={"color": "#F8FAFC", "family": "Inter"},
-            title="Khoảng Giá Trị Định Giá So Với Thị Giá",
+            **CHART_LAYOUT,
+            title="Khoảng giá trị so với thị giá",
             xaxis_title="Giá trị cổ phiếu (VND)",
             height=300,
             margin={"l": 150, "r": 20, "t": 40, "b": 40},
@@ -474,16 +451,12 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 "y": 1.02,
                 "xanchor": "right",
                 "x": 1,
-                "font": {"color": "#F8FAFC"},
-                "bgcolor": "rgba(15, 23, 42, 0.9)",
-                "bordercolor": "#334155",
-                "borderwidth": 1,
             },
         )
         st.plotly_chart(fig_ff, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # 3.2. Biểu đồ giá & dòng tiền đã chuyển hẳn sang tab "Dòng tiền ngành" (D74).
-    st.caption("📈 Biểu đồ giá & dòng tiền đã chuyển sang tab **Dòng tiền ngành** (money) → "
+    st.caption("Biểu đồ giá & dòng tiền đã chuyển sang tab **Dòng tiền ngành** (money) → "
                "Xem biểu đồ & chi tiết mã này.")
 
     # 3.5. Waterfall Chart (Dòng tiền định giá - FCFF)
@@ -505,16 +478,14 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         y=fcff_vals + [0],
                         textposition="outside",
                         text=[f"{v:.0f}" for v in fcff_vals] + [f"{sum(fcff_vals):.0f}"],
-                        decreasing={"marker": {"color": "#EF4444"}},
-                        increasing={"marker": {"color": "#10B981"}},
-                        totals={"marker": {"color": "#3B82F6"}},
+                        decreasing={"marker": {"color": "#c4473a"}},
+                        increasing={"marker": {"color": SERIES[3]}},
+                        totals={"marker": {"color": SERIES[0]}},
                     )
                 )
 
                 fig_wf.update_layout(
-                    paper_bgcolor="#0F172A",
-                    plot_bgcolor="#1E293B",
-                    font={"color": "#F8FAFC", "family": "Inter"},
+                    **CHART_LAYOUT,
                     title="Dòng tiền tự do cho hãng (FCFF) dự phóng 5 năm",
                     height=400,
                     margin={"l": 40, "r": 40, "t": 60, "b": 40},
@@ -522,13 +493,13 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 st.plotly_chart(fig_wf, width="stretch", theme=None, config=PLOTLY_CONFIG)
             else:
                 st.info(
-                    "💡 Biểu đồ Waterfall không khả dụng cho phương pháp định giá hiện tại (không có dòng tiền chi tiết)."
+                    "Biểu đồ Waterfall không khả dụng cho phương pháp định giá hiện tại (không có dòng tiền chi tiết)."
                 )
 
     # 4. Sensitivity Analysis (Heatmap 2 chiều)
     with phone_collapsible("Heatmap độ nhạy định giá"):
         st.subheader(
-            "🔥 Heatmap Phân Tích Độ Nhạy 2 Chiều (Định giá thay đổi thế nào khi kịch bản thay đổi?)"
+            "Độ nhạy giá trị hợp lý theo chi phí vốn và g"
         )
         st.markdown(
             "Biểu đồ nhiệt này giúp bạn xem giá trị hợp lý thay đổi ra sao nếu Lãi suất chiết khấu (WACC) hoặc Tốc độ tăng trưởng dài hạn (g) cao hơn hay thấp hơn dự kiến."
@@ -568,22 +539,18 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
             },
             x=x_labels,
             y=y_labels,
-            color_continuous_scale="Viridis",
+            color_continuous_scale="Blues",
             text_auto=True,
         )
         fig_heat.update_layout(
-            paper_bgcolor="#0F172A",
-            plot_bgcolor="#1E293B",
-            font={"color": "#F8FAFC", "family": "Inter"},
+            **CHART_LAYOUT,
             height=400,
         )
         st.plotly_chart(fig_heat, width="stretch", theme=None, config=PLOTLY_CONFIG)
 
     # --- BIỂU ĐỒ DỰ PHÓNG 5 NĂM ---
-    _dark_theme_res = {
-        "paper_bgcolor": "#0F172A",
-        "plot_bgcolor": "#1E293B",
-        "font": {"color": "#F8FAFC", "family": "Inter"},
+    _chart_theme_res = {
+        **CHART_LAYOUT,
     }
 
     if scenario_projections:
@@ -608,7 +575,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         x=proj_years,
                         y=nii_proj,
                         name="Thu nhập lãi thuần (Net Interest Income)",
-                        marker_color="#3B82F6",
+                        marker_color=SERIES[0],
                     ),
                     secondary_y=False,
                 )
@@ -617,7 +584,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         x=proj_years,
                         y=ppop_proj,
                         name="LN trước dự phòng (PPOP)",
-                        marker_color="#10B981",
+                        marker_color=SERIES[3],
                         opacity=0.7,
                     ),
                     secondary_y=False,
@@ -627,7 +594,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         x=proj_years,
                         y=ni_proj,
                         name="Lợi nhuận sau thuế (Net Income)",
-                        line={"color": "#F59E0B", "width": 3},
+                        line={"color": SERIES[1], "width": 3},
                         mode="lines+markers",
                     ),
                     secondary_y=True,
@@ -635,20 +602,16 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 fig_forecast.update_yaxes(title_text="Tỷ đồng", secondary_y=False)
                 fig_forecast.update_yaxes(title_text="LNST (Tỷ đồng)", secondary_y=True)
                 fig_forecast.update_layout(
-                    title="Dự phóng Thu nhập Ngân hàng (5 năm)",
+                    title="Dự phóng thu nhập ngân hàng (5 năm)",
                     barmode="group",
                     height=420,
-                    **_dark_theme_res,
+                    **_chart_theme_res,
                     legend={
                         "orientation": "h",
                         "yanchor": "top",
                         "y": -0.2,
                         "xanchor": "left",
                         "x": 0,
-                        "font": {"color": "#F8FAFC"},
-                        "bgcolor": "rgba(15, 23, 42, 0.9)",
-                        "bordercolor": "#334155",
-                        "borderwidth": 1,
                     },
                 )
                 st.plotly_chart(fig_forecast, width="stretch", theme=None)
@@ -664,7 +627,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         x=proj_years,
                         y=rev_proj,
                         name="Doanh thu thuần (Net Revenue)",
-                        marker_color="#3B82F6",
+                        marker_color=SERIES[0],
                     ),
                     secondary_y=False,
                 )
@@ -673,7 +636,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                         x=proj_years,
                         y=ni_proj,
                         name="Lợi nhuận sau thuế (Net Income)",
-                        line={"color": "#10B981", "width": 3},
+                        line={"color": SERIES[3], "width": 3},
                         mode="lines+markers",
                     ),
                     secondary_y=True,
@@ -681,20 +644,16 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 fig_forecast.update_yaxes(title_text="Tỷ đồng", secondary_y=False)
                 fig_forecast.update_yaxes(title_text="LNST (Tỷ đồng)", secondary_y=True)
                 fig_forecast.update_layout(
-                    title="Dự phóng Doanh thu & Lợi nhuận (5 năm)",
+                    title="Dự phóng doanh thu & lợi nhuận (5 năm)",
                     barmode="group",
                     height=420,
-                    **_dark_theme_res,
+                    **_chart_theme_res,
                     legend={
                         "orientation": "h",
                         "yanchor": "top",
                         "y": -0.2,
                         "xanchor": "left",
                         "x": 0,
-                        "font": {"color": "#F8FAFC"},
-                        "bgcolor": "rgba(15, 23, 42, 0.9)",
-                        "bordercolor": "#334155",
-                        "borderwidth": 1,
                     },
                 )
                 st.plotly_chart(fig_forecast, width="stretch", theme=None)
@@ -729,36 +688,36 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                             f"{dnwc_val:,.1f}",
                             f"{fcff_val:,.1f}",
                         ],
-                        connector={"line": {"color": "#64748B"}},
-                        increasing={"marker": {"color": "#10B981"}},
-                        decreasing={"marker": {"color": "#EF4444"}},
-                        totals={"marker": {"color": "#3B82F6"}},
+                        connector={"line": {"color": SERIES_OTHER}},
+                        increasing={"marker": {"color": SERIES[3]}},
+                        decreasing={"marker": {"color": "#c4473a"}},
+                        totals={"marker": {"color": SERIES[0]}},
                     )
                 )
                 fig_waterfall.update_layout(
-                    title=f"Cầu nối FCFF — Năm {p1['year']}",
+                    title=f"Cầu nối FCFF — năm {p1['year']}",
                     yaxis_title="Tỷ đồng",
                     height=420,
-                    **_dark_theme_res,
+                    **_chart_theme_res,
                 )
                 st.plotly_chart(fig_waterfall, width="stretch", theme=None)
 
     # 5. Scenario Analysis
-    st.subheader("🎭 Phân Tích Kịch Bản")
+    st.subheader("Phân tích kịch bản")
     scenarios = run_scenario_analysis(company)
 
     cols = st.columns(4)
     with cols[0]:
-        st.metric("Kịch bản BULL:", f"{format_vnd(scenarios['Bull'])} VND")
+        st.metric("Bull", f"{format_vnd(scenarios['Bull'])} VND")
     with cols[1]:
-        st.metric("Kịch bản BASE (Mặc định):", f"{format_vnd(scenarios['Base'])} VND")
+        st.metric("Base (mặc định)", f"{format_vnd(scenarios['Base'])} VND")
     with cols[2]:
-        st.metric("Kịch bản BEAR:", f"{format_vnd(scenarios['Bear'])} VND")
+        st.metric("Bear", f"{format_vnd(scenarios['Bear'])} VND")
     with cols[3]:
-        st.metric("Kỳ vọng (25/50/25):", f"{format_vnd(scenarios['Expected'])} VND")
+        st.metric("Kỳ vọng (25/50/25)", f"{format_vnd(scenarios['Expected'])} VND")
 
     # 6. Consensus Đối chiếu (TÍNH NĂNG MỚI)
-    st.subheader("👥 Đối Chiếu Giá Mục Tiêu Consensus Thị Trường")
+    st.subheader("Đối chiếu giá mục tiêu consensus")
     consensus_res = get_consensus_data_with_decay(db_write, company.ticker)
 
     if consensus_res["median"] is not None:
@@ -775,8 +734,8 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
             # Gắn cờ cảnh báo nếu lệch quá 25%
             if abs(deviation) > 25.0:
                 st.warning(
-                    f"⚠️ Cảnh báo lệch Consensus cao: Định giá của bạn đang lệch {deviation:+.1f}% so với trung vị thị trường.",
-                    icon="🚨",
+                    f"Lệch consensus cao: Định giá của bạn đang lệch {deviation:+.1f}% so với trung vị thị trường.",
+                    icon=":material/error:",
                 )
 
         # Hiển thị bảng chi tiết các báo cáo
@@ -1118,7 +1077,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 saved = st.session_state.get(pdf_key)
                 if saved and saved[0] == html_sig:
                     st.download_button(
-                        label="📥 Tải xuống báo cáo PDF",
+                        label="Tải báo cáo PDF",
                         data=saved[1],
                         file_name=f"Bao_cao_dinh_gia_{company.ticker}.pdf",
                         mime="application/pdf",
@@ -1138,7 +1097,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
             }
             # Dựng khi bấm, không chạy lại trang (ảnh biểu đồ của lượt này không bị lượt sau ghi đè giữa chừng).
             st.download_button(
-                label="📥 Tải xuống báo cáo Word",
+                label="Tải báo cáo Word",
                 data=docx_on_click(
                     report_data, proj_headers, proj_rows, _docx_charts, docx_path
                 ),
@@ -1190,7 +1149,7 @@ def render_valuation_results(company: Company | CompanyBank, db_write: Session):
                 # kể cả khi thiếu key hoặc lỗi mạng.
                 statuses = {k: (v or {}).get("status") for k, v in sync.items()}
                 if all(v == "success" for v in statuses.values()):
-                    st.success("✅ Đã đồng bộ Google Sheets và Google Drive.")
+                    st.success("Đã đồng bộ Google Sheets và Google Drive.")
                 elif any(v == "error" for v in statuses.values()):
                     st.error("Đồng bộ lỗi: " + ", ".join(k for k, v in statuses.items() if v == "error"))
                 else:

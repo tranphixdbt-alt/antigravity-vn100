@@ -78,6 +78,7 @@ def _data_update_progress() -> None:
         st.caption(
             f"Đợt quét gần nhất xong {s['finished_at'][:16].replace('T', ' ')}: "
             f"{s['success']} đủ · {s['partial']} một phần · {s['failed']} lỗi / {s['total']} mã"
+            + (f" · {s['message'].rsplit(' · ', 1)[-1]}" if "flow_exit" in s else "")
         )
     elif state in ("FAILED", "INTERRUPTED"):
         st.warning(s["message"])
@@ -100,6 +101,16 @@ def short_company_name(ticker: str, name: str | None) -> str:
     """Bỏ loại hình pháp lý (Công ty Cổ phần, TMCP, CTCP) cho danh sách gọn; trùng mã → rỗng."""
     short = re.sub(r"\s{2,}", " ", _LEGAL_FORM.sub("", name or "")).strip(" -–")
     return "" if short.upper() == ticker else short
+
+
+def _claim_auto_refresh(state, ticker: str) -> bool:
+    """True đúng một lần cho mỗi mã trong phiên: mở/đổi mã thì tự tải mới (người dùng yêu cầu 30/10).
+    Đánh dấu TRƯỚC khi tải để lỗi mạng không gây vòng lặp tải lại mỗi lần rerun."""
+    done = state.setdefault("auto_refreshed_tickers", set())
+    if ticker in done:
+        return False
+    done.add(ticker)
+    return True
 
 
 def render_select_ticker(db_read: Session, db_write: Session = None):
@@ -235,23 +246,30 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
     if freshness.is_stale:
         st.sidebar.error(
             f"{freshness_headline}. {freshness_details}",
-            icon="⚠️",
+            icon=":material/warning:",
         )
     else:
         st.sidebar.success(
             f"{freshness_headline}. {freshness_details}",
-            icon="✅",
+            icon=":material/check_circle:",
         )
 
     col1, col2 = st.sidebar.columns(2)
-    if col1.button(
+    clicked = col1.button(
         f"Tải mới {ticker}",
         width="stretch",
-        help="Kéo dữ liệu giá, BCTC và báo cáo khuyến nghị CTCK mới nhất cho mã này.",
-    ):
+        help="Kéo giá, dòng tiền, BCTC và báo cáo khuyến nghị CTCK mới nhất cho mã này. "
+        "Mở hoặc đổi sang mã này sẽ tự tải bản nhẹ một lần (BCTC chỉ khi có quý mới).",
+    )
+    auto = _claim_auto_refresh(st.session_state, ticker)
+    if clicked or auto:
         with st.sidebar.status(f"Đang tải dữ liệu mới cho {ticker}...", expanded=True) as _st_status:
+            from concurrent.futures import ThreadPoolExecutor
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+
             from valuation.db.models import FinancialsQuarterly
-            from valuation.ingest.pipeline import run_ingest
+            from valuation.ingest.pipeline import financials_due, run_ingest
             from valuation.ingest.weekly_updater import _CONSENSUS_SOURCES
 
             try:
@@ -261,23 +279,45 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
                     .first()
                     is not None
                 )
-                _st_status.write("Bước 1/2: giá & BCTC (vnstock)...")
-                ingest_result = run_ingest(
-                    ticker,
-                    data_types=["prices", "financials"],
-                    incremental=True,
-                    include_yearly=not has_financial_history,
+                latest_q = (
+                    db_read.query(FinancialsQuarterly.fiscal_year, FinancialsQuarterly.fiscal_quarter)
+                    .filter(FinancialsQuarterly.ticker == ticker, FinancialsQuarterly.fiscal_quarter > 0)
+                    .order_by(FinancialsQuarterly.fiscal_year.desc(), FinancialsQuarterly.fiscal_quarter.desc())
+                    .first()
                 )
+                # D92: tự tải khi mở mã chỉ kéo BCTC khi DB chưa có quý gần nhất đã kết thúc; bấm nút thì kéo đủ.
+                today = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+                with_financials = clicked or financials_due(latest_q, today)
                 # Dùng chung danh sách nguồn với quét hàng tuần (D24) để nút này
                 # và nút quét VN100 không bao giờ lệch nhau về nguồn dữ liệu.
+                _st_status.write(
+                    "Đang tải song song: giá & dòng tiền"
+                    + (", BCTC" if with_financials else "")
+                    + " (vnstock) và báo cáo CTCK ("
+                    + ", ".join(name for name, _ in _CONSENSUS_SOURCES)
+                    + ")..."
+                )
                 broker_errors = []
                 broker_rows = 0
-                for _src_name, _importer in _CONSENSUS_SOURCES:
-                    _st_status.write(f"Bước 2/2: báo cáo CTCK từ {_src_name}...")
-                    try:
-                        broker_rows += len(_importer(ticker) or [])
-                    except _UI_HANDLED_EXCEPTIONS as e_broker:
-                        broker_errors.append(f"CTCK {_src_name}: {e_broker}")
+                with ThreadPoolExecutor(max_workers=1 + len(_CONSENSUS_SOURCES)) as pool:
+                    ingest_future = pool.submit(
+                        run_ingest,
+                        ticker,
+                        data_types=["prices", "financials"] if with_financials else ["prices"],
+                        incremental=True,
+                        include_yearly=not has_financial_history,
+                        parallel=True,
+                    )
+                    broker_futures = [
+                        (_src_name, pool.submit(_importer, ticker))
+                        for _src_name, _importer in _CONSENSUS_SOURCES
+                    ]
+                    for _src_name, _future in broker_futures:
+                        try:
+                            broker_rows += len(_future.result() or [])
+                        except _UI_HANDLED_EXCEPTIONS as e_broker:
+                            broker_errors.append(f"CTCK {_src_name}: {e_broker}")
+                    ingest_result = ingest_future.result()
 
                 updated_statements = [
                     statement
@@ -300,6 +340,11 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
                 if failed_statements:
                     details.append(
                         "BCTC chưa cập nhật: " + ", ".join(failed_statements)
+                    )
+                if not with_financials:
+                    details.append(
+                        f"BCTC đã có quý {latest_q[0]}-Q{latest_q[1]}, chưa tới kỳ quý mới — "
+                        "bỏ qua khi tự tải; bấm Tải mới để kéo lại."
                     )
                 if broker_rows:
                     details.append(
@@ -352,9 +397,9 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
 
         if start_job():
             st.session_state["data_update_waiting"] = True
-            st.toast("Đã bắt đầu quét VN100; tiến độ hiển thị ngay bên dưới.", icon="✅")
+            st.toast("Đã bắt đầu quét VN100; tiến độ hiển thị ngay bên dưới.", icon=":material/check_circle:")
         else:
-            st.toast("Một đợt quét đang chạy; không tạo thêm đợt mới.", icon="ℹ️")
+            st.toast("Một đợt quét đang chạy; không tạo thêm đợt mới.", icon=":material/info:")
 
     with st.sidebar:
         _data_update_progress()
@@ -382,17 +427,17 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
                 st.session_state["analyst_assumptions"] = (
                     None  # Reset assumptions của analyst
                 )
-                st.toast(f"Đã nạp xong mô hình định giá {ticker} ({mode})!", icon="✅")
+                st.toast(f"Đã nạp xong mô hình định giá {ticker} ({mode})!", icon=":material/check_circle:")
             except _UI_HANDLED_EXCEPTIONS as e:
                 st.sidebar.error(f"Lỗi khi nạp dữ liệu: {e}")
 
     if "company" in st.session_state:
         comp = st.session_state["company"]
-        profile_slot.info(
-            f"**Doanh nghiệp:** {comp.name}\n\n"
-            f"**Ngành:** {comp.sector}\n\n"
-            f"**Giá hiện tại:** {comp.current_price:,.0f} VND\n\n"
-            f"**CP lưu hành:** {comp.shares_outstanding:,.2f} triệu cp"
+        # Thông tin tra cứu, không phải thông báo → chữ thường, không đóng khung callout xanh.
+        profile_slot.markdown(
+            f"**{comp.name}**  \n"
+            f"{comp.sector} · {comp.current_price:,.0f} VND  \n"
+            f"{comp.shares_outstanding:,.2f} triệu cp lưu hành"
         )
 
         # Nạp kịch bản đã lưu từ DB (Việc 5)
@@ -410,7 +455,7 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
 
             if past_runs:
                 st.sidebar.markdown("---")
-                st.sidebar.subheader("💾 Nạp kịch bản cũ")
+                st.sidebar.subheader("Nạp kịch bản cũ")
                 run_options = [_format_run_option(r) for r in past_runs]
                 selected_run_option = st.sidebar.selectbox(
                     "Chọn kịch bản cũ để nạp:", run_options, key="select_past_run"
@@ -445,7 +490,7 @@ def render_select_ticker(db_read: Session, db_write: Session = None):
                         if "projections" in st.session_state:
                             del st.session_state["projections"]
 
-                        st.toast(f"Đã nạp kịch bản Vòng {run.id}!", icon="📥")
+                        st.toast(f"Đã nạp kịch bản Vòng {run.id}!", icon=":material/download:")
                         st.rerun()
         except _UI_HANDLED_EXCEPTIONS as ex:
             st.sidebar.error(f"Lỗi khi load danh sách kịch bản: {ex}")

@@ -1,4 +1,4 @@
-"""Job nền "Quét VN100": cập nhật giá + BCTC + khuyến nghị CTCK, có tiến độ.
+"""Job nền "Quét VN100": cập nhật giá + BCTC + khuyến nghị CTCK, rồi dòng tiền (flow_daily), có tiến độ.
 
 Cùng mẫu với job xếp hạng (investment_job): tiến trình Python riêng, trạng thái ghi
 ra status.json sau MỖI mã, khóa OS chống chạy trùng. Trước đây nút chỉ bật một
@@ -52,6 +52,17 @@ def start_job(store: Path = STORE) -> bool:
         return False
 
 
+_FLOW_EXIT_TEXT = {0: "dòng tiền đã cập nhật", 1: "dòng tiền cập nhật, một số mã lỗi",
+                   3: "dòng tiền: job khác đang chạy, bỏ qua"}
+
+
+def _run_flow_update() -> int:
+    """Chạy job flow_daily (cùng script với lịch sáng); trả mã thoát, log vào logs/flow_daily.log."""
+    with (ROOT / "logs" / "flow_daily.log").open("a", encoding="utf-8") as log:
+        return subprocess.run([sys.executable, "scripts/update_flow_daily.py"], cwd=ROOT,
+                              stdout=log, stderr=subprocess.STDOUT).returncode
+
+
 def main(store: Path = STORE) -> None:
     from valuation.db.session import SessionLocalRead, SessionLocalWrite
     from valuation.ingest.weekly_updater import run_weekly_auto_update
@@ -67,8 +78,14 @@ def main(store: Path = STORE) -> None:
         db_read, db_write = SessionLocalRead(), SessionLocalWrite()
         try:
             result = run_weekly_auto_update(db_read, db_write, progress_callback=progress)
+            write_json(store / "status.json", {"status": "RUNNING", "completed": result["total"],
+                                               "total": result["total"], "started_at": started, "updated_at": _now(),
+                                               "message": "Đang cập nhật dòng tiền khối ngoại/tự doanh (~10 phút)..."})
+            flow_exit = _run_flow_update()
+            flow_text = _FLOW_EXIT_TEXT.get(flow_exit, f"dòng tiền lỗi (mã {flow_exit}, xem logs/flow_daily.log)")
             write_json(store / "status.json", {
-                "status": "DONE", "message": result["message"], "completed": result["total"],
+                "status": "DONE", "message": f"{result['message']} · {flow_text}", "flow_exit": flow_exit,
+                "completed": result["total"],
                 "total": result["total"], "started_at": started, "updated_at": _now(), "finished_at": _now(),
                 "success": result["success_count"], "partial": result["partial_count"], "failed": result["fail_count"],
             })

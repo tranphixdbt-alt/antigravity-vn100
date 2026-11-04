@@ -506,8 +506,21 @@ def _compact_payload(
     market_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     is_bank = isinstance(company, CompanyBank)
-    income_rows = [row.model_dump() for row in company.historical_is[-5:]]
-    balance_rows = [row.model_dump() for row in company.historical_bs[-5:]]
+    # Đề xuất W44 #3: dòng cuối là TTM (4 quý gần nhất) chứ không phải số dự phóng — ghi rõ kỳ, vì
+    # thiếu nhãn DeepSeek đọc "năm 2026" thành dự phóng lẫn với số thực tế (MWG 26/10/2026).
+    cashflows = getattr(company, "historical_cf", None) or []
+    ttm_last = bool(cashflows) and bool(getattr(cashflows[-1], "is_ttm_period", False))
+
+    def _rows(rows: list) -> list[dict[str, Any]]:
+        out = [row.model_dump() for row in rows[-5:]]
+        for i, row in enumerate(out):
+            last = i == len(out) - 1
+            row["period"] = f"TTM (4 quý gần nhất, năm {row.get('year')})" if last and ttm_last else f"FY{row.get('year')}"
+            row["is_actual"] = True  # số dự phóng nằm ở assumptions, không ở đây
+        return out
+
+    income_rows = _rows(company.historical_is)
+    balance_rows = _rows(company.historical_bs)
     assumptions = company.assumptions.model_dump()
     assumptions = {
         key: value
@@ -533,6 +546,14 @@ def _compact_payload(
         "balance_sheets": balance_rows,
         "assumptions": assumptions,
         "quality_metrics": _derived_quality_metrics(company),
+        "quality_metrics_period": income_rows[-1]["period"] if income_rows else None,
+        "metric_definitions": {
+            "roe": "LNST ÷ VCSH công ty mẹ bình quân 2 kỳ",
+            "debt_to_equity": "Nợ vay ngắn + dài hạn ÷ tổng VCSH cuối kỳ",
+            "roic": "EBIT × (1 − thuế) ÷ vốn đầu tư bình quân (VCSH + nợ vay − tiền)",
+            "lưu_ý": "quality_metrics tính theo quality_metrics_period; chỉ số các mã cùng ngành trong "
+            "market_context tính theo năm tài chính đầy đủ (metric_period) — khác kỳ nên số có thể khác.",
+        },
         "python_checks": deterministic_issues,
         "flag_explanations": _flag_explanations(company, deterministic_issues),
         "consensus_ctck": consensus_context or {"available": False, "reports": []},
@@ -889,6 +910,7 @@ def collect_market_context(
                     "revenue_cagr": metrics.get("revenue_cagr"),
                     "debt_to_equity": metrics.get("debt_to_equity"),
                     "cash_conversion": metrics.get("cash_conversion"),
+                    "metric_period": metrics.get("metric_period"),
                     **_profile(row, "defensive"),
                     **_profile(row, "accumulation"),
                 }
