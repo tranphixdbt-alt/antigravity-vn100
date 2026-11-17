@@ -34,6 +34,22 @@ def test_worker_writes_progress_then_done(tmp_path, monkeypatch):
     assert final["flow_exit"] == 0 and "dòng tiền" in final["message"]
 
 
+def test_prefetch_step_before_first_ticker_reports_zero_not_negative(tmp_path, monkeypatch):
+    # Lỗi 13/11: bước tải trước FHSC (D95) gọi progress_callback(0, …) → completed −1 → st.progress(−0,01)
+    # báo StreamlitAPIException mỗi 5 giây ở thanh bên suốt ~7 phút tải trước.
+    seen = []
+
+    def fake_update(db_read, db_write, progress_callback=None, max_tickers=None):
+        progress_callback(0, 100, "Đang tải trước giá & dòng tiền từ FHSC...")
+        seen.append(json.loads((tmp_path / "status.json").read_text(encoding="utf-8")))
+        return {"total": 100, "success_count": 100, "partial_count": 0, "fail_count": 0, "message": "xong"}
+
+    monkeypatch.setattr(weekly_updater, "run_weekly_auto_update", fake_update)
+    monkeypatch.setattr(job, "_run_flow_update", lambda: 0)
+    job.main(store=tmp_path)
+    assert seen[0]["completed"] == 0 and seen[0]["total"] == 100
+
+
 def test_running_status_without_worker_is_reported_interrupted(tmp_path):
     (tmp_path / "status.json").write_text(json.dumps({
         "status": "RUNNING", "completed": 40, "total": 100,

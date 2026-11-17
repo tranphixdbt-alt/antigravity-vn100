@@ -728,6 +728,16 @@ flow_ingest:
   rate_limit_wait_sec: 65         # vượt hạn mức → chờ rồi thử lại chính mã đó (D93); vnai mở lại sau ~1 phút
   rate_limit_retries: 2           # hết số lần vẫn vượt hạn mức → dừng cả job (D73)
   run_after: "17:30"              # giờ VN; sau giờ chốt tự doanh. Lịch thật 08:30 sáng hôm sau (D88): 18:00 VCI thường chưa có số
+# FHSC qua vnstock thế hệ 6 (D95, docs/PLAN_VNSTOCK_V6.md): job giá/Quét VN100 tải trước cả rổ, VCI là dự phòng.
+fhsc:
+  jobs: true                      # false → job quay về VCI hoàn toàn
+  python: "~/.venv_6x/bin/python" # môi trường thế hệ 6 riêng (không cài chung được với vnstock 4.x của app)
+  service_hours: ["06:00", "21:00"]  # FHSC chỉ phục vụ trong khung này; ngoài giờ job đi VCI
+  min_interval_sec: 1.4           # ≤ ~43 lời gọi/phút: gọi ~3 lần/giây thì FHSC trả 429 (đo 12/11/2026)
+  rate_limit_wait_sec: 30         # 429 → chờ rồi thử lại chính mã đó
+  rate_limit_retries: 2
+  timeout_sec: 1800               # cả lượt 100 mã × 3 loại ≈ 7–8 phút
+  cache_ttl_sec: 1800             # dữ liệu tải trước chỉ dùng trong lượt job đó
 # Biểu đồ dòng tiền chi tiết từng mã (D74): khung thời gian → số phiên; mặc định 3 tháng.
 money_flow_chart:
   history_days: 760               # ngày lịch nạp khi mở chi tiết (đủ 2 năm flow_daily)

@@ -28,6 +28,10 @@ class MarketFlowClient:
         Lấy dữ liệu mua bán ròng khối ngoại.
         Trả về DataFrame với các cột: time, buy_vol, buy_val, sell_vol, sell_val, net_vol, net_val.
         """
+        from valuation.ingest import fhsc_bridge
+
+        if end is None and (hit := fhsc_bridge.cached(ticker, "foreign", start)) is not None:
+            return hit  # job đã tải trước từ FHSC (D95)
         if not HAS_VNSTOCK_DATA:
             logger.info(f"Không cập nhật foreign_flow cho {ticker} từ {start}: thiếu vnstock_data optional.")
             # Trả về DF rỗng với cấu trúc chuẩn
@@ -48,6 +52,10 @@ class MarketFlowClient:
         Lấy dữ liệu mua bán ròng tự doanh.
         Trả về DataFrame với các cột: time, buy_vol, buy_val, sell_vol, sell_val, net_vol, net_val.
         """
+        from valuation.ingest import fhsc_bridge
+
+        if end is None and (hit := fhsc_bridge.cached(ticker, "prop", start)) is not None:
+            return hit  # job đã tải trước từ FHSC (D95)
         if not HAS_VNSTOCK_DATA:
             logger.info(f"Không cập nhật proprietary_flow cho {ticker} từ {start}: thiếu vnstock_data optional.")
             return pd.DataFrame(columns=['time', 'buy_vol', 'buy_val', 'sell_vol', 'sell_val', 'net_vol', 'net_val'])

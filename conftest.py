@@ -16,3 +16,6 @@ if "DATABASE_URL_WRITE" not in os.environ:
         shutil.copyfile(_src, _dst)
         os.environ["DATABASE_URL_WRITE"] = f"sqlite:///{_dst}"
         os.environ["DATABASE_URL_READONLY"] = f"sqlite:///{_dst}"
+
+# Job thật tải trước từ FHSC (D95); trong test không bao giờ gọi mạng.
+os.environ.setdefault("VN100_FHSC_JOBS", "0")

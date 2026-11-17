@@ -16,6 +16,18 @@ def _configure_vnstock_api_key(api_key: str) -> None:
     os.environ["VNSTOCK_API_KEY"] = api_key
 
 
+def _retry_vnai_threading_bug(func, *args, **kwargs):
+    """vnai 2.5.9 (beam/quota.py `import threading` cục bộ) ném UnboundLocalError ở lượt đồng bộ quota;
+    bộ đếm đã reset trước khi lỗi nên gọi lại ngay là qua — thử lại đúng 1 lần, như job dòng tiền (D88)."""
+    try:
+        return func(*args, **kwargs)
+    except UnboundLocalError as e:
+        if "'threading'" not in str(e):
+            raise
+        logger.warning("vnai lỗi 'threading' (bug thư viện) — gọi lại ngay 1 lần")
+        return func(*args, **kwargs)
+
+
 def _call_with_rate_limit_retry(
     func, *args, max_retries: int = 2, backoff_sec: float = 65.0, **kwargs
 ):
@@ -32,7 +44,7 @@ def _call_with_rate_limit_retry(
     """
     for attempt in range(max_retries + 1):
         try:
-            return func(*args, **kwargs)
+            return _retry_vnai_threading_bug(func, *args, **kwargs)
         except SystemExit as e:
             if attempt < max_retries:
                 logger.warning(
@@ -104,7 +116,11 @@ class VnstockClient:
         return _call_with_rate_limit_retry(_fetch)
 
     def get_historical_prices(self, symbol: str, start_date: str) -> pd.DataFrame:
-        """Lấy giá lịch sử từ ngày start_date (YYYY-MM-DD)"""
+        """Lấy giá lịch sử từ ngày start_date (YYYY-MM-DD). Job đã tải trước từ FHSC thì dùng phần đó (D95)."""
+        from valuation.ingest import fhsc_bridge
+
+        if (hit := fhsc_bridge.cached(symbol, "prices", start_date)) is not None:
+            return hit
         self._ensure_api_key()
         from vnstock.api.quote import Quote
 

@@ -71,8 +71,8 @@ def main(store: Path = STORE) -> None:
         started = (read_json(store / "status.json", {}) or {}).get("started_at", _now())
 
         def progress(idx: int, total: int, msg: str) -> None:
-            # idx là mã ĐANG xử lý → đã xong idx−1 mã.
-            write_json(store / "status.json", {"status": "RUNNING", "message": msg, "completed": idx - 1,
+            # idx là mã ĐANG xử lý → đã xong idx−1 mã; idx=0 = bước chung trước mã đầu (vd tải trước FHSC, D95).
+            write_json(store / "status.json", {"status": "RUNNING", "message": msg, "completed": max(0, idx - 1),
                                                "total": total, "started_at": started, "updated_at": _now()})
 
         db_read, db_write = SessionLocalRead(), SessionLocalWrite()

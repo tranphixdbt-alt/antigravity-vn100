@@ -62,6 +62,16 @@ def run_weekly_auto_update(
     consensus_counts: dict[str, int] = {name: 0 for name, _ in _CONSENSUS_SOURCES}
     consensus_errors: list[str] = []
 
+    from valuation.ingest import fhsc_bridge
+    from valuation.ingest.pipeline import _incremental_price_start
+
+    # D95: tải trước giá + khối ngoại + tự doanh cả rổ từ FHSC; mã thiếu/lỗi tự đi VCI trong run_ingest.
+    if progress_callback:
+        progress_callback(0, total, "Đang tải trước giá & dòng tiền từ FHSC...")
+    fhsc_stats = fhsc_bridge.prefetch(
+        {t: _incremental_price_start(t) for t in tickers}, ["prices", "foreign", "prop"]
+    )
+
     for idx, ticker in enumerate(tickers, start=1):
         status_msg = f"Đang cập nhật {ticker} ({idx}/{total})..."
         logger.info(status_msg)
@@ -152,7 +162,9 @@ def run_weekly_auto_update(
     )
     logger.info(summary_msg)
 
+    fhsc_bridge.clear()
     return {
+        "fhsc": fhsc_stats,
         "status": "SUCCESS" if not (partial_count or fail_count or subs_bad) else "PARTIAL",
         "total": total,
         "success_count": success_count,

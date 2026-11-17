@@ -96,6 +96,7 @@ def refresh_market() -> dict:
         "price_errors": [],
         "macro_errors": [],
         "price_total": 0,
+        "price_sources": {},
     }
     db = SessionLocalRead()
     try:
@@ -109,11 +110,21 @@ def refresh_market() -> dict:
         db.close()  # đóng giao dịch đọc trước khi ghi, tránh "database is locked"
     try:
         with exclusive_lock(DATA_LOCK):
+            from valuation.ingest import fhsc_bridge
+            from valuation.ingest.pipeline import _incremental_price_start
+
+            # D95: tải trước cả rổ từ FHSC trong một tiến trình; mã thiếu/lỗi tự đi VCI trong run_ingest.
+            info["fhsc"] = fhsc_bridge.prefetch(
+                {t: _incremental_price_start(t) for t in tickers + ["VNINDEX"]}, ["prices"]
+            )
             for t in tickers + ["VNINDEX"]:
                 try:
                     res = run_ingest(
                         t, ["prices"], include_yearly=False, include_market_flows=False
                     )["prices"]
+                    if res["status"] == "UPDATED":
+                        src = res.get("source", "vci")
+                        info["price_sources"][src] = info["price_sources"].get(src, 0) + 1
                     if res["status"] != "UPDATED":
                         info["price_errors"].append(
                             f"{t}: {res.get('error') or res['status']}"
@@ -125,6 +136,7 @@ def refresh_market() -> dict:
                         f"{t}: {type(exc).__name__}: {str(exc)[:100]}"
                     )
             info["price_total"] = len(tickers) + 1
+            fhsc_bridge.clear()
             db_w = SessionLocalWrite()
             try:
                 for name, fn in (
@@ -346,6 +358,10 @@ def build_message(
     else:
         if info["skipped"]:
             warn.append(f"⚠️ {info['skipped']}.")
+        src = info.get("price_sources") or {}
+        if src.get("vci"):  # D95: FHSC là nguồn chính; mã phải đi VCI thì ghi rõ lý do
+            why = (info.get("fhsc") or {}).get("skipped") or "FHSC lỗi/thiếu các mã này"
+            warn.append(f"ℹ️ Nguồn giá: FHSC {src.get('fhsc', 0)} mã, VCI {src['vci']} mã ({why}).")
         if info["price_errors"]:
             names = ", ".join(e.split(":")[0] for e in info["price_errors"][:limit])
             more = "…" if len(info["price_errors"]) > limit else ""

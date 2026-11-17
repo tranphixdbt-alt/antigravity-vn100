@@ -454,6 +454,7 @@ def run_ingest(
                 "rows": len(df_norm),
                 "last_date": last_price.isoformat(),
                 "full_refresh": full_refresh,
+                "source": df_prices.attrs.get("source", "vci"),  # D95: truy vết nguồn
             }
 
             if include_market_flows:
@@ -472,6 +473,7 @@ def run_ingest(
                             0 if df_foreign is None else len(df_foreign)
                         ),
                         "proprietary_rows": int(0 if df_prop is None else len(df_prop)),
+                        "source": getattr(df_foreign, "attrs", {}).get("source", "vci"),
                     }
                 except Exception as e:
                     logger.warning(f"Could not fetch market flows for {ticker}: {e}")
