@@ -30,6 +30,9 @@
 
 ## Đã xong
 
+### 2026-11-17
+- [x] Đẩy GitHub (tranphixdbt-alt/antigravity-vn100): 8 commit tới D95 + sửa test D62 (BAF đọc kỳ mới nhất); tài khoản rosinante2037-dev có quyền Write
+
 ### 2026-11-13
 - [x] Sửa lỗi thanh tiến độ "Quét VN100" báo StreamlitAPIException mỗi 5 giây khi đang tải trước FHSC (completed −1 → 0, D95)
 - [x] Sửa 3 test FHSC hỏng theo giờ thật (cố định đồng hồ bộ đệm trong test); chạy lại app + Quét VN100 sau khi máy tắt 19:38 làm đợt quét dừng ở 43/100
