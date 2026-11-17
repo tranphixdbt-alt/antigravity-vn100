@@ -1,0 +1,77 @@
+# VN100 tren VPS: giao dien (vn100) + lich job (vn100-worker) + bot Discord (vn100-bot), dung chung DB /data.
+# Tu 18/11/2026 VPS la ban chinh (thay may Mac): DB_SYNC_FROM_REPO=0 -> khong ghi de DB bang vn100_full.db.gz cua repo.
+x-vn100: &vn100
+  build: .
+  image: vn100:local
+  restart: unless-stopped
+  hostname: vps-web-vn100      # danh tinh co dinh: vnstock 6 dang ky thiet bi (goi golden chi 2 may Linux)
+  environment: &env
+    TZ: Asia/Ho_Chi_Minh
+    DB_SYNC_FROM_REPO: "0"
+    VNSTOCK_OAPI_SESSION_BACKEND: file          # FHSC (vnstock 6): luu phien ra file thay keyring
+    VNSTOCK_OAPI_STATE_DIR: /data/vnstock_oapi
+  env_file:
+    - path: .env          # API key/token (chep tu Mac qua SSH, chmod 600)
+      required: false
+  volumes:
+    - vn100_data:/data          # DB + trang thai lich + phien FHSC, khong mat khi deploy
+    - /etc/machine-id:/etc/machine-id:ro   # dung ma may cua VPS -> moi container/deploy la CUNG mot thiet bi
+    - vn100_logs:/app/logs      # log job/bot
+    - vn100_vnstock:/home/app/.vnstock   # dang nhap vnstock (the he 4/6)
+    # trang thai luc chay (khong co trong git): xep hang tuan, bao cao sang, quet, tin cong bo, bot... — song qua deploy
+    - vn100_state_vn100_ranking:/app/.vn100_ranking
+    - vn100_state_daily_report:/app/.daily_report
+    - vn100_state_data_update:/app/.data_update
+    - vn100_state_disclosures:/app/.disclosures
+    - vn100_state_assistant:/app/.assistant
+    - vn100_state_flow_update:/app/.flow_update
+    - vn100_state_deepseek_report_cache:/app/.deepseek_report_cache
+  networks: [web]
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  vn100:
+    <<: *vn100
+    container_name: vn100
+    environment:
+      <<: *env
+      STREAMLIT_SERVER_DISCONNECTED_SESSION_TTL: "1800"
+      STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: "none"
+    mem_limit: 1024m          # dung that ~370 MB; VPS 3,9 GB khong swap (treo 18/11 khi tong vuot RAM)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8506/_stcore/health',timeout=5).read()==b'ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+
+  vn100-worker:               # bao cao sang 07:50 T2-T6, dong tien 08:30 T2-T6, tom tat tuan CN 18:00
+    <<: *vn100
+    container_name: vn100-worker
+    command: ["python", "/opt/vn100/scheduler.py"]
+    mem_limit: 640m
+
+  vn100-bot:                  # bot Discord: CHI chay mot noi — launchd tren Mac da tat (launchctl disable, 18/11/2026)
+    <<: *vn100
+    container_name: vn100-bot
+    command: ["python", "scripts/discord_bot.py"]
+    mem_limit: 256m
+
+volumes:
+  vn100_data:
+    name: vn100_vn100_data      # giu dung volume cu (du an compose "vn100")
+  vn100_logs:
+  vn100_vnstock:
+  vn100_state_vn100_ranking:
+  vn100_state_daily_report:
+  vn100_state_data_update:
+  vn100_state_disclosures:
+  vn100_state_assistant:
+  vn100_state_flow_update:
+  vn100_state_deepseek_report_cache:
+
+networks:
+  web:
+    external: true

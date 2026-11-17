@@ -5,6 +5,8 @@
 
 ## Đang chờ
 
+- [ ] VPS: gỡ một thiết bị Linux cũ tại vnstocks.com/account?section=devices (golden đủ 2 máy Linux) → đăng nhập vnstock 6 trong vn100-worker; người dùng tự `vnstock keys set fhsc` (D96)
+- [ ] VPS 3,9 GB không swap: đề nghị chủ máy thêm swap 4 GB hoặc nâng RAM (treo 18/11) (D96)
 - [ ] Dòng tiền khối ngoại/tự doanh DỪNG từ 12/11: gói tài trợ vnstock thế hệ 4 bị khóa ("ngừng xác thực từ 10/11/2026"), job flow_daily FlowRateLimited 16/11 và 17/11 → chuyển flow_daily sang FHSC: (1) trong giờ 06:00–21:00 thử `columns="all"` xem FHSC có tách khớp/thỏa thuận không + chạy lại S2 cả rổ; (2) chọn cách lưu khi FHSC chỉ có ròng gộp (cần duyệt vì đụng định nghĩa D73)
 - [ ] Lịch flow-daily trên Mac vẫn 18:00: người dùng chạy lệnh launchctl của D88 để đổi sang 08:30
 - [ ] vnstock thế hệ 6 — kiểm tra lượt chạy thật đầu tiên qua FHSC: job giá 07:50 ngày 13/11 (báo cáo sáng, nguồn giá) (D95) — 13/11 CHƯA ĐẠT: FHSC lỗi mạng (ReadError) cả 100 mã, job tự dùng VCI, giá phiên 12/11 đủ 100/100; kiểm lại lượt 07:50 kế tiếp. ~10:00: trình duyệt cùng máy cũng không vào invest.fhsc.com.vn, máy chủ nước ngoài cũng bị cắt → FHSC sự cố hoặc chặn IP nhà; chờ thử bằng 4G
@@ -31,6 +33,9 @@
 - [ ] KIỂM THỬ 29/10 — bộ test mất 61 phút (dựng lại dữ liệu mã cùng ngành mỗi lần); tin vĩ mô AI cũ 9 ngày
 
 ## Đã xong
+
+### 2026-11-18
+- [x] VPS chạy thay Mac: vnstock 4 (chép từ Mac) + vnstock 6, `.env` đầy đủ, container lịch job (07:50/08:30/CN 18:00) + bot Discord, trạng thái Mac chép sang volume; launchd Mac đã tắt hẳn; thêm discord-webhook/pypdf vào requirements (D96)
 
 ### 2026-11-17
 - [x] VPS VN100 (`ubuntu@192.168.1.201`, máy `vps-web`, Docker `/srv/apps/vn100`, web chungkhoang.btinvest.vn có mật khẩu): đã ở commit mới nhất + DB tới 16/11 (tự đồng bộ từ GitHub). Chép riêng dòng `DEEPSEEK_API_KEY` vào `/srv/apps/vn100/.env` qua SSH (chmod 600; không chép token Discord/vnstock vì VPS chỉ chạy giao diện), `deploy vn100 --force`: container healthy, app nhận khóa

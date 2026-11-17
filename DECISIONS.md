@@ -728,3 +728,19 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Chặn:** ngoài 06:00–21:00, thiếu `~/.venv_6x`, `fhsc.jobs: false` hoặc `VN100_FHSC_JOBS=0` (conftest đặt cho mọi
   test) → không gọi FHSC. Giãn nhịp 1,4 s/lời gọi, 429 chờ 30 s thử lại 2 lần; lỗi từng mã → mã đó đi VCI.
 - Test `tests/test_fhsc_bridge.py`. Chạy thật đầu tiên: job 07:50 ngày 13/11/2026 (đêm 12/11 FHSC ngoài giờ).
+
+### D96 — VPS chạy thay máy Mac: giao diện + lịch job + bot trong Docker (2026-11-18, người dùng duyệt)
+- **Vì sao:** máy Mac sẽ không mở thường xuyên. VPS `vps-web` (192.168.1.201, Docker `/srv/apps/vn100`, web
+  `chungkhoang.btinvest.vn` có mật khẩu) trước đó chỉ chạy giao diện xem, không có vnstock.
+- **Làm:** image thêm vnstock 4 bản miễn phí chép từ Mac (Python thuần; index cũ đã gỡ) + vnstock 6 trong
+  `/home/app/.venv_6x` (FHSC). Thêm `vn100-worker` (`scheduler.py`, thư viện chuẩn: 07:50 báo cáo sáng T2–T6, 08:30
+  dòng tiền T2–T6, CN 18:00 tóm tắt tuần; chạy bù ≤ 3 giờ; trạng thái `/data/scheduler_state.json`) và `vn100-bot`.
+  `.env` đầy đủ chép qua SSH (chmod 600). DB trên VPS là bản chính (`DB_SYNC_FROM_REPO=0`); trạng thái lúc chạy
+  (`.vn100_ranking` gồm bộ đệm sponsor, `.daily_report`, …) chép từ Mac vào volume riêng. launchd trên Mac:
+  `launchctl bootout` + `disable` (bật lại: `launchctl enable gui/$UID/vn.antigravity-vn100.<tên>`).
+- **Lỗi lộ ra & sửa:** `requirements.txt` thiếu `discord-webhook`, `pypdf` (chỉ cài tay trên Mac). VPS 3,9 GB không
+  swap treo cứng 18/11 ~00:08 khi chạy thử container cạnh app (mongod coin-check bị OOM từ 23:47) → giới hạn RAM web
+  1 GB / worker 640 MB / bot 256 MB, đề nghị chủ máy thêm swap. Bản sao cấu hình: `deploy/docker/`.
+- **Còn chờ:** vnstock 6 trên VPS chưa đăng nhập được (tài khoản golden đủ 2 thiết bị Linux) → FHSC chưa dùng được,
+  giá/BCTC đi VCI bằng vnstock 4; dòng tiền chờ S2.
+
