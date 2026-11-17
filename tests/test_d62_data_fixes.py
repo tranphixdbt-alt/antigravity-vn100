@@ -24,10 +24,25 @@ def test_stub_year_without_cash_flow_is_dropped(db):
 
 
 def test_convertible_bonds_counted_as_debt(db):
-    # BAF Q2/2026: vay dài hạn 3.218,1 + trái phiếu chuyển đổi 513,1 = 3.731,2 tỷ (DTL 8,4 vẫn là nợ khác).
+    # Nợ dài hạn = vay dài hạn + trái phiếu chuyển đổi của kỳ BCTC mới nhất; quyền chọn chuyển đổi là vốn chủ,
+    # không cộng. Số kỳ vọng đọc từ DB để test không hỏng khi nạp quý mới (Q2/2026: 3.218,1 + 513,1 = 3.731,2;
+    # Q3/2026: 3.380,3 + 520,0 = 3.900,3 tỷ).
+    from sqlalchemy import text
+
+    year, quarter = db.execute(text(
+        "select fiscal_year, fiscal_quarter from financials_quarterly where ticker='BAF' and statement='BS' "
+        "and fiscal_quarter > 0 order by fiscal_year desc, fiscal_quarter desc limit 1"
+    )).one()
+    raw = dict(db.execute(text(
+        "select line_item, value / 1e9 from financials_quarterly where ticker='BAF' and statement='BS' "
+        "and fiscal_year=:y and fiscal_quarter=:q and line_item in "
+        "('long_term_borrowings', 'convertible_bonds', 'conversion_options_on_convertible_bonds')"
+    ), {"y": year, "q": quarter}).all())
     bs = build_company_data(db, "BAF", mode="TTM", fetch_live=False).historical_bs[-1]
-    assert bs.long_term_debt == pytest.approx(3731.2, abs=0.5)
-    assert bs.other_long_term_liabilities == pytest.approx(8.4, abs=0.5)
+    assert bs.year == year and raw["convertible_bonds"] > 0
+    assert bs.long_term_debt == pytest.approx(raw["long_term_borrowings"] + raw["convertible_bonds"], abs=0.5)
+    # Trái phiếu chuyển đổi đã vào nợ vay → không bị đếm lần hai trong nợ dài hạn khác.
+    assert bs.other_long_term_liabilities < raw["convertible_bonds"]
 
 
 def test_weight_dcf_follows_routing(db):
