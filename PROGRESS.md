@@ -6,7 +6,6 @@
 ## Đang chờ
 
 - [ ] Dòng tiền khối ngoại/tự doanh DỪNG từ 12/11: gói tài trợ vnstock thế hệ 4 bị khóa ("ngừng xác thực từ 10/11/2026"), job flow_daily FlowRateLimited 16/11 và 17/11 → chuyển flow_daily sang FHSC: (1) trong giờ 06:00–21:00 thử `columns="all"` xem FHSC có tách khớp/thỏa thuận không + chạy lại S2 cả rổ; (2) chọn cách lưu khi FHSC chỉ có ròng gộp (cần duyệt vì đụng định nghĩa D73)
-- [ ] Cập nhật VPS chạy VN100 bản tháng 10: cần user@IP máy Proxmox. 45.77.38.235 (root) KHÔNG phải máy VN100 (chạy coin_check/MongoDB, tải 176 trên 2 CPU — báo người dùng)
 - [ ] Lịch flow-daily trên Mac vẫn 18:00: người dùng chạy lệnh launchctl của D88 để đổi sang 08:30
 - [ ] vnstock thế hệ 6 — kiểm tra lượt chạy thật đầu tiên qua FHSC: job giá 07:50 ngày 13/11 (báo cáo sáng, nguồn giá) (D95) — 13/11 CHƯA ĐẠT: FHSC lỗi mạng (ReadError) cả 100 mã, job tự dùng VCI, giá phiên 12/11 đủ 100/100; kiểm lại lượt 07:50 kế tiếp. ~10:00: trình duyệt cùng máy cũng không vào invest.fhsc.com.vn, máy chủ nước ngoài cũng bị cắt → FHSC sự cố hoặc chặn IP nhà; chờ thử bằng 4G
 - [ ] vnstock thế hệ 6 — S2: chạy lại đối chiếu khối ngoại/tự doanh FHSC trong giờ 06:00–21:00 (đêm 12/11 mới được 3/100 mã) — 13/11 08:17 chạy lại được 0/100 mã (FHSC ReadError), chạy lại khi FHSC kết nối được
@@ -34,6 +33,7 @@
 ## Đã xong
 
 ### 2026-11-17
+- [x] VPS VN100 (`ubuntu@192.168.1.201`, máy `vps-web`, Docker `/srv/apps/vn100`, web chungkhoang.btinvest.vn có mật khẩu): đã ở commit mới nhất + DB tới 16/11 (tự đồng bộ từ GitHub). Chép riêng dòng `DEEPSEEK_API_KEY` vào `/srv/apps/vn100/.env` qua SSH (chmod 600; không chép token Discord/vnstock vì VPS chỉ chạy giao diện), `deploy vn100 --force`: container healthy, app nhận khóa
 - [x] Đẩy DB portable mới lên GitHub (giá tới 16/11, BCTC Q3/2026 107 mã, CTCK tới 13/11), quét secret trong DB: sạch
 - [x] Đẩy GitHub (tranphixdbt-alt/antigravity-vn100): 8 commit tới D95 + sửa test D62 (BAF đọc kỳ mới nhất); tài khoản rosinante2037-dev có quyền Write
 
