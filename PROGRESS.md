@@ -5,10 +5,13 @@
 
 ## Đang chờ
 
-- [ ] Đẩy GitHub các thay đổi từ 23/10 (gói VPS, vòng học, gộp tab, tab money, tóm tắt tuần) — chờ người dùng bảo "đẩy lên"
+- [ ] vnstock thế hệ 6 — kiểm tra lượt chạy thật đầu tiên qua FHSC: job giá 07:50 ngày 13/11 (báo cáo sáng, nguồn giá) (D95) — 13/11 CHƯA ĐẠT: FHSC lỗi mạng (ReadError) cả 100 mã, job tự dùng VCI, giá phiên 12/11 đủ 100/100; kiểm lại lượt 07:50 kế tiếp. ~10:00: trình duyệt cùng máy cũng không vào invest.fhsc.com.vn, máy chủ nước ngoài cũng bị cắt → FHSC sự cố hoặc chặn IP nhà; chờ thử bằng 4G
+- [ ] vnstock thế hệ 6 — S2: chạy lại đối chiếu khối ngoại/tự doanh FHSC trong giờ 06:00–21:00 (đêm 12/11 mới được 3/100 mã) — 13/11 08:17 chạy lại được 0/100 mã (FHSC ReadError), chạy lại khi FHSC kết nối được
+- [ ] vnstock thế hệ 6 — S3–S7: BCTC, sự kiện quyền, tin công bố, chuyển môi trường app (`docs/PLAN_VNSTOCK_V6.md`)
+- [ ] Trùng số D93: báo cáo PDF tích sản (11/11) dùng lại D93 của job dòng tiền (04/11, đã đẩy GitHub) — đổi báo cáo PDF sang số mới
 - [ ] VPS: nhân viên chạy `bash deploy/setup_vps.sh`, chép `.env` bằng `scp`; tắt launchd trên Mac khi VPS chạy
 - [ ] VPS → Google Drive: tự tải `knowledge/` lên Drive khi app/bot chạy trên VPS (để routine cloud đọc được)
-- [ ] 4 test vàng lệch dữ liệu thật (04/11): TCB cổ phiếu +50% sau chia, ACB chi phí tín dụng TTM và MSN SOTP đổi khi có quý 3, registry đồng thuận 28/09 hết hạn — cần cập nhật số kỳ vọng
+- [ ] 5 test vàng lệch dữ liệu thật (04/11, thêm 12/11): TCB cổ phiếu +50% sau chia, ACB chi phí tín dụng TTM và MSN SOTP đổi khi có quý 3, registry đồng thuận 28/09 hết hạn, BAF nợ vay (test lấy quý mới nhất, DB đã có Q3/2026 thay Q2) — cần cập nhật số kỳ vọng
 - [ ] PNJ (vụ P-Lab): chờ báo cáo CTCK lập sau 25/09/2026
 - [ ] 8 mã chưa có báo cáo CTCK nào: DIG, DSE, KDC, KOS, NAB, SJS, VIC, VPI
 - [ ] Bảo mật: kiểm tra ai có quyền thư mục Drive `DATA-G` (`.env` và `learning_webhook.env` nằm trong đó)
@@ -17,7 +20,6 @@
 - [ ] Routine Chủ nhật 01/11 20:00: kiểm tra đọc được `vn100_knowledge` trên Drive (D85)
 - [ ] VNM: chờ VCI đăng thông báo cổ tức mới (người dùng chọn chờ)
 
-- [ ] KIỂM THỬ 29/10 — lỗi vnai `threading` (UnboundLocalError) làm hỏng tải giá MSB/VPX sáng nay + xếp hạng (flow-daily đã tự thử lại, D88)
 - [ ] KIỂM THỬ 29/10 — giá mục tiêu CTCK không điều chỉnh khi chia cổ phiếu (HDB 30%, TCB 50% từ 29/10, PC1 15% từ 04/11) → trung vị CTCK cao ~30%
 - [ ] KIỂM THỬ 29/10 — xếp hạng 27/10 lỗi mạng: 23/100 mã không có FV (VHM, BCM, NLG… dù app định giá được); cần chạy lại
 - [ ] KIỂM THỬ 29/10 — "5 mã ứng viên" bỏ qua chốt chặn backend (backend 0 mã đạt); SHB +97,5% không có CTCK nào đứng đầu
@@ -27,6 +29,25 @@
 - [ ] KIỂM THỬ 29/10 — bộ test mất 61 phút (dựng lại dữ liệu mã cùng ngành mỗi lần); tin vĩ mô AI cũ 9 ngày
 
 ## Đã xong
+
+### 2026-11-13
+- [x] Sửa lỗi thanh tiến độ "Quét VN100" báo StreamlitAPIException mỗi 5 giây khi đang tải trước FHSC (completed −1 → 0, D95)
+- [x] Sửa 3 test FHSC hỏng theo giờ thật (cố định đồng hồ bộ đệm trong test); chạy lại app + Quét VN100 sau khi máy tắt 19:38 làm đợt quét dừng ở 43/100
+
+### 2026-11-12
+- [x] vnstock thế hệ 6 — S0: khóa FHSC dùng chung keyring với dự án chứng quyền, gọi thử HTTP 200 (D94)
+- [x] vnstock thế hệ 6 — S1: giá FHSC khớp DB 100/100 mã × 60 phiên, 0 ô lệch > 0,5%, có điều chỉnh hồi tố (D94)
+- [x] Chuyển từng phần: job giá 07:50 và Quét VN100 tải FHSC trước qua `~/.venv_6x`, VCI dự phòng; nút Tải mới vẫn VCI (D95)
+
+### 2026-11-11
+- [x] Lỗi vnai `threading` làm thiếu giá 2–3 mã/sáng: đường tải giá gọi lại ngay 1 lần; nạp bù MCH, VPI phiên 10/11 (D94)
+- [x] Kiểm tra vnstock: thế hệ 4 ngừng xác thực 10/11; dựng `~/.venv_6x` với vnstock 6.0.0, lập kế hoạch chuyển (D94)
+
+### 2026-11-05
+- [x] Đẩy GitHub `d424ada` (repo ngo-tuankiet/EA_dinhGiaP), đồng bộ tới D93 từ bản máy @1285662; repo tranphixdbt-alt chưa đẩy
+
+### 2026-11-11
+- [x] Báo cáo PDF 20 cổ phiếu tích sản 1–3 năm (VN100, 22 trang, độ tin cậy A/B/C) (D93)
 
 ### 2026-11-04
 - [x] Biểu đồ dòng tiền: KL khớp lồng vào tầng giá; thêm Volume profile bật/tắt, mặc định tắt (D91)

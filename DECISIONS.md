@@ -685,3 +685,46 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   giữ 18:00, nên bản đồ nhiệt thường trễ 1 phiên (số khối ngoại của phiên T có vào sáng T+1, lượt 18:00 ngày T+1
   mới lấy được).
 - Test: `tests/test_flow_ingest.py::test_rate_limit_waits_then_retries_same_ticker`.
+
+### D94 — vnstock thế hệ 4 ngừng xác thực: vá lỗi thiếu giá, dựng môi trường thế hệ 6 (2026-11-11, người dùng chọn)
+- **Kiểm tra:** cài đặt `vnstock` 4.0.7, `vnstock_data` 3.2.8, `vnai` 2.5.9, `vnii` 0.2.5. Trang lịch sử phiên bản
+  chính thức ghi thế hệ 4 ngừng xác thực từ 10/11/2026 và đã gỡ đường cài; index dòng cũ không còn bản cho Python
+  3.14. Thử thật 11/11: giá (VCI) và khối ngoại (`vnstock_data`) vẫn tải được.
+- **Thiếu giá mỗi sáng:** lỗi `vnai` `UnboundLocalError ... 'threading'` làm 2–3 mã/ngày không có giá (10/11: MCH,
+  VPI). `vnstock_client._retry_vnai_threading_bug` gọi lại ngay đúng 1 lần (như job dòng tiền D88; chỉ lỗi có
+  `'threading'`, lỗi khác vẫn nổi lên). Đã nạp bù MCH, VPI. Test `tests/test_vnstock_client_config.py`.
+- **Thế hệ 6 (người dùng chọn chuyển ngay):** `~/.venv_6x` riêng với `vnstock` 6.0.0 + `vnstock-oapi` 0.1.1 (tài khoản
+  đã nhận, hạn 14/04/2027). Không có VCI; FHSC bắt buộc cho BCTC và tự doanh, chỉ phục vụ 06:00–21:00. Chưa đổi code
+  đọc dữ liệu: kế hoạch từng lát + đối chiếu số trong `docs/PLAN_VNSTOCK_V6.md`, chờ người dùng đăng ký khóa FHSC.
+
+### D93 — Báo cáo PDF "20 cổ phiếu tích sản 1–3 năm" (2026-11-11, người dùng chọn)
+- **Bối cảnh:** bộ lọc nghiêm ngặt của xếp hạng tích sản không cho mã nào "đạt chuẩn" (thiếu ngày công
+  bố BCTC, chưa có hồ sơ quản trị kiểm chứng). Người dùng chọn: điểm tổng hợp + độ tin cậy, chỉ VN100,
+  một bảng chung 20 mã.
+- **Cách làm:** `scripts/collect_top_picks.py` (chỉ đọc DB) dựng lại hồ sơ 100 mã bằng `build_ranking_row`
+  + `rank_companies`; flow_ratio thiếu thì dùng ngoại ròng khớp lệnh/GTGD 20 phiên (flow_daily).
+  `valuation/report/top_picks.py`: điểm = trung bình 2 hồ sơ chuẩn hóa theo độ phủ; loại lỗi/cờ chặn/
+  MATERIAL_EVENT_HOLD/upside ≤0 hoặc >100%/thanh khoản thấp; tối đa 4 mã/ngành. Độ tin cậy A/B/C từ
+  4 tiêu chí (lệch đồng thuận ≤20%, ≥3 CTCK, không cờ warning trừ SOURCE_AUDIT_PARTIAL, kịch bản
+  xấu–tốt ≤40%; P/E, EV/EBITDA một kịch bản không tính đạt). Giá tham chiếu thận trọng = min(mô hình,
+  trung vị CTCK); vùng gom = ×(1 − min_mos hồ sơ tăng trưởng 15%).
+- `scripts/build_top_picks_pdf.py` → `reports_pdf/top20/Top20_tich_san_VN100_<ngày>.pdf` (22 trang).
+  Nhận định định tính ở `reports_pdf/top20/notes_<ngày>.yaml` (không chứa số định giá). Không phải
+  khuyến nghị đầu tư. Test `tests/test_top_picks.py`.
+
+### D95 — Chuyển từng phần sang FHSC: job giá và Quét VN100 tải trước qua vnstock thế hệ 6 (2026-11-12, người dùng chọn)
+- **Cách làm (người dùng chọn "chuyển từng phần"):** thế hệ 6 không cài chung với vnstock 4.x của app (cùng tên gói),
+  nên `scripts/fhsc_fetch.py` chạy bằng python của `~/.venv_6x`, chỉ TẢI giá/khối ngoại/tự doanh và in JSON; ghi DB
+  vẫn do code hiện tại ở `~/.venv` (không cài thêm gói, không đụng pandas 3). `valuation/ingest/fhsc_bridge.py`
+  gọi script MỘT lần cho cả rổ (khởi động vnstock 6 mất ~4–5 s), đưa về đúng dạng VCI (giá: ngày không múi giờ,
+  nghìn đồng, chỉ nhận hồ sơ `v5`; dòng tiền: date), giữ trong bộ đệm có hạn (`cache_ttl_sec`).
+  `vnstock_client.get_historical_prices` và `market_client.fetch_foreign_flow/proprietary_flow` lấy bộ đệm trước,
+  không có thì VCI như cũ. `run_ingest` ghi `source` (fhsc/vci) vào kết quả — bảng giá chưa có cột nguồn (đổi
+  schema cần duyệt riêng).
+- **Ai dùng:** job giá 07:50 (`daily_report.refresh_market`, 100 mã + VNINDEX) và Quét VN100 (`weekly_updater`, gồm
+  khối ngoại + tự doanh). Báo cáo sáng có dòng "Nguồn giá: FHSC x mã, VCI y mã (lý do)" khi phải dùng VCI. Nút "Tải
+  mới"/mở mã vẫn VCI (1–2 s; qua FHSC sẽ thành ~6–8 s vì khởi động tiến trình) cho tới khi dòng 4.x ngừng hẳn.
+  Job `flow_daily` vẫn VCI: cần tách khớp/thỏa thuận mà FHSC chưa kiểm (S2).
+- **Chặn:** ngoài 06:00–21:00, thiếu `~/.venv_6x`, `fhsc.jobs: false` hoặc `VN100_FHSC_JOBS=0` (conftest đặt cho mọi
+  test) → không gọi FHSC. Giãn nhịp 1,4 s/lời gọi, 429 chờ 30 s thử lại 2 lần; lỗi từng mã → mã đó đi VCI.
+- Test `tests/test_fhsc_bridge.py`. Chạy thật đầu tiên: job 07:50 ngày 13/11/2026 (đêm 12/11 FHSC ngoài giờ).
