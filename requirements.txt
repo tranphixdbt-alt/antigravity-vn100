@@ -16,6 +16,8 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 discord.py==2.7.1  # bot Discord (scripts/discord_bot.py) — trước đây thiếu, chỉ có trên máy Mac
+discord-webhook==1.4.1  # báo cáo sáng gửi webhook (valuation/output/discord_alerter.py) — thiếu, lộ ra khi chạy trên VPS 18/11
+pypdf==6.19.0  # đọc PDF báo cáo CTCK — thiếu như trên
 python-docx==1.2.0
 PyYAML==6.0.3
 reportlab==5.0.1
