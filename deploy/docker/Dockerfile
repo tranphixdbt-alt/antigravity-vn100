@@ -9,6 +9,12 @@ WORKDIR /app
 COPY app/requirements.txt /tmp/requirements.txt
 RUN grep -vE '^(vnstock|vnai|vnii|vnstock_data)\b' /tmp/requirements.txt > /tmp/req.txt \
  && pip install -q -r /tmp/req.txt
+# Chromium cho Playwright (xuat PDF) va kaleido (anh bieu do trong bao cao) — dung chung mot ban (them 18/11/2026).
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright BROWSER_PATH=/usr/local/bin/chromium-pw
+RUN python -m playwright install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/* && chmod -R a+rX /ms-playwright \
+ && ln -sf "$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | head -1)" /usr/local/bin/chromium-pw \
+ && test -x /usr/local/bin/chromium-pw
 # vnstock the he 4 BAN MIEN PHI (gia/BCTC tu VCI) chep tu may Mac ~/.venv (Python thuan; index cu da go 10/11/2026).
 # Khong co vnstock_data (goi tai tro the he 4 da bi khoa) -> job dong tien cho FHSC (PLAN_VNSTOCK_V6 S2).
 COPY vendor/gen4/ /usr/local/lib/python3.12/site-packages/
