@@ -761,5 +761,11 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   `prices_daily`, cờ thỏa thuận cận dưới) cho phiên không có `flow_daily` — không đổi công thức. Job `flow-daily`
   08:30 tắt trong `scheduler.py` VPS. `scripts/backfill_fhsc_flows.py <ngày>` vá một lần các phiên 13/11–17/11.
   Test: `tests/test_daily_report.py` (2 ca: có FHSC → tải dòng tiền trừ VNINDEX; ngoài giờ → không).
+- **Lỗi lộ ra khi vá (18/11 12:45) & sửa:** FHSC trả khối ngoại phiên ĐANG giao dịch → vá ghi 98 dòng phiên 18/11 chỉ có
+  dòng tiền tạm (tab money sẽ coi là phiên mới nhất). Đã trả phiên 18/11 về đúng bản sao lưu
+  `/data/backup-before-flows-20261118.db` (xóa 98 dòng tạm, xóa trắng dòng tiền 2 dòng có sẵn; so khớp = True).
+  Sửa gốc: `fhsc_bridge.prefetch` bỏ khối ngoại/tự doanh của phiên hôm nay (lượt sáng hôm sau lấy nhờ đệm 5 ngày);
+  áp cho báo cáo sáng, Quét VN100, script vá. Test `test_prefetch_drops_flows_of_unfinished_session`.
+  Kết quả vá 13–17/11: khối ngoại 100/100 mã cả 3 phiên; tự doanh 16, 17/11 100/100, 13/11 3/100 (FHSC trống trọn phiên).
 - **Giới hạn:** từ 13/11 chế độ « Loại thỏa thuận » chỉ còn đường A (cận dưới, gắn cờ), không còn số khớp lệnh chính
   xác. Muốn lại số tách: cần nguồn có khớp/thỏa thuận theo nhà đầu tư (chờ người dùng chọn).

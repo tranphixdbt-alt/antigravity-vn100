@@ -116,6 +116,20 @@ def test_prefetch_feeds_existing_clients_in_vci_shape(monkeypatch):
     assert fhsc_bridge.cached("FPT", "prices", "2026-01-01") is None
 
 
+def test_prefetch_drops_flows_of_unfinished_session():
+    # Lỗi 18/11/2026: vá lúc 12:40 ghi khối ngoại phiên 18/11 đang dở (FHSC trả số trong ngày) thành 98 dòng chỉ có
+    # dòng tiền, tab money coi là phiên mới nhất. Phiên hôm nay chưa chốt → bỏ, lượt sáng hôm sau lấy (đệm 5 ngày).
+    noon = DAY.replace(hour=12, minute=40)
+    flow = [{"time": f"2026-11-{d}T00:00:00.000+07:00", "buy_vol": 1.0, "buy_val": 2.0, "sell_vol": 3.0,
+             "sell_val": 4.0, "net_vol": -2.0, "net_val": -2.0} for d in (12, 13)]
+    price = [{"time": "2026-11-13T07:00:00.000+07:00", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}]
+    run = _fake_run([_item("FPT", "foreign", flow), _item("FPT", "prop", flow), _item("FPT", "prices", price)])
+    fhsc_bridge.prefetch({"FPT": "2026-11-12"}, ["foreign", "prop", "prices"], now=noon, run=run)
+    for kind in ("foreign", "prop"):
+        assert fhsc_bridge.cached("FPT", kind, "2026-11-12")["time"].tolist() == [dt.date(2026, 11, 12)]
+    assert len(fhsc_bridge.cached("FPT", "prices", "2026-11-12")) == 1  # giá trong phiên giữ như trước (nút Tải mới)
+
+
 def test_prefetch_guards_hours_unit_profile_and_ttl(monkeypatch):
     night = DAY.replace(hour=22)
     assert fhsc_bridge.prefetch({"FPT": "2026-11-11"}, ["prices"], now=night, run=_fake_run([]))["skipped"]

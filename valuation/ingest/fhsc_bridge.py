@@ -92,7 +92,11 @@ def prefetch(
             errors[key] = item["error"]
             continue
         try:
-            _CACHE[(item["ticker"], item["kind"])] = (starts[item["ticker"]], now, _frame(item))
+            df = _frame(item)
+            if item["kind"] != "prices" and not df.empty:
+                # Phiên hôm nay chưa chốt: FHSC trả khối ngoại/tự doanh trong ngày → bỏ, lượt sau lấy (lỗi 18/11/2026)
+                df = df[pd.to_datetime(df["time"]) < pd.Timestamp(now.astimezone(VN).date())]
+            _CACHE[(item["ticker"], item["kind"])] = (starts[item["ticker"]], now, df)
             ok += 1
         except ValueError as exc:
             errors[key] = str(exc)
