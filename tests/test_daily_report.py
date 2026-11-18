@@ -156,3 +156,70 @@ def test_refresh_all_corporate_actions_retry_and_pause(monkeypatch):
     assert calls == ["AAA", "FLAKY", "FLAKY", "BAD", "BAD"]
     assert out == {"checked": 4, "inserted": 2, "updated": 0, "errors": ["BAD: HTTPSConnectionPool"]}
     assert sleeps == [1.0, 1.0, 5.0, 1.0, 5.0]  # nghỉ giữa các mã, 5× khi thử lại, không nghỉ sau mã cuối
+
+
+def _fake_refresh(monkeypatch, tmp_path, skipped):
+    """refresh_market với DB/nguồn giả; trả (info, các lời gọi run_ingest)."""
+    import valuation.db.session as session_mod
+    import valuation.ingest.fhsc_bridge as fhsc_mod
+    import valuation.ingest.fred_fetcher as fred_mod
+    import valuation.ingest.macro_fetcher as macro_mod
+    import valuation.ingest.pipeline as pipeline_mod
+    import valuation.services.daily_report as dr
+
+    class _Q:
+        def filter(self, *_):
+            return self
+
+        def order_by(self, *_):
+            return iter([("AAA",)])
+
+    class _S:
+        def query(self, *_):
+            return _Q()
+
+        def close(self):
+            pass
+
+    calls, kinds = [], []
+    monkeypatch.setattr(dr, "DATA_LOCK", tmp_path / "worker.lock")
+    monkeypatch.setattr(dr, "_cfg", lambda: {"corporate_actions_refresh": False})
+    monkeypatch.setattr(session_mod, "SessionLocalRead", _S)
+    monkeypatch.setattr(session_mod, "SessionLocalWrite", _S)
+    monkeypatch.setattr(fred_mod, "fetch_fred", lambda db: None)
+    monkeypatch.setattr(macro_mod, "fetch_market_macro", lambda db: None)
+    monkeypatch.setattr(
+        pipeline_mod, "_incremental_price_start", lambda t: "2026-11-11"
+    )
+    monkeypatch.setattr(
+        fhsc_mod,
+        "prefetch",
+        lambda starts, k: kinds.extend(k)
+        or {"ok": 1, "errors": {}, "skipped": skipped},
+    )
+
+    def fake_ingest(t, types, include_yearly, include_market_flows):
+        calls.append((t, include_market_flows))
+        out = {"prices": {"status": "UPDATED", "source": "fhsc"}}
+        if include_market_flows:
+            out["market_flows"] = {"status": "UPDATED", "foreign_rows": 5}
+        return out
+
+    monkeypatch.setattr(pipeline_mod, "run_ingest", fake_ingest)
+    return dr.refresh_market(), calls, kinds
+
+
+def test_refresh_market_pulls_fhsc_flows_except_index(monkeypatch, tmp_path):
+    info, calls, kinds = _fake_refresh(monkeypatch, tmp_path, skipped=None)
+    assert kinds == ["prices", "foreign", "prop"]
+    assert calls == [("AAA", True), ("VNINDEX", False)]  # chỉ số không có khối ngoại
+    assert info["flow_updated"] == 1 and info["price_errors"] == []
+
+
+def test_refresh_market_skips_flows_outside_fhsc_hours(monkeypatch, tmp_path):
+    # ngoài giờ FHSC: không gọi nguồn dự phòng vnstock_data (đã khóa) cho dòng tiền
+    info, calls, _ = _fake_refresh(
+        monkeypatch, tmp_path, skipped="ngoài giờ phục vụ FHSC"
+    )
+    assert calls == [("AAA", False), ("VNINDEX", False)]
+    assert "flow_updated" not in info

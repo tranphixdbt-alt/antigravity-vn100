@@ -114,14 +114,24 @@ def refresh_market() -> dict:
             from valuation.ingest.pipeline import _incremental_price_start
 
             # D95: tải trước cả rổ từ FHSC trong một tiến trình; mã thiếu/lỗi tự đi VCI trong run_ingest.
+            # D97: thêm khối ngoại/tự doanh FHSC (gộp khớp + thỏa thuận, cùng định nghĩa cột prices_daily);
+            # ngoài giờ FHSC thì bỏ, vì nguồn dự phòng cũ (vnstock_data) đã bị khóa từ 10/11/2026.
             info["fhsc"] = fhsc_bridge.prefetch(
-                {t: _incremental_price_start(t) for t in tickers + ["VNINDEX"]}, ["prices"]
+                {t: _incremental_price_start(t) for t in tickers + ["VNINDEX"]},
+                ["prices", "foreign", "prop"],
             )
+            flows = info["fhsc"]["skipped"] is None
             for t in tickers + ["VNINDEX"]:
                 try:
-                    res = run_ingest(
-                        t, ["prices"], include_yearly=False, include_market_flows=False
-                    )["prices"]
+                    out = run_ingest(
+                        t,
+                        ["prices"],
+                        include_yearly=False,
+                        include_market_flows=flows and t != "VNINDEX",
+                    )
+                    if out.get("market_flows", {}).get("foreign_rows"):
+                        info["flow_updated"] = info.get("flow_updated", 0) + 1
+                    res = out["prices"]
                     if res["status"] == "UPDATED":
                         src = res.get("source", "vci")
                         info["price_sources"][src] = info["price_sources"].get(src, 0) + 1

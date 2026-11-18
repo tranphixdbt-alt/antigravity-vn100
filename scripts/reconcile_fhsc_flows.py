@@ -45,6 +45,8 @@ for i, t in enumerate(tickers):
     if i % 20 == 19:
         print(f"{i + 1}/{len(tickers)}", file=sys.stderr)
 
+if not parts:
+    sys.exit(f"0/{len(tickers)} mã có số FHSC · lỗi: {errors}")
 a = pd.concat(parts, ignore_index=True)
 a.to_csv("/Users/macos/antigravity-vn100/logs/reconcile_fhsc_flows.csv", index=False)
 print(f"Mã: {a.ticker.nunique()}/{len(tickers)} · lỗi: {errors or 'không'} · ô: {len(a)}")

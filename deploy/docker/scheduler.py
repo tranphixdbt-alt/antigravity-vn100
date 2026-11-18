@@ -20,7 +20,9 @@ from pathlib import Path
 # (tên, các thứ trong tuần: 0 = thứ 2 … 6 = chủ nhật, giờ hẹn, lệnh chạy trong /app) — giống launchd trên Mac
 JOBS = [
     ("daily-report", range(0, 5), "07:50", ["python", "scripts/daily_report.py"]),
-    ("flow-daily", range(0, 5), "08:30", ["python", "scripts/update_flow_daily.py"]),  # D88: đầu phiên
+    # D97: flow-daily (khớp/thỏa thuận tách, VCI qua vnstock_data) tắt — gói bị khóa từ 10/11/2026, job lỗi mỗi ngày.
+    # Khối ngoại/tự doanh gộp giờ lấy từ FHSC trong daily-report. Bật lại khi có nguồn tách khớp/thỏa thuận.
+    # ("flow-daily", range(0, 5), "08:30", ["python", "scripts/update_flow_daily.py"]),
     ("weekly-digest", [6], "18:00", ["python", "scripts/weekly_learning_digest.py"]),
 ]
 CATCH_UP = dt.timedelta(hours=3)

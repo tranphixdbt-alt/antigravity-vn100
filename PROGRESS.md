@@ -5,15 +5,11 @@
 
 ## Đang chờ
 
-- [ ] VPS: gỡ một thiết bị Linux cũ tại vnstocks.com/account?section=devices (golden đủ 2 máy Linux) → đăng nhập vnstock 6 trong vn100-worker; người dùng tự `vnstock keys set fhsc` (D96)
-- [ ] VPS 3,9 GB không swap: đề nghị chủ máy thêm swap 4 GB hoặc nâng RAM (treo 18/11) (D96)
-- [ ] Dòng tiền khối ngoại/tự doanh DỪNG từ 12/11: gói tài trợ vnstock thế hệ 4 bị khóa ("ngừng xác thực từ 10/11/2026"), job flow_daily FlowRateLimited 16/11 và 17/11 → chuyển flow_daily sang FHSC: (1) trong giờ 06:00–21:00 thử `columns="all"` xem FHSC có tách khớp/thỏa thuận không + chạy lại S2 cả rổ; (2) chọn cách lưu khi FHSC chỉ có ròng gộp (cần duyệt vì đụng định nghĩa D73)
-- [ ] Lịch flow-daily trên Mac vẫn 18:00: người dùng chạy lệnh launchctl của D88 để đổi sang 08:30
-- [ ] vnstock thế hệ 6 — kiểm tra lượt chạy thật đầu tiên qua FHSC: job giá 07:50 ngày 13/11 (báo cáo sáng, nguồn giá) (D95) — 13/11 CHƯA ĐẠT: FHSC lỗi mạng (ReadError) cả 100 mã, job tự dùng VCI, giá phiên 12/11 đủ 100/100; kiểm lại lượt 07:50 kế tiếp. ~10:00: trình duyệt cùng máy cũng không vào invest.fhsc.com.vn, máy chủ nước ngoài cũng bị cắt → FHSC sự cố hoặc chặn IP nhà; chờ thử bằng 4G
-- [ ] vnstock thế hệ 6 — S2: chạy lại đối chiếu khối ngoại/tự doanh FHSC trong giờ 06:00–21:00 (đêm 12/11 mới được 3/100 mã) — 13/11 08:17 chạy lại được 0/100 mã (FHSC ReadError), chạy lại khi FHSC kết nối được
+- [ ] VPS: đăng nhập vnstock 6 trong vn100-worker (golden đủ 2 máy Linux → gỡ một thiết bị cũ tại vnstocks.com/account?section=devices). KHÔNG cần cho FHSC (đã chạy bằng `FHSC_API_KEY`), chỉ cần khi làm S3–S7 (D96)
+- [ ] VPS: kiểm tra lượt báo cáo sáng 07:50 ngày 19/11 — lượt đầu có dòng tiền FHSC (D97): `docker exec vn100-worker tail /app/logs/daily-report.log`, `prices_daily` phiên 18/11 có `foreign_net_val` ~100 mã
+- [ ] Dòng tiền khớp lệnh/thỏa thuận TÁCH (`flow_daily`, chế độ « Loại thỏa thuận » chính xác) không còn nguồn từ 13/11: FHSC chỉ có số gộp; gọi thẳng API Vietcap IQ bị hệ thống chặn (đi vòng gói trả phí) → người dùng chọn nguồn (D97)
 - [ ] vnstock thế hệ 6 — S3–S7: BCTC, sự kiện quyền, tin công bố, chuyển môi trường app (`docs/PLAN_VNSTOCK_V6.md`)
 - [ ] Trùng số D93: báo cáo PDF tích sản (11/11) dùng lại D93 của job dòng tiền (04/11, đã đẩy GitHub) — đổi báo cáo PDF sang số mới
-- [ ] VPS: nhân viên chạy `bash deploy/setup_vps.sh`, chép `.env` bằng `scp`; tắt launchd trên Mac khi VPS chạy
 - [ ] VPS → Google Drive: tự tải `knowledge/` lên Drive khi app/bot chạy trên VPS (để routine cloud đọc được)
 - [ ] 5 test vàng lệch dữ liệu thật (04/11, thêm 12/11): TCB cổ phiếu +50% sau chia, ACB chi phí tín dụng TTM và MSN SOTP đổi khi có quý 3, registry đồng thuận 28/09 hết hạn, BAF nợ vay (test lấy quý mới nhất, DB đã có Q3/2026 thay Q2) — cần cập nhật số kỳ vọng
 - [ ] PNJ (vụ P-Lab): chờ báo cáo CTCK lập sau 25/09/2026
@@ -36,6 +32,11 @@
 
 ### 2026-11-18
 - [x] VPS chạy thay Mac: vnstock 4 (chép từ Mac) + vnstock 6, `.env` đầy đủ, container lịch job (07:50/08:30/CN 18:00) + bot Discord, trạng thái Mac chép sang volume; launchd Mac đã tắt hẳn; thêm discord-webhook/pypdf vào requirements (D96)
+- [x] VPS: khóa FHSC — `vnstock keys set fhsc` không lưu được trong container (NoKeyringError) → chép khóa từ keychain Mac vào `FHSC_API_KEY` trong `/srv/apps/vn100/.env` qua SSH (không in, chmod 600; khóa người dùng dán tay bị FHSC từ chối AUTH_KEY_INVALID), `docker compose up -d`; thử 07:25: FHSC trả giá ACB + VNINDEX tới phiên 17/11 (D96)
+- [x] Bỏ khỏi "Đang chờ": lịch flow-daily Mac 18:00 và setup_vps.sh (launchd Mac đã tắt, VPS chạy Docker)
+- [x] VPS có swap 2 GB (chủ máy thêm, thấy lúc 07:36)
+- [x] S2 vnstock 6 (07:33): FHSC khối ngoại/tự doanh = VCI khớp + thỏa thuận ở 100% ô (100 mã × 21 phiên, ≤ 0,1% GTGD); FHSC không tách khớp/thỏa thuận (D97)
+- [x] Báo cáo sáng tải thêm khối ngoại/tự doanh FHSC vào `prices_daily` (test 2 ca); tắt job flow-daily 08:30 trên VPS; script `scripts/backfill_fhsc_flows.py` vá phiên 13/11–17/11 (D97)
 
 ### 2026-11-17
 - [x] VPS VN100 (`ubuntu@192.168.1.201`, máy `vps-web`, Docker `/srv/apps/vn100`, web chungkhoang.btinvest.vn có mật khẩu): đã ở commit mới nhất + DB tới 16/11 (tự đồng bộ từ GitHub). Chép riêng dòng `DEEPSEEK_API_KEY` vào `/srv/apps/vn100/.env` qua SSH (chmod 600; không chép token Discord/vnstock vì VPS chỉ chạy giao diện), `deploy vn100 --force`: container healthy, app nhận khóa

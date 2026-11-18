@@ -744,3 +744,22 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Còn chờ:** vnstock 6 trên VPS chưa đăng nhập được (tài khoản golden đủ 2 thiết bị Linux) → FHSC chưa dùng được,
   giá/BCTC đi VCI bằng vnstock 4; dòng tiền chờ S2.
 
+
+### D97 — Khối ngoại/tự doanh gộp từ FHSC vào prices_daily; tắt job flow-daily (2026-11-18, người dùng « làm hết »)
+- **Vì sao:** khối ngoại/tự doanh DỪNG từ 12/11: `flow_daily` (khớp/thỏa thuận tách, D73) lấy qua gói tài trợ
+  `vnstock_data` đã bị khóa; cột dòng tiền `prices_daily` cũng chỉ được ghi qua gói đó (trừ Quét VN100, D95).
+- **Đo (S2, 18/11 07:33, 100 mã × 21 phiên 13/10–10/11):** FHSC chỉ có số GỘP — cả `columns="all"` và JSON gốc
+  (`trading/foreign/history`, `proprietary/history`, cả endpoint phiên gần nhất) để `matched`/`put_through` = null.
+  So với VCI khớp + thỏa thuận: khối ngoại 2100/2100 ô lệch ≤ 0,1% GTGD (trung vị 0); tự doanh 100% ô có số ở cả hai.
+  So với VCI chỉ khớp lệnh: 96,1% (khác ở 91 ô có thỏa thuận). Tự doanh FHSC trống trọn 5 phiên (14/10, 15/10, 22/10,
+  26/10, 28/10; 61–76 mã/phiên) nhưng có 546 ô VCI thiếu → độ phủ FHSC ≥ VCI; ô trống giữ NULL (= thiếu, D73).
+  `trading/history` (GTGD khớp/thỏa thuận cả thị trường) báo MCH 09/10 thỏa thuận = 0 dù khối ngoại bán 64 triệu cp →
+  không dùng để tách khớp/thỏa thuận khối ngoại.
+- **Làm:** báo cáo sáng 07:50 tải trước `["prices", "foreign", "prop"]` qua cầu nối FHSC và ghi cột dòng tiền
+  `prices_daily` (cùng định nghĩa gộp; `upsert_market_flows` coalesce, không đụng OHLCV) — chỉ khi FHSC chạy (ngoài
+  giờ 06:00–21:00 thì bỏ, không gọi gói đã khóa); VNINDEX không có dòng tiền. Tab money tự dùng đường A (suy từ
+  `prices_daily`, cờ thỏa thuận cận dưới) cho phiên không có `flow_daily` — không đổi công thức. Job `flow-daily`
+  08:30 tắt trong `scheduler.py` VPS. `scripts/backfill_fhsc_flows.py <ngày>` vá một lần các phiên 13/11–17/11.
+  Test: `tests/test_daily_report.py` (2 ca: có FHSC → tải dòng tiền trừ VNINDEX; ngoài giờ → không).
+- **Giới hạn:** từ 13/11 chế độ « Loại thỏa thuận » chỉ còn đường A (cận dưới, gắn cờ), không còn số khớp lệnh chính
+  xác. Muốn lại số tách: cần nguồn có khớp/thỏa thuận theo nhà đầu tư (chờ người dùng chọn).

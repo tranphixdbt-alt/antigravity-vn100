@@ -114,6 +114,8 @@ trình duyệt của người dùng trên cùng máy, và từ máy chủ nướ
 Cloudflare) vẫn mở. Chưa phân biệt được: FHSC sự cố, hay chặn IP nhà người dùng (bắt đầu ~23:00 12/11, ngay sau đợt
 gọi dồn bị 429) cộng chặn IP nước ngoài. Dữ liệu không bị ảnh hưởng nhờ VCI dự phòng.
 
+**S2 (18/11/2026, 07:33) — đạt cho số gộp, KHÔNG thay được số tách (D97).** 100/100 mã × 21 phiên (13/10–10/11), không lỗi: khối ngoại FHSC = VCI khớp + thỏa thuận ở 100% ô (≤ 0,1% GTGD, trung vị 0), tự doanh 100% ô có số. FHSC không tách khớp/thỏa thuận (`matched`/`put_through` = null cả JSON gốc) → số gộp ghi vào `prices_daily` qua báo cáo sáng; `flow_daily` dừng ở 12/11. Tự doanh FHSC trống trọn 5 phiên nhưng phủ thêm 546 ô VCI thiếu. Kết quả: `logs/reconcile_fhsc_flows_20261118.txt`.
+
 **Chuyển từng phần (D95, 12/11/2026 — người dùng chọn thay cho chuyển cả app một lần).** Job giá 07:50 và Quét
 VN100 tải trước cả rổ qua `scripts/fhsc_fetch.py` (python `~/.venv_6x`) → `valuation/ingest/fhsc_bridge.py` →
 client cũ lấy bộ đệm trước, VCI dự phòng; ghi DB giữ nguyên ở `~/.venv`. Còn VCI: nút "Tải mới"/mở mã (tốc độ),
