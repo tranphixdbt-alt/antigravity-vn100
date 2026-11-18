@@ -769,3 +769,13 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   Kết quả vá 13–17/11: khối ngoại 100/100 mã cả 3 phiên; tự doanh 16, 17/11 100/100, 13/11 3/100 (FHSC trống trọn phiên).
 - **Giới hạn:** từ 13/11 chế độ « Loại thỏa thuận » chỉ còn đường A (cận dưới, gắn cờ), không còn số khớp lệnh chính
   xác. Muốn lại số tách: cần nguồn có khớp/thỏa thuận theo nhà đầu tư (chờ người dùng chọn).
+
+### D98 — Đăng nhập chung *.btinvest.vn bằng tài khoản coin, bỏ tài khoản admin dùng chung (2026-11-18, người dùng chọn)
+- **Vì sao:** người dùng muốn trang đăng nhập riêng + tạo được tài khoản; coin.btinvest.vn (cùng VPS) đã có đăng ký/đăng nhập.
+- **Người dùng chọn:** mọi tài khoản coin (đã xác minh email) vào được cả VN100 và chứng quyền; cho sửa coin-check để
+  đăng nhập một lần dùng mọi trang.
+- **Làm:** Caddy `forward_auth` hỏi coin `/api/v1/auth/me`; trang `/dang-nhap` chung; coin-check đặt cookie
+  `Domain=.btinvest.vn` (biến `AUTH_COOKIE_DOMAIN`), nâng giới hạn `/me` 60 → 600 lượt/phút/IP (bị 429 khi thử).
+  Chi tiết, rủi ro, quay lui: `deploy/dang-nhap/README.md`. Kiểm: chưa đăng nhập → 302 `/dang-nhap?next=…`, 30 lượt liên
+  tiếp không 429, trang đăng nhập hiển thị đúng ở cỡ điện thoại. Chưa kiểm: đăng nhập thật (cần tài khoản của người dùng).
+- **Rủi ro:** API coin sập → hai trang không vào được; ai tạo tài khoản coin cũng sửa được danh mục chứng quyền, dùng AI.

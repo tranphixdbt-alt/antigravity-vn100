@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Đăng nhập</title>
+<!-- Trang đăng nhập chung cho *.btinvest.vn (chungkhoang, chungquyen): tài khoản coin.btinvest.vn, cookie dùng chung.
+     Caddy phục vụ ở /dang-nhap; API /api/v1/auth/* chuyển sang coin-check. ?next=/duong-dan (chỉ nhận đường dẫn trong trang),
+     ?dang-xuat=1 để đăng xuất. Bản thật: /srv/web/sites/dang-nhap/index.html trên VPS. -->
+<style>
+  :root { --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #5b6475; --line: #d7dbe3; --accent: #1f5fbf; --err: #b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12151b; --card: #1b2029; --text: #e6e9ef; --muted: #a2aab8; --line: #2e3542; --accent: #6ea8ff; --err: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+  main { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .site { color: var(--muted); margin: 0 0 20px; font-size: .95rem; overflow-wrap: anywhere; }
+  label { display: block; font-weight: 600; margin: 14px 0 6px; }
+  input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { width: 100%; margin-top: 20px; padding: 12px; font-size: 16px; font-weight: 600; border: 0; border-radius: 8px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .err { color: var(--err); margin: 14px 0 0; min-height: 1.5em; }
+  .links { margin-top: 18px; font-size: .95rem; color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Đăng nhập</h1>
+  <p class="site" id="site"></p>
+  <form id="f" hidden>
+    <label for="u">Email hoặc tên đăng nhập</label>
+    <input id="u" name="username" autocomplete="username" autocapitalize="none" required>
+    <label for="p">Mật khẩu</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button id="b" type="submit">Đăng nhập</button>
+    <p class="err" id="e" role="alert"></p>
+    <p class="links">Dùng tài khoản <a href="https://coin.btinvest.vn/auth/login">coin.btinvest.vn</a>.
+      Chưa có tài khoản? <a href="https://coin.btinvest.vn/auth/register">Tạo tài khoản</a>.</p>
+  </form>
+  <p id="cho">Đang kiểm tra phiên đăng nhập…</p>
+</main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var next = q.get("next") || "/";
+  // Chỉ quay về đường dẫn trong chính trang này (chặn chuyển hướng ra ngoài: //x, /\x, http:...)
+  if (!/^\/(?![\/\\])/.test(next) || next.indexOf("/dang-nhap") === 0) next = "/";
+  document.getElementById("site").textContent = "để vào " + location.hostname;
+  var form = document.getElementById("f"), err = document.getElementById("e"), btn = document.getElementById("b");
+
+  function post(path, body) {
+    return fetch("/api/v1/auth/" + path, {
+      method: "POST", credentials: "same-origin",
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined
+    });
+  }
+  function showForm() {
+    document.getElementById("cho").hidden = true;
+    form.hidden = false;
+    document.getElementById("u").focus();
+  }
+  function message(res, data) {
+    if (res.status === 429) return "Thử quá nhiều lần. Chờ 1 phút rồi đăng nhập lại.";
+    var m = data && (data.message || (data.error && data.error.message));
+    if (Array.isArray(m)) m = m.join(". ");
+    return m || (res.status === 401 ? "Sai email/tên đăng nhập hoặc mật khẩu." : "Không đăng nhập được (lỗi " + res.status + ").");
+  }
+
+  var start = q.get("dang-xuat") ? post("logout").catch(function () {}).then(function () { return null; })
+                                 : post("refresh").catch(function () { return null; });
+  start.then(function (res) {
+    if (res && res.ok) location.replace(next); else showForm();
+  });
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    err.textContent = ""; btn.disabled = true;
+    post("login", { usernameOrEmail: document.getElementById("u").value.trim(), password: document.getElementById("p").value })
+      .then(function (res) {
+        if (res.ok) { location.replace(next); return; }
+        return res.json().catch(function () { return null; }).then(function (d) { err.textContent = message(res, d); });
+      })
+      .catch(function () { err.textContent = "Mất kết nối. Thử lại."; })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>
