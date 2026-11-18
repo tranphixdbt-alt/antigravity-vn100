@@ -1,0 +1,13 @@
+# Ngữ cảnh build chỉ cần code + requirements: KHÔNG đưa secret và dữ liệu người dùng vào layer image.
+app/.env
+app/.venv
+app/.git
+app/ket_qua
+app/log.txt
+app/danh_muc*
+app/muc_gia*
+app/cw_da_biet.txt
+app/canh_bao_*.json
+app/__pycache__
+app/.pytest_cache
+app/.claude

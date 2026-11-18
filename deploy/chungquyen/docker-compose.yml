@@ -1,0 +1,52 @@
+# Chứng quyền trên VPS (từ 18/11/2026 là bản chính, launchd vn.cw-scanner.* trên Mac đã tắt):
+# web (chungquyen.btinvest.vn qua Caddy, có mật khẩu) + lịch (quét CW 14:00, ETF 09:40, danh mục & chiết khấu mỗi 5 phút).
+x-cw: &cw
+  build: .
+  image: chungquyen:local
+  restart: unless-stopped
+  user: "1000:1000"
+  hostname: vps-web-vn100      # cùng danh tính thiết bị với VN100 (vnstock 6 đếm thiết bị; cùng một máy VPS)
+  environment: &env
+    TZ: Asia/Ho_Chi_Minh
+    HOME: /home/app
+  volumes:
+    - ./app:/app                                # code + dữ liệu người dùng (danh_muc.csv, ket_qua/, .env chmod 600)
+    - sao_luu:/home/app/cw_scanner_sao_luu      # bản sao lưu hằng ngày của chay_quet_tu_dong.sh
+    - vnstock:/home/app/.vnstock                # đăng nhập vnstock
+    - /etc/machine-id:/etc/machine-id:ro
+  networks: [web]
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  chungquyen:
+    <<: *cw
+    container_name: chungquyen
+    command: ["/opt/venv/bin/python", "web.py"]
+    environment:
+      <<: *env
+      HOST: 0.0.0.0              # nghe trong mạng docker (Caddy); web nhận Origin theo Host -> chống CSRF vẫn đúng
+      PORT: "8000"
+      KHONG_MO_TRINH_DUYET: "1"
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 5).close()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  chungquyen-worker:
+    <<: *cw
+    container_name: chungquyen-worker
+    command: ["/opt/venv/bin/python", "/opt/cw/scheduler.py"]
+    mem_limit: 768m
+
+volumes:
+  sao_luu:
+  vnstock:
+
+networks:
+  web:
+    external: true

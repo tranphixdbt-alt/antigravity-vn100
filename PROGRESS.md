@@ -6,6 +6,8 @@
 ## Đang chờ
 
 - [ ] VPS: đăng nhập vnstock 6 trong vn100-worker (golden đủ 2 máy Linux → gỡ một thiết bị cũ tại vnstocks.com/account?section=devices). KHÔNG cần cho FHSC (đã chạy bằng `FHSC_API_KEY`), chỉ cần khi làm S3–S7 (D96)
+- [ ] VPS (cần Mac ở mạng nhà để SSH): vá dòng tiền 13/11–17/11 `docker exec -w /app vn100-worker python scripts/backfill_fhsc_flows.py 2026-11-13` (sao lưu DB trước); kiểm deploy 4f91eb0 (yfinance, Chromium: thử xuất PDF + `fig.write_image`)
+- [ ] App chứng quyền lên VPS (`/srv/apps/chungquyen`, xem `deploy/chungquyen/README.md`) — ĐÃ: kho git trên VPS (`repo.git`, Mac `git push vps main`), clone `app/` ở f9a5da0, image build xong, Caddy `chungquyen.btinvest.vn` (cùng mật khẩu chungkhoang, trả 401 qua Internet). CÒN (cần mạng nhà): tắt 4 launchd `vn.cw-scanner.*` trên Mac → chép `.env` (chmod 600), `danh_muc.csv(.bak)`, `cw_da_biet.txt`, `canh_bao_da_gui.json`, `ket_qua/` sang `app/` → `docker compose up -d` → chạy test cw trong container → `sudo systemctl enable --now deploy@chungquyen.timer`
 - [ ] VPS: kiểm tra lượt báo cáo sáng 07:50 ngày 19/11 — lượt đầu có dòng tiền FHSC (D97): `docker exec vn100-worker tail /app/logs/daily-report.log`, `prices_daily` phiên 18/11 có `foreign_net_val` ~100 mã
 - [ ] Dòng tiền khớp lệnh/thỏa thuận TÁCH (`flow_daily`, chế độ « Loại thỏa thuận » chính xác) không còn nguồn từ 13/11: FHSC chỉ có số gộp; gọi thẳng API Vietcap IQ bị hệ thống chặn (đi vòng gói trả phí) → người dùng chọn nguồn (D97)
 - [ ] vnstock thế hệ 6 — S3–S7: BCTC, sự kiện quyền, tin công bố, chuyển môi trường app (`docs/PLAN_VNSTOCK_V6.md`)

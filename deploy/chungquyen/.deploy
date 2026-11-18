@@ -1,0 +1,5 @@
+# Cau hinh cho lenh deploy (repo nam o ./app = git clone github.com/ngo-tuankiet/chung_quyen, compose o thu muc nay)
+REPO=app
+BRANCH=main
+HEALTH_URL=https://chungquyen.btinvest.vn/
+WAIT=120
