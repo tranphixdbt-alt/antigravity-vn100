@@ -17,6 +17,8 @@ RUN python -m venv /opt/venv \
 COPY app/ /tmp/code/
 RUN rm -rf /tmp/code
 COPY scheduler.py /opt/cw/scheduler.py
+# Điểm gắn volume phải có sẵn và thuộc app: volume mới chép quyền từ đây (thiếu -> root, vnstock/sao lưu không ghi được)
+RUN mkdir -p /home/app/.vnstock /home/app/cw_scanner_sao_luu && chown app:app /home/app/.vnstock /home/app/cw_scanner_sao_luu
 USER app
 WORKDIR /app
 EXPOSE 8000
