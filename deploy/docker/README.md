@@ -1,6 +1,6 @@
 # VN100 trên VPS bằng Docker (bản sao — file thật nằm ở `/srv/apps/vn100` trên `vps-web`)
 
-Từ 18/11/2026 VPS `ubuntu@192.168.1.201` (web `chungkhoang.btinvest.vn`, có mật khẩu) chạy thay máy Mac (D96).
+Từ 18/11/2026 VPS `ubuntu@192.168.1.201` (web `chungkhoan.btinvest.vn`, đăng nhập bằng tài khoản coin; tên cũ `chungkhoang` chuyển hướng) chạy thay máy Mac (D96).
 Thư mục `/srv/apps/vn100`: `app/` = git clone repo này (tự `deploy vn100` khi `main` đổi, ~3 phút), các file ở đây
 nằm NGOÀI repo; bản trong thư mục này chỉ để dựng lại nếu VPS hỏng — sửa ở VPS thì chép lại vào đây.
 

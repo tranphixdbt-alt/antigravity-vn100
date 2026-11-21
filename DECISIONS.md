@@ -779,3 +779,4 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   Chi tiết, rủi ro, quay lui: `deploy/dang-nhap/README.md`. Kiểm: chưa đăng nhập → 302 `/dang-nhap?next=…`, 30 lượt liên
   tiếp không 429, trang đăng nhập hiển thị đúng ở cỡ điện thoại. Chưa kiểm: đăng nhập thật (cần tài khoản của người dùng).
 - **Rủi ro:** API coin sập → hai trang không vào được; ai tạo tài khoản coin cũng sửa được danh mục chứng quyền, dùng AI.
+- **Đổi tên (18/11, người dùng yêu cầu):** tên chính VN100 là `chungkhoan.btinvest.vn` (đúng chính tả); `chungkhoang.btinvest.vn` (tên dùng 17–18/11) chuyển hướng 301 sang; `.deploy` HEALTH_URL đổi theo.

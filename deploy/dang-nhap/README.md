@@ -1,6 +1,6 @@
 # Đăng nhập chung *.btinvest.vn bằng tài khoản coin (D98, 18/11/2026)
 
-chungkhoang.btinvest.vn (VN100) và chungquyen.btinvest.vn (chứng quyền) không còn tài khoản `admin` dùng chung (basic_auth).
+chungkhoan.btinvest.vn (VN100; tên cũ chungkhoang.btinvest.vn chuyển hướng sang) và chungquyen.btinvest.vn (chứng quyền) không còn tài khoản `admin` dùng chung (basic_auth).
 Ai có tài khoản coin.btinvest.vn (tự tạo, đã xác minh email) đều vào được cả hai trang — người dùng chọn « mọi tài khoản coin ».
 
 ## Cách chạy
@@ -20,7 +20,7 @@ Ai có tài khoản coin.btinvest.vn (tự tạo, đã xác minh email) đều v
   - Nếu coin được triển khai lại từ nguồn khác: chép lại 3 thay đổi trên, nếu không đăng nhập sẽ thành từng trang riêng.
 
 ## Rủi ro đã biết
-- API coin sập/khởi động lại (tự huấn luyện mô hình khi bật, ~1 phút) → chungkhoang/chungquyen không vào được lúc đó.
+- API coin sập/khởi động lại (tự huấn luyện mô hình khi bật, ~1 phút) → chungkhoan/chungquyen không vào được lúc đó.
 - Ai tạo tài khoản coin cũng xem/sửa được danh mục chứng quyền và dùng AI (DeepSeek, tốn tiền). Muốn giới hạn: thêm
   danh sách email (cần một cổng nhỏ đọc `/me`, Caddy không đọc được JSON).
 

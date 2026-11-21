@@ -7,7 +7,7 @@
 
 - [ ] VPS: đăng nhập vnstock 6 trong vn100-worker (golden đủ 2 máy Linux → gỡ một thiết bị cũ tại vnstocks.com/account?section=devices). KHÔNG cần cho FHSC (đã chạy bằng `FHSC_API_KEY`), chỉ cần khi làm S3–S7 (D96)
 - [ ] Người dùng đăng nhập thử bằng tài khoản coin ở chungkhoang và chungquyen (điện thoại + máy tính); nếu lỗi gửi ảnh (D98)
-- [ ] VPS: kiểm tra lượt báo cáo sáng 07:50 ngày 19/11 — lượt đầu có dòng tiền FHSC (D97): `docker exec vn100-worker tail /app/logs/daily-report.log`, `prices_daily` phiên 18/11 có `foreign_net_val` ~100 mã
+- [ ] Thứ 2 23/11: kiểm chứng quyền trên VPS chạy đúng — ETF 09:40 và quét 14:00 (`docker logs chungquyen-worker`, `app/log.txt`)
 - [ ] Dòng tiền khớp lệnh/thỏa thuận TÁCH (`flow_daily`, chế độ « Loại thỏa thuận » chính xác) không còn nguồn từ 13/11: FHSC chỉ có số gộp; gọi thẳng API Vietcap IQ bị hệ thống chặn (đi vòng gói trả phí) → người dùng chọn nguồn (D97)
 - [ ] vnstock thế hệ 6 — S3–S7: BCTC, sự kiện quyền, tin công bố, chuyển môi trường app (`docs/PLAN_VNSTOCK_V6.md`)
 - [ ] Trùng số D93: báo cáo PDF tích sản (11/11) dùng lại D93 của job dòng tiền (04/11, đã đẩy GitHub) — đổi báo cáo PDF sang số mới
@@ -35,6 +35,9 @@
 - [x] VPS chạy thay Mac: vnstock 4 (chép từ Mac) + vnstock 6, `.env` đầy đủ, container lịch job (07:50/08:30/CN 18:00) + bot Discord, trạng thái Mac chép sang volume; launchd Mac đã tắt hẳn; thêm discord-webhook/pypdf vào requirements (D96)
 - [x] VPS: khóa FHSC — `vnstock keys set fhsc` không lưu được trong container (NoKeyringError) → chép khóa từ keychain Mac vào `FHSC_API_KEY` trong `/srv/apps/vn100/.env` qua SSH (không in, chmod 600; khóa người dùng dán tay bị FHSC từ chối AUTH_KEY_INVALID), `docker compose up -d`; thử 07:25: FHSC trả giá ACB + VNINDEX tới phiên 17/11 (D96)
 - [x] Bỏ khỏi "Đang chờ": lịch flow-daily Mac 18:00 và setup_vps.sh (launchd Mac đã tắt, VPS chạy Docker)
+- [x] (21/11) Báo cáo sáng VPS 19/11 và 20/11 chạy đúng, lấy dòng tiền FHSC (D97): `prices_daily` 19/11 khối ngoại + tự doanh 100/100 mã; 18/11 tự doanh trống (FHSC thiếu cả phiên)
+- [x] (21/11) Chứng quyền trên VPS: quét 14:00 + báo cáo ETF lỗi 18–20/11 vì `.env` thiếu `FHSC_API_KEY` (Mac để trong keychain; test không gọi mạng nên không bắt được) → chép khóa từ `.env` VN100 trên VPS; thử thật `bien_dong_lich_su` FPT/HPG 250 phiên tới 20/11. Quét lại đầy đủ chưa được: Vietcap bảo trì cuối tuần (302 → maintenance.vietcap.com.vn)
+- [x] (18/11 16:23) Tên chính VN100 đổi sang `chungkhoan.btinvest.vn`; `chungkhoang` chuyển hướng 301 (giữ đường dẫn); `.deploy` HEALTH_URL đổi theo (D98)
 - [x] Đăng nhập chung bằng tài khoản coin cho chungkhoang + chungquyen (bỏ admin dùng chung); coin-check sửa cookie `.btinvest.vn` + giới hạn `/me` 600/phút (D98, `deploy/dang-nhap/README.md`)
 - [x] App chứng quyền chạy trên VPS (12:40): https://chungquyen.btinvest.vn (cùng mật khẩu chungkhoang), web + 4 lịch (`scheduler.py`), dữ liệu chép từ Mac (198 file ket_qua, danh mục khớp md5), 185/185 test cw trong container, `deploy@chungquyen.timer` bật; 4 launchd `vn.cw-scanner.*` trên Mac đã tắt. Sửa code: `~/cw_scanner` → `git push vps main` (chỉ ở mạng nhà)
 - [x] Vá khối ngoại/tự doanh 13–17/11 vào DB VPS (sao lưu `/data/backup-before-flows-20261118.db`); lỗi ghi phiên 18/11 dở → trả về bản sao lưu + sửa gốc cầu nối FHSC (D97)
