@@ -835,3 +835,9 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   ghi 0; ngưỡng báo tính tay (điểm cuối 20/11: 11/12 cũ 21 ngày chưa báo, 12/12 cũ 22 ngày báo, chặn từ 21/12); lỗi
   tải + chuỗi cũ vẫn báo; host ngoài allowlist bị từ chối trước khi tải. Chạy thử trên Mac (dry-run, Chrome của máy):
   đọc 3.713 điểm, chọn đúng ngày thiếu.
+- **Kiểm trên VPS (22/11, sau deploy `02e5770`, sao lưu `/data/backup-before-tpcp-auto-20261122.db`):** dry-run trong
+  `vn100-worker` 4 s, chọn 9 ngày thiếu 08/10–21/10 (số khớp trang WGB). Chạy thật lần 1 ghi 9, lần 2 ghi 0; TPCP_10Y
+  2651 → 2660 dòng, 0 ngày trùng, các dòng investing.com giữ nguyên. Bộ nhớ anon của container lúc chạy tối đa ~305 MB
+  (giới hạn worker 640 MB; job chạy tuần tự, không chồng job khác). Nhánh cảnh báo giả lập hôm nay 12/12 + nguồn lỗi
+  (dry-run, không gửi): « TPCP_10Y cũ 22 ngày … chặn từ 21/12/2026 … lỗi: TimeoutError … »; webhook có trong môi trường
+  worker. Chưa gửi tin Discord thật. Điểm đầu tiên job tự thêm theo lịch: 23/11, ở lượt 07:20 thứ Ba 24/11.

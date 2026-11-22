@@ -134,7 +134,7 @@ def stale_alert_message(
     Cờ chặn STALE_MACRO_RF bật khi tuổi > MACRO_RF_MAX_AGE_DAYS (30) → ngày bị chặn đầu tiên là
     last_date + 31 ngày.
     """
-    reason = f" Lần nạp vừa rồi lỗi: {fetch_error}" if fetch_error else ""
+    reason = f" Lần nạp vừa rồi lỗi: {fetch_error.rstrip('.')}." if fetch_error else ""
     if last_date is None:
         return (
             "TPCP_10Y chưa có điểm nào trong DB: cả 100 mã bị chặn xếp hạng (STALE_MACRO_RF)."

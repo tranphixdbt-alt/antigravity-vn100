@@ -149,7 +149,9 @@ def test_alert_threshold_hand_calc():
 
 def test_alert_when_series_empty_and_carries_error():
     msg = w.stale_alert_message(None, None, TODAY, 21, fetch_error="TimeoutError: x")
-    assert "chưa có điểm" in msg and "TimeoutError" in msg
+    assert "chưa có điểm" in msg and msg.endswith("lỗi: TimeoutError: x.")
+    stale = w.stale_alert_message(D(2026, 11, 20), 0.04568, D(2026, 12, 12), 21, fetch_error="TimeoutError: y")
+    assert "lỗi: TimeoutError: y. Nạp tay" in stale
 
 
 # ---------------- chạy cả job trên DB ----------------
