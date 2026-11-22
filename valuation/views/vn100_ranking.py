@@ -3,6 +3,10 @@
 Giá trị hợp lý lấy từ đợt định giá VN100 mới nhất (snapshot); upside tính lại theo giá đóng cửa mới nhất
 trong DB. 5 mã tích sản = upside cao nhất sau khi loại mã có cờ lỗi dữ liệu, upside quá ngưỡng rà soát,
 thanh khoản dưới ngưỡng; tối đa `max_per_sector` mã/ngành (ngưỡng ở config/investment_ranking.yaml).
+
+D99: chuỗi giá trong DB được điều chỉnh hồi tố khi có cổ tức/chia tách SAU đợt định giá, còn FV của snapshot
+vẫn ở thang giá cũ. Trước khi tính upside, FV được quy về thang giá hiện tại bằng hệ số
+k = giá DB tại ngày giá của snapshot ÷ giá snapshot đã dùng (`fv_scale_factor`, `snapshot_closes`).
 """
 
 from __future__ import annotations
@@ -72,11 +76,72 @@ def market_data(db) -> dict[str, tuple[float, date, float | None]]:
     return out
 
 
-def ranking_table(snapshot: dict, market: dict, cfg: dict) -> pd.DataFrame:
-    """Một dòng/mã; có giá trị hợp lý thì xếp hạng theo upside, chưa định giá được nằm cuối."""
+def fv_scale_factor(
+    snap_price: object, close_now: object, tolerance: float, min_factor: float
+) -> tuple[float, str]:
+    """Hệ số đưa FV của snapshot về thang giá hiện tại của DB (D99).
+
+    k = giá đóng cửa ngày định giá đang có trong DB ÷ giá snapshot đã dùng lúc định giá. Nguồn giá điều chỉnh
+    hồi tố cả chuỗi khi có sự kiện quyền, nên FV × k cùng thang với giá hiện tại: chia tách, thưởng, cổ tức
+    cổ phiếu khớp chính xác (TCB thưởng 50% → k = 1/1,5); cổ tức tiền theo quy ước điều chỉnh tỷ lệ của nguồn.
+    Trả (k áp dụng, trạng thái):
+      SAME          |k − 1| ≤ tolerance (làm tròn, lệch nguồn FHSC/VCI) → 1
+      ADJUSTED      min_factor ≤ k < 1 − tolerance → k
+      INCONSISTENT  k > 1 + tolerance (điều chỉnh hồi tố chỉ làm giá cũ GIẢM) hoặc k < min_factor → 1, phải rà soát
+      UNVERIFIED    thiếu giá snapshot hoặc giá DB ngày đó → 1 (giữ cách tính trước D99)
+    """
+    p0, c0 = _num(snap_price), _num(close_now)
+    if not p0 or not c0 or p0 <= 0 or c0 <= 0:
+        return 1.0, "UNVERIFIED"
+    k = c0 / p0
+    if abs(k - 1) <= tolerance:
+        return 1.0, "SAME"
+    if k > 1 or k < min_factor:
+        return 1.0, "INCONSISTENT"
+    return k, "ADJUSTED"
+
+
+def snapshot_closes(db, snapshot: dict) -> dict[str, float]:
+    """{mã: giá đóng cửa đang có trong DB tại đúng `price_date` của dòng snapshot} — đầu vào `fv_scale_factor`.
+
+    Mã không có ngày giá trong snapshot hoặc DB không có giá ngày đó thì không có trong kết quả (UNVERIFIED).
+    """
+    from valuation.db.models import PricesDaily
+
+    wanted: dict[date, set[str]] = {}
+    for r in snapshot.get("rows", []):
+        if r.get("price_date"):
+            day = date.fromisoformat(str(r["price_date"])[:10])
+            wanted.setdefault(day, set()).add(r["ticker"])
+    out: dict[str, float] = {}
+    for day, tickers in wanted.items():
+        rows = (
+            db.query(PricesDaily.ticker, PricesDaily.close)
+            .filter(PricesDaily.trade_date == day, PricesDaily.ticker.in_(tickers))
+            .all()
+        )
+        out.update({t: float(c) for t, c in rows if c is not None})
+    return out
+
+
+def ranking_table(
+    snapshot: dict,
+    market: dict,
+    cfg: dict,
+    snap_closes: dict[str, float] | None = None,
+) -> pd.DataFrame:
+    """Một dòng/mã; có giá trị hợp lý thì xếp hạng theo upside, chưa định giá được nằm cuối.
+
+    snap_closes (D99, từ `snapshot_closes`): có thì FV được quy về thang giá hiện tại trước khi tính upside;
+    cột `_fv_scale` ghi hệ số đã áp (None = không kiểm được). None giữ cách tính cũ.
+    """
     blocking = set(cfg.get("blocking_flags", [])) | DATA_FLAGS_EXTRA
     max_up = float(cfg["max_upside_pct"])
     min_liq = float(cfg["scales"]["min_traded_value_vnd"])
+    if snap_closes is not None:
+        # snapshot cũ lưu config của đợt đó (chưa có khóa này) → lấy từ config hiện hành
+        rescale = cfg.get("fv_rescale") or load_ranking_config()["fv_rescale"]
+        tol, k_min = float(rescale["tolerance"]), float(rescale["min_factor"])
     sectors = sector_map()
     records = []
     for r in snapshot["rows"]:
@@ -84,6 +149,15 @@ def ranking_table(snapshot: dict, market: dict, cfg: dict) -> pd.DataFrame:
         price, price_date, adtv = market.get(
             r["ticker"], (_num(r.get("price")), None, None)
         )
+        scale, scale_status = None, "UNVERIFIED"
+        if snap_closes is not None:
+            scale, scale_status = fv_scale_factor(
+                r.get("price"), snap_closes.get(r["ticker"]), tol, k_min
+            )
+            if scale_status == "UNVERIFIED":
+                scale = None
+            elif fv:
+                fv *= scale
         upside = (fv / price - 1) * 100 if fv and fv > 0 and price else None
         flags = [str(f).split(":")[0] for f in r.get("flags", [])]
         bad = [f for f in flags if f in blocking]
@@ -91,6 +165,12 @@ def ranking_table(snapshot: dict, market: dict, cfg: dict) -> pd.DataFrame:
             note = "Chưa định giá được"
         elif bad:
             note = "Lỗi dữ liệu: " + ", ".join(bad)
+        elif scale_status == "INCONSISTENT":
+            k_raw = snap_closes[r["ticker"]] / float(r["price"])  # type: ignore[index]
+            note = (
+                f"Thang giá lệch đợt định giá (giá DB ngày {r.get('price_date')} = "
+                f"{k_raw:.3f} × giá đã định giá): cần rà soát"
+            )
         elif upside > max_up:
             note = f"Upside > {max_up:.0f}%: cần rà soát"
         elif adtv is None or adtv < min_liq:
@@ -107,6 +187,7 @@ def ranking_table(snapshot: dict, market: dict, cfg: dict) -> pd.DataFrame:
                 "GTGD (tỷ/phiên)": adtv / 1e9 if adtv else None,
                 "Ghi chú": note,
                 "_price_date": price_date,
+                "_fv_scale": scale,
             }
         )
     df = pd.DataFrame(records)
@@ -122,6 +203,21 @@ def ranking_table(snapshot: dict, market: dict, cfg: dict) -> pd.DataFrame:
         ),
     )
     return df
+
+
+_HIDDEN = [
+    "_price_date",
+    "_fv_scale",
+]  # cột nội bộ của ranking_table, không hiển thị/xuất
+
+
+def scaled_fv(table: pd.DataFrame) -> list[tuple[str, float]]:
+    """[(mã, k)] các mã có FV đã được quy đổi thang giá (k khác 1), theo thứ tự bảng (D99)."""
+    return [
+        (str(t), float(k))
+        for t, k in zip(table["Mã"], table["_fv_scale"])
+        if k is not None and pd.notna(k) and k != 1.0
+    ]
 
 
 def accumulation_picks(
@@ -185,7 +281,12 @@ def render_vn100_ranking() -> None:
         cfg = snapshot.get("config", load_ranking_config())
         db = SessionLocalRead()
         try:
-            table = ranking_table(snapshot, market_data(db), cfg)
+            table = ranking_table(
+                snapshot,
+                market_data(db),
+                cfg,
+                snap_closes=snapshot_closes(db, snapshot),
+            )
         finally:
             db.close()
         done = datetime.fromisoformat(snapshot["completed_at"])
@@ -197,10 +298,16 @@ def render_vn100_ranking() -> None:
             if len(dates)
             else f"Giá trị hợp lý: đợt {done:%d/%m/%Y}"
         )
+        scaled = scaled_fv(table)
+        if scaled:
+            st.caption(
+                "Giá trị hợp lý đã quy về thang giá hiện tại do cổ tức/chia tách sau đợt định giá: "
+                + ", ".join(f"{t} ×{k:.3f}".replace(".", ",") for t, k in scaled)
+            )
         if (local_now() - done).days >= cfg["price_max_age_days"]:
             st.warning("Giá trị hợp lý đã cũ — nên cập nhật xếp hạng trước khi dùng.")
         st.dataframe(
-            table.drop(columns="_price_date"),
+            table.drop(columns=_HIDDEN),
             hide_index=True,
             width="stretch",
             height=560,
@@ -243,7 +350,7 @@ def render_vn100_ranking() -> None:
         if snapshot:
             st.download_button(
                 "Xuất Excel",
-                _excel(table.drop(columns="_price_date"), picks),
+                _excel(table.drop(columns=_HIDDEN), picks),
                 file_name=f"VN100_xep_hang_{snapshot['run_id']}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 icon=":material/download:",

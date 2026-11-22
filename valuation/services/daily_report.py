@@ -44,6 +44,13 @@ def _pct(x: float) -> str:
     return f"{x:+.1f}%".replace(".", ",").replace("-", "−")
 
 
+def _scale_note(k: float | None) -> str:
+    """D99: ghi chú khi FV của đợt định giá đã được quy về thang giá hiện tại (cổ tức/chia tách sau đợt đó)."""
+    if k is None or k == 1:
+        return ""
+    return f" · FV quy đổi ×{k:.3f} do cổ tức/chia tách".replace(".", ",")
+
+
 def _ddmm(iso: str | None) -> str:
     return datetime.fromisoformat(iso).strftime("%d/%m/%Y") if iso else "?"
 
@@ -228,6 +235,7 @@ def collect(today: date) -> dict:
         accumulation_picks,
         market_data,
         ranking_table,
+        snapshot_closes,
     )
 
     snapshot = latest_snapshot()
@@ -245,7 +253,9 @@ def collect(today: date) -> dict:
     try:
         market = market_data(db)
         macro = build_snapshot(db, macro_cfg, freqs)
-        table = ranking_table(snapshot, market, rank_cfg)
+        table = ranking_table(
+            snapshot, market, rank_cfg, snap_closes=snapshot_closes(db, snapshot)
+        )
         dates = [d for d in table["_price_date"] if isinstance(d, date)]
         price_date = max(dates) if dates else None
         rows = []
@@ -301,6 +311,12 @@ def collect(today: date) -> dict:
                 "fair_value": float(r["Giá trị hợp lý (đ)"]),
                 "upside": round(float(r["Upside (%)"]), 2),
                 "sector": r["Ngành"],
+                # D99: hệ số quy FV về thang giá hiện tại (None/1 = không quy đổi)
+                "fv_scale": (
+                    round(float(r["_fv_scale"]), 4)
+                    if r["_fv_scale"] is not None and isfinite(float(r["_fv_scale"]))
+                    else None
+                ),
             }
             for _, r in picks.iterrows()
         ],
@@ -388,6 +404,7 @@ def build_message(
 
     picks = [
         f"**{p['ticker']}** {_num(p['price'])} → FV {_num(p['fair_value'])} ({_pct(p['upside'])}) · {p['sector']}"
+        + _scale_note(p.get("fv_scale"))
         for p in state["picks"]
     ] or [
         "Chưa có mã nào qua đủ bộ lọc (lỗi dữ liệu, upside quá ngưỡng rà soát, thanh khoản)."

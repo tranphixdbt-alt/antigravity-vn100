@@ -234,10 +234,17 @@ def upsides(db: Any, snap: dict | None) -> dict:
     if not snap:
         return {"rows": {}, "source": None}
     from valuation.analysis.investment_ranking import load_ranking_config
-    from valuation.views.vn100_ranking import market_data, ranking_table
+    from valuation.views.vn100_ranking import (
+        market_data,
+        ranking_table,
+        snapshot_closes,
+    )
 
     table = ranking_table(
-        snap, market_data(db), snap.get("config") or load_ranking_config()
+        snap,
+        market_data(db),
+        snap.get("config") or load_ranking_config(),
+        snap_closes=snapshot_closes(db, snap),
     )
     rows = {
         r["Mã"]: {

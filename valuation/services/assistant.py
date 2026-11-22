@@ -129,14 +129,23 @@ def tool_ranking(sector: str | None, top: int, include_excluded: bool) -> dict:
     from valuation.analysis.investment_ranking import load_ranking_config
     from valuation.db.session import SessionLocalRead
     from valuation.services.ranking_store import latest_snapshot
-    from valuation.views.vn100_ranking import market_data, ranking_table
+    from valuation.views.vn100_ranking import (
+        market_data,
+        ranking_table,
+        snapshot_closes,
+    )
 
     snapshot = latest_snapshot()
     if not snapshot:
         return {"error": "Chưa có đợt xếp hạng VN100 nào"}
     db = SessionLocalRead()
     try:
-        table = ranking_table(snapshot, market_data(db), load_ranking_config())
+        table = ranking_table(
+            snapshot,
+            market_data(db),
+            load_ranking_config(),
+            snap_closes=snapshot_closes(db, snapshot),
+        )
     finally:
         db.close()
     if sector:
@@ -150,7 +159,8 @@ def tool_ranking(sector: str | None, top: int, include_excluded: bool) -> dict:
         "fv_completed_at": snapshot.get("completed_at"),
         "note": (
             "rows đã lọc theo ngành/tiêu chí và sắp xếp theo upside giảm dần; rank = hạng trong TOÀN VN100. "
-            "FV từ đợt xếp hạng tuần; upside tính theo giá đóng cửa mới nhất. note khác rỗng = bị loại khỏi danh sách cơ hội."
+            "FV từ đợt xếp hạng tuần, đã quy về thang giá hiện tại nếu có cổ tức/chia tách sau đợt đó; "
+            "upside tính theo giá đóng cửa mới nhất. note khác rỗng = bị loại khỏi danh sách cơ hội."
         ),
         "rows": [
             {

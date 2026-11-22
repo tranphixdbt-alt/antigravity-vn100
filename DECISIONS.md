@@ -780,3 +780,26 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   tiếp không 429, trang đăng nhập hiển thị đúng ở cỡ điện thoại. Chưa kiểm: đăng nhập thật (cần tài khoản của người dùng).
 - **Rủi ro:** API coin sập → hai trang không vào được; ai tạo tài khoản coin cũng sửa được danh mục chứng quyền, dùng AI.
 - **Đổi tên (18/11, người dùng yêu cầu):** tên chính VN100 là `chungkhoan.btinvest.vn` (đúng chính tả); `chungkhoang.btinvest.vn` (tên dùng 17–18/11) chuyển hướng 301 sang; `.deploy` HEALTH_URL đổi theo.
+
+### D99 — FV của snapshot quy về thang giá hiện tại khi có cổ tức/chia tách sau đợt định giá; nạp TPCP_10Y (2026-11-22, người dùng « sửa cả hai »)
+- **Lỗi 1 (thang giá):** báo cáo sáng 20/11 xếp TCB đầu danh sách với upside +99,6%. Đợt 20261027T000935 định giá TCB
+  FV 41.121 với giá 33.800 (26/10, trước GDKHQ thưởng 50% ngày 29/10); nguồn giá sau đó điều chỉnh hồi tố cả chuỗi
+  (DB nay ghi 26/10 = 22.530) nên `ranking_table` so FV thang cũ với giá 20.600 thang mới. Đúng thang: +33,1%.
+  Cùng lỗi ở mọi chỗ dùng `ranking_table` (báo cáo sáng, tab VN100, tab money, tab cổ tức, trợ lý bot).
+- **Sửa gốc:** `fv_scale_factor` — k = giá DB tại `price_date` của dòng snapshot ÷ `price` snapshot đã dùng; FV × k
+  trước khi tính upside. Dùng chính điều chỉnh hồi tố của nguồn giá nên tự đúng với chia tách/thưởng/cổ tức CP
+  (TCB k = 0,6666 ≈ 1/1,5; PC1 0,8694 ≈ 1/1,15); cổ tức tiền theo quy ước điều chỉnh tỷ lệ của nguồn (NT2 cổ tức
+  1.000 đ: FV × 0,9586 = 37.684, so với trừ thẳng 1.000 đ = 38.312, lệch 1,6%). |k − 1| ≤ 0,5% coi cùng thang (D94);
+  k > 1 + 0,5% hoặc k < 0,2 → không quy đổi, ghi chú « Thang giá lệch đợt định giá … cần rà soát » và loại khỏi danh
+  sách (cờ, không kẹp im lặng); thiếu giá ngày đó → giữ cách tính cũ. Ngưỡng: `fv_rescale` trong
+  `config/investment_ranking.yaml`. Báo cáo sáng ghi « FV quy đổi ×k do cổ tức/chia tách » cạnh mã được quy đổi; tab
+  VN100 ghi danh sách mã quy đổi dưới tiêu đề. Không đổi mô hình định giá, chỉ đổi cách so FV cũ với giá mới.
+- **Kiểm:** test tính tay (thưởng 50%: FV 30.000 / giá cũ 15.000 / giá DB 10.000 / giá nay 12.500 → +60%, lỗi cũ +140%),
+  ca TCB số thật (+33,06%), ca lệch thang, ca thiếu giá, `snapshot_closes` trên SQLite trong bộ nhớ, dòng báo cáo sáng.
+  Chạy thử trên DB + snapshot thật của VPS (container tạm, chỉ đọc, không mạng): 10 mã được quy đổi (NT2, TCB, BMP,
+  SIP, BAF, VNM, PC1, ANV, GVR, VPI), 0 mã lệch thang; top 5 mới FPT, TPB, GEX, MBB, DBC (TCB, NT2 ra).
+- **Lỗi 2 (TPCP_10Y cũ):** chuỗi dừng ở 19/10 (Mac nạp từ investing.com; sau khi chuyển sang VPS 18/11 không job nào
+  nạp). Ngày 23/11 sẽ cũ 35 ngày > 30 → cờ chặn `STALE_MACRO_RF` cho cả 100 mã ở đợt xếp hạng 08:00 → danh sách nghiên
+  cứu rỗng, AI bị bỏ qua. Đã nạp 22 điểm 22/10–20/11 (investing.com, 20/11 = 4,568%; đối chiếu worldgovernmentbonds
+  4,568% cùng ngày) bằng `scripts.ingest_tpcp_10y` trên DB VPS, sau khi sao lưu `/data/backup-before-tpcp-20261122.db`;
+  chạy 2 lần, 2629 → 2651 điểm (idempotent). Hết hạn lại sau 20/12 nếu không nạp tiếp.

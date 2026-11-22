@@ -110,6 +110,29 @@ def test_build_message_format_and_stale_warnings():
     assert "R1" in msg["footer"]
 
 
+def test_build_message_marks_rescaled_fair_value_d99():
+    # TCB: FV đợt 27/10 41.121 (thang giá trước thưởng 50%) × 0,6666 = 27.410; giá 20.600 → +33,1%.
+    state = _state(["TCB"], {"TCB": ""}, {})
+    state["picks"] = [
+        {
+            "ticker": "TCB",
+            "price": 20600.0,
+            "fair_value": 27409.99,
+            "upside": 33.06,
+            "sector": "Ngân hàng",
+            "fv_scale": 0.6666,
+        },
+        # Báo cáo cũ (trước D99) không có khóa fv_scale → không ghi chú.
+        {"ticker": "FPT", "price": 45700.0, "fair_value": 90960.0, "upside": 99.04, "sector": "Công nghệ"},
+    ]
+    msg = build_message(state, None, None, CFG, date(2026, 10, 20))
+    picks = msg["fields"][0]["value"].split("\n")
+    assert picks[0] == (
+        "**TCB** 20.600 → FV 27.410 (+33,1%) · Ngân hàng · FV quy đổi ×0,667 do cổ tức/chia tách"
+    )
+    assert picks[1] == "**FPT** 45.700 → FV 90.960 (+99,0%) · Công nghệ"
+
+
 def test_previous_report_skips_today(tmp_path):
     for day in ("2026-10-16", "2026-10-19", "2026-10-20"):
         write_json(tmp_path / "history" / f"{day}.json", {"date": day})

@@ -9,6 +9,11 @@ price_max_age_days: 7
 financial_max_age_days: 200
 evidence_max_age_days: 365
 max_upside_pct: 100
+# D99: FV của snapshot quy về thang giá hiện tại khi giá lịch sử bị điều chỉnh hồi tố (cổ tức, chia tách)
+# sau đợt định giá. k = giá DB tại ngày giá của snapshot ÷ giá snapshot đã dùng.
+fv_rescale:
+  tolerance: 0.005   # |k − 1| ≤ 0,5% coi là cùng thang (FHSC khớp DB ≤ 0,5% ở 100% ô, D94)
+  min_factor: 0.2    # k < 0,2 (giảm > 5 lần) hoặc k > 1 + tolerance → bất thường, không quy đổi, loại khỏi danh sách
 golden_tolerance: 0.10
 universe_max_age_days: 200
 not_rateable_flags:

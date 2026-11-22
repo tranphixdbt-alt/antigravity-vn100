@@ -697,13 +697,20 @@ def _render_vn100_upcoming_calendar(
         return
 
     from valuation.analysis.investment_ranking import load_ranking_config
-    from valuation.views.vn100_ranking import market_data, ranking_table
+    from valuation.views.vn100_ranking import (
+        market_data,
+        ranking_table,
+        snapshot_closes,
+    )
 
     snapshot = latest_snapshot() or {}
     # Upside + lọc dữ liệu dùng chung với tab VN100 (D55); lịch sử cổ tức đọc một lượt cho cả nhóm (D56).
     rank = (
         ranking_table(
-            snapshot, market_data(db), snapshot.get("config", load_ranking_config())
+            snapshot,
+            market_data(db),
+            snapshot.get("config", load_ranking_config()),
+            snap_closes=snapshot_closes(db, snapshot),
         ).set_index("Mã")
         if snapshot
         else pd.DataFrame()
