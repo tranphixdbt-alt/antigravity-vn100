@@ -873,3 +873,4 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
      → Chưa rõ định nghĩa. Tỷ lệ % mua chủ động có thể vẫn dùng được, nhưng chưa xác minh.
   2. **Thiếu mã 24/09–21/10:** mỗi phiên chỉ 45–63/100 mã; 22/10 không có mã nào.
   - Job vẫn lưu số gốc (FHSC chỉ giữ 61 phiên, bỏ thì mất). Phân tích W4 chỉ dùng sau khi xác minh định nghĩa.
+  - **Người dùng chọn giữ job** trong lúc chờ xác minh (22/11/2026, được hỏi « giữ hay tắt »).
