@@ -21,6 +21,9 @@
 - [ ] Routine Chủ nhật 01/11 20:00: kiểm tra đọc được `vn100_knowledge` trên Drive (D85)
 - [ ] VNM: chờ VCI đăng thông báo cổ tức mới (người dùng chọn chờ)
 - [ ] Thứ 3 24/11: kiểm tra job `tpcp-10y` 07:20 trên VPS thêm điểm 23/11 (`/app/logs/tpcp-10y.log`); thứ 2 23/11 không có điểm mới là đúng (21–22/11 cuối tuần) (D100)
+- [ ] Wyckoff (`docs/PLAN_WYCKOFF_FLOW.md`): tiếp W1 bộ máy cấu trúc → W2a thành phần VN100 theo kỳ → W2 kiểm chứng → W3 giao diện → W4 ghép dòng tiền (D101)
+- [ ] Xác minh định nghĩa mua/bán chủ động FHSC: mua + bán ≈ 3,9 × KL khớp (VCB 20/11: 12,6 triệu vs 3,9 triệu), 24/09–22/10 thiếu ~45% mã — chưa dùng cho phân tích tới khi rõ (D101)
+- [ ] Thứ 2 23/11: kiểm tra job `active-flow` 07:35 trên VPS thêm phiên 21/11? (không — 21–22/11 cuối tuần; phiên mới đầu tiên 23/11 vào lượt thứ Ba 24/11) (`/app/logs/active-flow.log`) (D101)
 - [ ] Thứ 2 23/11: kiểm tra lần chạy tự động đầu tiên data-update + ranking 08:00 trên VPS (`docker logs vn100-worker`, `/app/.vn100_ranking/status.json`); worker giới hạn RAM 640 MB chưa từng chạy xếp hạng; bước dòng tiền trong data-update sẽ lỗi (cần `vnstock_data` đã khóa, D97)
 
 - [ ] KIỂM THỬ 29/10 — giá mục tiêu CTCK không điều chỉnh khi chia cổ phiếu (HDB 30%, TCB 50% từ 29/10, PC1 15% từ 04/11) → trung vị CTCK cao ~30%
@@ -34,6 +37,8 @@
 ## Đã xong
 
 ### 2026-11-22
+- [x] Kế hoạch Wyckoff cho tab money (nghiên cứu có nguồn, đọc code, đo dữ liệu) + 8 quyết định của người dùng (D101)
+- [x] W0: bảng `active_flow_daily` + job `active-flow` 07:35 T2–T6 trên VPS; nạp lần đầu 4.997 dòng (100 mã × 61 phiên), chạy lại không trùng (D101)
 - [x] TPCP_10Y tự động: job `tpcp-10y` 07:20 T2–T6 trên VPS lấy worldgovernmentbonds.com (khớp investing.com ≤ 0,001 điểm %), chỉ thêm ngày thiếu, báo Discord khi cũ > 21 ngày (D100)
 - [x] Đồng bộ `deploy/docker/scheduler.py` của repo với VPS (2 dòng data-update + ranking T2/T5 08:00) (D100)
 - [x] Upside lệch thang giá sau cổ tức/chia tách: FV snapshot quy về thang giá hiện tại ở mọi chỗ dùng `ranking_table` (TCB +99,6% → +33,1%; 10 mã quy đổi, 0 mã lệch thang trên dữ liệu VPS) (D99)

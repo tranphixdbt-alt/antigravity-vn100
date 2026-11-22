@@ -841,3 +841,35 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   (giới hạn worker 640 MB; job chạy tuần tự, không chồng job khác). Nhánh cảnh báo giả lập hôm nay 12/12 + nguồn lỗi
   (dry-run, không gửi): « TPCP_10Y cũ 22 ngày … chặn từ 21/12/2026 … lỗi: TimeoutError … »; webhook có trong môi trường
   worker. Chưa gửi tin Discord thật. Điểm đầu tiên job tự thêm theo lịch: 23/11, ở lượt 07:20 thứ Ba 24/11.
+
+### D101 — Wyckoff: kế hoạch nâng cấp tab money + W0 lưu mua/bán chủ động FHSC (2026-11-22, người dùng chọn Q1–Q8)
+- **Kế hoạch:** `docs/PLAN_WYCKOFF_FLOW.md` v0.2.
+  - Thêm cấu trúc Wyckoff (vùng giá, sự kiện SC/ST/Spring/SOS/UTAD/SOW, pha A–E), chỉ dùng nến đã đóng.
+  - Dòng tiền theo nhà đầu tư thành bằng chứng "ai đứng sau".
+  - Kiểm chứng ngược bắt buộc trước khi vào danh sách lọc/Discord.
+- **Người dùng chọn:**
+  - Q1: nhãn Wyckoff **thay** nhãn Gom/Xả từ W3.
+  - Q2: làm W0 ngay.
+  - Q3: **hiện mục tiêu P&F**, kèm "quy ước, không phải dự báo" và tỷ lệ đạt đo được.
+  - Q4: ghi cả spring KL thấp lẫn shakeout KL cao.
+  - Q5: tiêu chí t ≥ 2 trên 2023–2026.
+  - Q6: chỉ FHSC.
+  - Q7: thu thập thành phần VN100 theo kỳ trước khi kiểm chứng (W2a).
+  - Q8: Claude đề xuất mã golden.
+- **W0 — làm:**
+  - Cầu nối FHSC thêm loại `active` (`active_flow`), bỏ phiên hôm nay như khối ngoại.
+  - Bảng `active_flow_daily` (metadata riêng như `flow_daily`; `scripts/migrate_active_flow.py` backup rồi CREATE).
+  - Job `scripts/update_active_flow.py` 07:35 T2–T6 (`scheduler.py` VPS + bản repo).
+  - Dòng thiếu số/âm/cả hai bằng 0 bị bỏ và đếm. Phiên đã lưu không ghi đè; số lệch ghi `mismatches`.
+  - 7 test (`tests/test_active_flow.py`), có ca tính tay VCB 20/11.
+- **Kiểm trên VPS (22/11, commit 503cd4b):**
+  - Backup `/data/vn100_full.pre_active_flow_daily_20261122_175532.db`, `quick_check` ok.
+  - Lần 1: 100/100 mã, ghi 4.997 dòng (61 phiên 24/08–20/11), bỏ 1.010, 168 s. Lần 2: ghi 0, giữ 4.997, 0 lệch.
+  - Bộ nhớ worker ~20 MB.
+- **CHƯA DÙNG ĐƯỢC CHO PHÂN TÍCH — hai bất thường của nguồn, đã dừng lại báo người dùng (skill vn-finance-data):**
+  1. **Mua + bán chủ động ≠ KL khớp.** Trung vị gấp 3,9 lần `prices_daily.volume` (p5 2,9; p95 10; KOS tới 21.140 lần).
+     Đối chiếu ngay tại FHSC: VCB 20/11 `ohlcv` KL 3.894.800 nhưng mua + bán chủ động 12.615.010.
+     Tài liệu vnstock 6 chỉ ghi "số liệu nguồn tự tính"; `columns="all"` không có thêm trường.
+     → Chưa rõ định nghĩa. Tỷ lệ % mua chủ động có thể vẫn dùng được, nhưng chưa xác minh.
+  2. **Thiếu mã 24/09–21/10:** mỗi phiên chỉ 45–63/100 mã; 22/10 không có mã nào.
+  - Job vẫn lưu số gốc (FHSC chỉ giữ 61 phiên, bỏ thì mất). Phân tích W4 chỉ dùng sau khi xác minh định nghĩa.
