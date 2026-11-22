@@ -1,5 +1,9 @@
 # Quy trình refresh vĩ mô qua Chrome (nguồn JS-render)
 
+> **TPCP_10Y đã tự động từ 22/11/2026 (D100):** job `scripts/update_tpcp_10y.py` trên VPS (07:20 T2–T6) mở
+> trang lịch sử worldgovernmentbonds bằng Chromium headless. Quy trình tay dưới đây chỉ còn cho CPI, lãi suất
+> điều hành, GDP, bán lẻ — hoặc khi job TPCP báo lỗi trên Discord.
+
 Các chuỗi vĩ mô sau **render bằng JavaScript** nên `httpx` không lấy được số;
 phải cào qua **Chrome MCP** (claude-in-chrome). Dữ liệu đổi chậm (CPI theo
 tháng, lãi suất điều hành theo sự kiện, TPCP theo ngày nhưng ổn định) → refresh

@@ -19,11 +19,20 @@ from pathlib import Path
 
 # (tên, các thứ trong tuần: 0 = thứ 2 … 6 = chủ nhật, giờ hẹn, lệnh chạy trong /app) — giống launchd trên Mac
 JOBS = [
+    # D100 (22/11/2026): nạp TPCP_10Y từ worldgovernmentbonds.com (Chromium headless, ~10 s) + báo Discord khi
+    # chuỗi cũ > 21 ngày. Đứng đầu danh sách để khi chạy bù vẫn xong trước báo cáo sáng và xếp hạng (rf mới nhất).
+    ("tpcp-10y", range(0, 5), "07:20", ["python", "scripts/update_tpcp_10y.py"]),
     ("daily-report", range(0, 5), "07:50", ["python", "scripts/daily_report.py"]),
     # D97: flow-daily (khớp/thỏa thuận tách, VCI qua vnstock_data) tắt — gói bị khóa từ 10/11/2026, job lỗi mỗi ngày.
     # Khối ngoại/tự doanh gộp giờ lấy từ FHSC trong daily-report. Bật lại khi có nguồn tách khớp/thỏa thuận.
     # ("flow-daily", range(0, 5), "08:30", ["python", "scripts/update_flow_daily.py"]),
     ("weekly-digest", [6], "18:00", ["python", "scripts/weekly_learning_digest.py"]),
+    # Người dùng quyết 21/11/2026: 08:00 thứ Hai và thứ Năm tự cập nhật dữ liệu ("Quét VN100": giá + BCTC + khuyến nghị CTCK)
+    # rồi xếp hạng/định giá lại (có một lượt AI). Trước đó hai việc này chỉ chạy khi bấm trên giao diện (lần cuối 13/11 và 27/10).
+    # Vòng lặp chạy lần lượt theo thứ tự danh sách, nên cập nhật dữ liệu xong mới tới xếp hạng (~30 phút + ~50 phút).
+    # Bản sao trong repo: deploy/docker/scheduler.py (đồng bộ 22/11/2026, D100) — sửa ở đây thì chép sang đó.
+    ("data-update", [0, 3], "08:00", ["python", "-m", "valuation.services.data_update_job"]),
+    ("ranking", [0, 3], "08:00", ["python", "scripts/update_vn100_ranking.py"]),
 ]
 CATCH_UP = dt.timedelta(hours=3)
 STATE = Path("/data/scheduler_state.json")
@@ -65,6 +74,11 @@ def _selftest() -> None:
     assert not due(mon.replace(hour=10, minute=50), days, "07:50", None)  # quá 3 giờ: bỏ, chờ ngày sau
     assert not due(dt.datetime(2026, 11, 15, 7, 50), days, "07:50", None)  # chủ nhật không có báo cáo sáng
     assert due(dt.datetime(2026, 11, 15, 18, 5), [6], "18:00", None)  # tóm tắt tuần chủ nhật
+    assert due(dt.datetime(2026, 11, 23, 8, 4), [0, 3], "08:00", None)  # thứ Hai 08:00: cập nhật dữ liệu + xếp hạng
+    assert due(dt.datetime(2026, 11, 26, 9, 30), [0, 3], "08:00", None)  # thứ Năm, chạy bù trong 3 giờ
+    assert not due(dt.datetime(2026, 11, 24, 8, 0), [0, 3], "08:00", None)  # thứ Ba không chạy
+    assert due(dt.datetime(2026, 11, 23, 7, 20), range(0, 5), "07:20", None)  # TPCP_10Y thứ Hai 07:20
+    assert not due(dt.datetime(2026, 11, 28, 7, 20), range(0, 5), "07:20", None)  # thứ Bảy không nạp TPCP_10Y
     print("selftest OK")
 
 

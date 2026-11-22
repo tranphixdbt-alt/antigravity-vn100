@@ -246,10 +246,17 @@ macro_sources:
     - thedocs.worldbank.org         # nơi chứa file CMO-Historical-Data-Monthly.xlsx
   request_timeout_sec: 15
   user_agent: "antigravity-vn100-macro/1.0"
-  # Nguồn TPCP_10Y đang dùng: worldgovernmentbonds.com (đường cong đầy đủ, dữ
-  # liệu render bằng JS nên cào qua Chrome MCP — xem scripts/refresh_macro_chrome.md).
-  # HNX/VBMA giữ trong allowlist để dùng khi có endpoint API xác nhận.
+  # Nguồn TPCP_10Y đang dùng: worldgovernmentbonds.com. Từ 22/11/2026 nạp TỰ ĐỘNG (D100):
+  # job scripts/update_tpcp_10y.py (VPS 07:20 T2–T6) mở trang lịch sử bằng Chromium headless.
+  # HNX/VBMA giữ trong allowlist để dùng khi có endpoint API xác nhận (HNX công bố đường cong
+  # ước lượng — par yield 10 năm thấp hơn ~11 bp so với WGB/investing.com, không trộn chuỗi).
   tpcp_10y_endpoint: ""
+  tpcp_10y_wgb:
+    url: "https://www.worldgovernmentbonds.com/bond-historical-data/vietnam/10-years/"
+    lookback_days: 45            # chỉ thêm ngày trong 45 ngày gần nhất (bù khi job lỡ vài tuần)
+    sane_range_pct: [0.5, 15.0]  # ngoài khoảng → lỗi dữ liệu, không ghi (lịch sử 2016–2026: 1,93–6,76%)
+    alert_after_days: 21         # điểm mới nhất cũ hơn → báo Discord (cờ chặn STALE_MACRO_RF ở > 30 ngày)
+    page_timeout_sec: 60         # tải trang + chờ số liệu render, mỗi bước
 
 # ===================================================================
 # Registry chuỗi vĩ mô chuẩn hóa (Luật vàng #5 — truy vết).
@@ -262,7 +269,7 @@ macro_sources:
 macro_series_registry:
   TPCP_10Y:                 # Lợi suất trái phiếu Chính phủ VN kỳ hạn 10 năm
     unit: decimal_rate      # 0.032 = 3.2%
-    source: vnstock         # lấy qua vnstock/bond; fallback SBV
+    source: worldgovernmentbonds.com  # tự động từ 22/11/2026 (D100); trước đó nạp tay investing.com
     frequency: DAILY
   CPI_YOY:                  # CPI so cùng kỳ năm trước
     unit: decimal_rate

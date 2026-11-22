@@ -803,3 +803,35 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   cứu rỗng, AI bị bỏ qua. Đã nạp 22 điểm 22/10–20/11 (investing.com, 20/11 = 4,568%; đối chiếu worldgovernmentbonds
   4,568% cùng ngày) bằng `scripts.ingest_tpcp_10y` trên DB VPS, sau khi sao lưu `/data/backup-before-tpcp-20261122.db`;
   chạy 2 lần, 2629 → 2651 điểm (idempotent). Hết hạn lại sau 20/12 nếu không nạp tiếp.
+
+### D100 — TPCP_10Y nạp tự động từ worldgovernmentbonds.com, báo Discord khi cũ quá 21 ngày (2026-11-22, phiên trước giao việc)
+- **Vì sao:** sau khi chuyển sang VPS (D96) không job nào nạp TPCP_10Y; quá 30 ngày cờ chặn `STALE_MACRO_RF` loại cả
+  100 mã khỏi xếp hạng (D99 nạp tay tới 20/11, hết hạn lại sau 20/12).
+- **Chọn nguồn (đều trong allowlist, không đăng nhập, không trả phí):**
+  - worldgovernmentbonds.com, trang `bond-historical-data/vietnam/10-years/`: chuỗi ngày từ 2016 (3.713 điểm). Khớp
+    investing.com (nguồn nạp tay) ở 23 phiên 19/10–20/11: lệch tối đa 0,001 điểm % (17/11, 18/11, 05/11), còn lại trùng.
+    robots.txt cho phép mọi bot; trang điều khoản không cấm truy cập tự động. → **chọn**.
+  - HNX `trai-phieu/duong-cong-loi-suat.html`: đường cong ƯỚC LƯỢNG (spot/par yield), 10 năm par 4,458% so với 4,568% của
+    WGB/investing.com cùng tuần (−11 bp) → khác thước đo, không trộn vào chuỗi; giữ làm đối chiếu.
+  - investing.com: ngoài allowlist, chặn tải tự động; tradingeconomics 403.
+  - Gọi thẳng API JSON nội bộ của WGB bị bộ phân quyền chặn khi thử (22/11) → không dùng. Job mở chính trang công khai
+    bằng Chromium headless (Playwright, đã có trong image VPS) như một lượt xem trình duyệt, đọc biến
+    `jsGlobalResult.result.quote` trang tự dựng; trình duyệt chỉ được tải tài nguyên từ host trong allowlist (quảng
+    cáo/tracker bị chặn). User-agent mặc định của Playwright (không giả trình duyệt thường).
+- **Làm:** `valuation/ingest/tpcp_wgb.py` + `scripts/update_tpcp_10y.py` (`--dry-run`: không ghi, không gửi). Chỉ THÊM
+  ngày thường chưa có trong DB, trong 45 ngày gần nhất, trước hôm nay (điểm hôm nay còn đổi); ngày đã có (kể cả
+  investing.com) không bao giờ bị ghi đè; giá trị ngoài 0,5–15% → lỗi, không ghi. Ghi qua `upsert_macro_series`
+  (`source = worldgovernmentbonds.com`). Điểm mới nhất cũ > 21 ngày → tin Discord (webhook báo cáo sáng) kèm ngày bị
+  chặn (điểm cuối + 31 ngày) và lỗi lần nạp nếu có; lỗi tải/parse vẫn kiểm tra tuổi rồi thoát mã 1. Tham số:
+  `macro_sources.tpcp_10y_wgb` trong `config/defaults.yaml`.
+- **Lịch:** `tpcp-10y` 07:20 T2–T6 trong `vn100-worker`, đứng đầu danh sách `JOBS` (chạy bù vẫn trước báo cáo sáng
+  07:50 và xếp hạng 08:00). Bản sao `deploy/docker/scheduler.py` trong repo đồng bộ với VPS (gồm 2 dòng data-update +
+  ranking T2/T5 08:00 trước đây chỉ có trên VPS).
+- **Giới hạn:** WGB chụp số vài lần mỗi ngày theo giờ UTC; điểm của một ngày là lần chụp cuối, có hôm giữa phiên →
+  lệch đóng cửa ~0,1–2 bp. Ngày lễ VN WGB lặp số hôm trước, job vẫn ghi (không phân biệt được với ngày thường).
+  Gỡ: `DELETE FROM macro_series WHERE indicator_code='TPCP_10Y' AND source='worldgovernmentbonds.com'`.
+- **Kiểm:** `tests/test_tpcp_wgb.py` (21 ca, offline, SQLite trong bộ nhớ): 4,561% → 0,04561; DB 18–20/11, hôm nay
+  25/11 → chỉ thêm 23/11 và 24/11; lấp ngày thiếu 19/11; 18/11 investing 4,571% không bị WGB 4,572% ghi đè; chạy lại
+  ghi 0; ngưỡng báo tính tay (điểm cuối 20/11: 11/12 cũ 21 ngày chưa báo, 12/12 cũ 22 ngày báo, chặn từ 21/12); lỗi
+  tải + chuỗi cũ vẫn báo; host ngoài allowlist bị từ chối trước khi tải. Chạy thử trên Mac (dry-run, Chrome của máy):
+  đọc 3.713 điểm, chọn đúng ngày thiếu.

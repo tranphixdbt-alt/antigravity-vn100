@@ -20,9 +20,8 @@
 - [ ] Bản máy: MSN, VTP chưa có giá phiên 28/10 (job sáng 29/10 tự lấy lại — kiểm tra)
 - [ ] Routine Chủ nhật 01/11 20:00: kiểm tra đọc được `vn100_knowledge` trên Drive (D85)
 - [ ] VNM: chờ VCI đăng thông báo cổ tức mới (người dùng chọn chờ)
-- [ ] TPCP_10Y trên VPS không có job nạp (Mac nạp tay từ investing.com tới 19/10): nạp tiếp trước 20/12 hoặc tự động hóa, nếu không cờ chặn STALE_MACRO_RF quay lại cho cả 100 mã (D99)
+- [ ] Thứ 3 24/11: kiểm tra job `tpcp-10y` 07:20 trên VPS thêm điểm 23/11 (`/app/logs/tpcp-10y.log`); thứ 2 23/11 không có điểm mới là đúng (21–22/11 cuối tuần) (D100)
 - [ ] Thứ 2 23/11: kiểm tra lần chạy tự động đầu tiên data-update + ranking 08:00 trên VPS (`docker logs vn100-worker`, `/app/.vn100_ranking/status.json`); worker giới hạn RAM 640 MB chưa từng chạy xếp hạng; bước dòng tiền trong data-update sẽ lỗi (cần `vnstock_data` đã khóa, D97)
-- [ ] Đưa 2 dòng lịch data-update + ranking (T2/T5 08:00) từ `/srv/apps/vn100/scheduler.py` trên VPS vào `deploy/docker/scheduler.py` của repo
 
 - [ ] KIỂM THỬ 29/10 — giá mục tiêu CTCK không điều chỉnh khi chia cổ phiếu (HDB 30%, TCB 50% từ 29/10, PC1 15% từ 04/11) → trung vị CTCK cao ~30%
 - [ ] KIỂM THỬ 29/10 — xếp hạng 27/10 lỗi mạng: 23/100 mã không có FV (VHM, BCM, NLG… dù app định giá được); cần chạy lại
@@ -35,6 +34,8 @@
 ## Đã xong
 
 ### 2026-11-22
+- [x] TPCP_10Y tự động: job `tpcp-10y` 07:20 T2–T6 trên VPS lấy worldgovernmentbonds.com (khớp investing.com ≤ 0,001 điểm %), chỉ thêm ngày thiếu, báo Discord khi cũ > 21 ngày (D100)
+- [x] Đồng bộ `deploy/docker/scheduler.py` của repo với VPS (2 dòng data-update + ranking T2/T5 08:00) (D100)
 - [x] Upside lệch thang giá sau cổ tức/chia tách: FV snapshot quy về thang giá hiện tại ở mọi chỗ dùng `ranking_table` (TCB +99,6% → +33,1%; 10 mã quy đổi, 0 mã lệch thang trên dữ liệu VPS) (D99)
 - [x] TPCP_10Y trên VPS: nạp 22 điểm 22/10–20/11 (investing.com, đối chiếu worldgovernmentbonds; sao lưu `/data/backup-before-tpcp-20261122.db`) → hết cờ STALE_MACRO_RF cho đợt xếp hạng 23/11 (D99)
 

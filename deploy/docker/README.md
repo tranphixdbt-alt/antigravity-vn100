@@ -7,7 +7,7 @@ nằm NGOÀI repo; bản trong thư mục này chỉ để dựng lại nếu VP
 | Container | Việc |
 |---|---|
 | `vn100` | Giao diện Streamlit (Caddy gọi `vn100:8506`) |
-| `vn100-worker` | `scheduler.py`: báo cáo sáng 07:50 T2–T6, dòng tiền 08:30 T2–T6, tóm tắt tuần CN 18:00 (chạy bù ≤ 3 giờ) |
+| `vn100-worker` | `scheduler.py`: TPCP_10Y 07:20 T2–T6 (D100), báo cáo sáng 07:50 T2–T6, cập nhật dữ liệu + xếp hạng 08:00 T2 và T5, tóm tắt tuần CN 18:00 (dòng tiền 08:30 tắt từ D97; chạy bù ≤ 3 giờ) |
 | `vn100-bot` | Bot Discord (chỉ chạy MỘT nơi — launchd trên Mac đã `launchctl disable`) |
 
 - DB ở volume `vn100_vn100_data` (`/data`), `DB_SYNC_FROM_REPO=0`: VPS là bản chính, không ghi đè bằng `vn100_full.db.gz`.
