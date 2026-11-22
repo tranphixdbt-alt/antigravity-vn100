@@ -745,6 +745,9 @@ fhsc:
   rate_limit_retries: 2
   timeout_sec: 1800               # cả lượt 100 mã × 3 loại ≈ 7–8 phút
   cache_ttl_sec: 1800             # dữ liệu tải trước chỉ dùng trong lượt job đó
+# Mua/bán chủ động FHSC → active_flow_daily (D101, W0 docs/PLAN_WYCKOFF_FLOW.md); job scripts/update_active_flow.py
+active_flow:
+  lookback_days: 120              # ngày lịch xin từ FHSC; nguồn chỉ trả ~61 phiên gần nhất (đo 22/11/2026)
 # Biểu đồ dòng tiền chi tiết từng mã (D74): khung thời gian → số phiên; mặc định 3 tháng.
 money_flow_chart:
   history_days: 760               # ngày lịch nạp khi mở chi tiết (đủ 2 năm flow_daily)

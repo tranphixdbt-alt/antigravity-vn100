@@ -2,7 +2,7 @@
 do `valuation/ingest/fhsc_bridge.py` gọi; CHỈ tải rồi in JSON — ghi DB vẫn do app (~/.venv) làm, nên môi
 trường mới không cần gói của dự án.
 
-Vào (stdin, JSON): {"starts": {"FPT": "2026-11-05", ...}, "kinds": ["prices", "foreign", "prop"],
+Vào (stdin, JSON): {"starts": {"FPT": "2026-11-05", ...}, "kinds": ["prices", "foreign", "prop", "active"],
                      "min_interval_sec": 1.4, "rate_limit_wait_sec": 30, "rate_limit_retries": 2}
 Ra (stdout): mỗi dòng {"ticker", "kind", "profile", "rows": [...]} hoặc {"ticker", "kind", "error"}.
 """
@@ -16,7 +16,8 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 INDEXES = {"VNINDEX", "VN30", "HNXINDEX", "UPCOMINDEX"}
-METHODS = {"prices": "ohlcv", "foreign": "foreign_flow", "prop": "proprietary_flow"}
+# "active": mua/bán chủ động theo phiên, FHSC chỉ trả ~61 phiên gần nhất (D101)
+METHODS = {"prices": "ohlcv", "foreign": "foreign_flow", "prop": "proprietary_flow", "active": "active_flow"}
 
 
 def _with_429_retry(fn: Callable[[], Any], wait: float, retries: int, sleep: Callable[[float], None]) -> Any:

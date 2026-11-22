@@ -22,6 +22,8 @@ JOBS = [
     # D100 (22/11/2026): nạp TPCP_10Y từ worldgovernmentbonds.com (Chromium headless, ~10 s) + báo Discord khi
     # chuỗi cũ > 21 ngày. Đứng đầu danh sách để khi chạy bù vẫn xong trước báo cáo sáng và xếp hạng (rf mới nhất).
     ("tpcp-10y", range(0, 5), "07:20", ["python", "scripts/update_tpcp_10y.py"]),
+    # D101 (22/11/2026): lưu mua/bán chủ động FHSC (~100 lời gọi ≈ 3 phút). FHSC chỉ giữ ~61 phiên → phải chạy mỗi ngày.
+    ("active-flow", range(0, 5), "07:35", ["python", "scripts/update_active_flow.py"]),
     ("daily-report", range(0, 5), "07:50", ["python", "scripts/daily_report.py"]),
     # D97: flow-daily (khớp/thỏa thuận tách, VCI qua vnstock_data) tắt — gói bị khóa từ 10/11/2026, job lỗi mỗi ngày.
     # Khối ngoại/tự doanh gộp giờ lấy từ FHSC trong daily-report. Bật lại khi có nguồn tách khớp/thỏa thuận.

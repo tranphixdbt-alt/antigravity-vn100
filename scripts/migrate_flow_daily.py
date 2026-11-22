@@ -27,10 +27,12 @@ from valuation.db.flow_models import (
 BACKUP_DIR = PROJECT_ROOT / "backups"
 
 
-def backup_sqlite(src: Path, backup_dir: Path, now: dt.datetime) -> Path:
+def backup_sqlite(
+    src: Path, backup_dir: Path, now: dt.datetime, tag: str = "flow_daily"
+) -> Path:
     """Sao lưu bằng sqlite3 backup API (ảnh nhất quán kể cả khi app đang mở DB)."""
     backup_dir.mkdir(parents=True, exist_ok=True)
-    dst = backup_dir / f"{src.stem}.pre_flow_daily_{now:%Y%m%d_%H%M%S}{src.suffix}"
+    dst = backup_dir / f"{src.stem}.pre_{tag}_{now:%Y%m%d_%H%M%S}{src.suffix}"
     if dst.exists():
         raise FileExistsError(f"Backup đã tồn tại: {dst}")
     with contextlib.closing(sqlite3.connect(src)) as s, contextlib.closing(

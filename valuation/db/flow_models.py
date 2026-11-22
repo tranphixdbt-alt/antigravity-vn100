@@ -76,3 +76,18 @@ flow_daily = Table(
     Column("batch_id", String, nullable=False),
     Column("quality_flags", String, nullable=True),  # mã cờ cách bằng dấu phẩy
 )
+
+# W0 Wyckoff (D101, docs/PLAN_WYCKOFF_FLOW.md): KL mua/bán CHỦ ĐỘNG theo phiên (cổ phiếu, danh nghĩa như FHSC
+# trả). FHSC chỉ giữ ~61 phiên gần nhất → job lưu hằng ngày. Chỉ phiên đã chốt (cầu nối bỏ phiên hôm nay);
+# dòng thiếu số không được ghi (không có NULL), phiên đã lưu không bị ghi đè (số lệch chỉ ghi log).
+# Tạo bằng scripts/migrate_active_flow.py sau khi backup, như flow_daily.
+ACTIVE_COLUMNS: tuple[str, ...] = ("active_buy_vol", "active_sell_vol")
+active_flow_daily = Table(
+    "active_flow_daily",
+    FlowMetaData,
+    Column("ticker", String, primary_key=True),
+    Column("trade_date", Date, primary_key=True),
+    Column("source", String, primary_key=True),
+    *(Column(name, Float, nullable=False) for name in ACTIVE_COLUMNS),
+    Column("fetched_at", DateTime, nullable=False),  # giờ VN, không tz
+)
