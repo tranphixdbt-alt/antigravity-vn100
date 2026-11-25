@@ -319,6 +319,7 @@ Mô tả đầy đủ ở `valuation/engine/flag_descriptions.py`; level dưới
   `test_moi_duong_api_deu_dong_khi_chua_dang_nhap` phải còn qua.
 - **Dữ liệu người dùng:** tệp SQLite riêng `/data/web_user/web_user.db` (tài khoản, lệnh, mức giá), không nằm trong DB
   định giá, không commit. Tài khoản mới ở trạng thái chờ duyệt; Quản trị đầu tiên lấy từ `WEB_ADMIN_EMAILS` trong
-  `.env` trên VPS (chủ máy tự điền). Sao lưu: `scripts/backup_web_user_db.py` (giữ 14 bản cùng ổ); đến 25/11/2026
-  CHƯA gắn vào lịch của `vn100-worker` (bước B7 của kế hoạch).
+  `.env` trên VPS (chủ máy tự điền, đã có từ 25/11/2026). Sao lưu: `scripts/backup_web_user_db.py` chạy 23:00 mỗi
+  ngày trong `vn100-worker` (job `web-user-backup` của `scheduler.py`, D112), giữ 14 bản ở `/data/web_user/sao_luu/`,
+  cùng ổ với tệp gốc nên không chống được mất cả ổ; job lỗi chỉ để lại dòng `exit=1` trong nhật ký worker.
 - **Dự án chứng quyền** nhận mã bằng `git push vps main` từ máy Mac (chỉ ở mạng nhà); VPS tự deploy trong 3 phút.

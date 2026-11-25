@@ -1235,3 +1235,22 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   chưa ai thấy, chưa so số với web cũ; điện thoại thật, âm thanh, thông báo trình duyệt (B6); sao lưu `web_user.db`
   chưa gắn lịch (B7), tức dữ liệu người dùng hiện CHƯA có bản sao lưu nào; đo tải trong giờ khớp lệnh và 9 test trượt
   (B8); `Dockerfile` trên VPS khác bản sao 4 dòng.
+
+### D112 — Web hợp nhất lát 6: sao lưu `web_user.db` theo lịch, Quản trị đầu tiên (2026-11-25, người dùng « Gắn sao lưu »)
+
+- **Người dùng duyệt** bước B7: thêm job sao lưu vào lịch của `vn100-worker`, 23:00 mỗi ngày, giữ 14 bản, chỉ khởi
+  động lại worker. Giờ 23:00 do tôi đề xuất: không trùng job nào và sau giờ mọi người nhập lệnh trong ngày.
+- **Đã làm:** thêm dòng `("web-user-backup", range(0, 7), "23:00", ["python", "scripts/backup_web_user_db.py"])` và ba
+  phép tự kiểm vào `scheduler.py` (cả kiểm tên job không trùng, vì trạng thái lưu theo tên); sao lưu tệp cũ trên VPS,
+  chép tệp mới, `--selftest` đạt, `docker compose build`, `docker compose up -d vn100-worker`. Ba container còn lại
+  không bị tạo lại.
+- **Kiểm:** chạy tay script hai lần trong worker ra đúng một bản `web_user-20261125.db`; bản sao và tệp gốc cùng số
+  dòng ở cả năm bảng, `integrity_check` đạt. Worker mới có biến `WEB_USER_DB_URL` (worker cũ tạo trước B4 chưa có).
+- **Hạn chế đã biết của lịch:** ô 23:00 sát nửa đêm nên chỉ chạy bù được tới 23:59 (`due` tính ô giờ theo ngày hiện
+  tại); worker tắt trong khoảng đó thì hôm ấy không có bản. Job lỗi chỉ để lại `exit=1` trong nhật ký worker, không
+  báo đi đâu. Bản sao lưu cùng ổ với tệp gốc.
+- **B3 do người dùng tự làm lúc 19:28:** `WEB_ADMIN_EMAILS` có một mục (chỉ hỏi ứng dụng có hay không, không in giá
+  trị); tài khoản đang chờ duyệt tự thành Quản trị. Sau đó cả năm tab của web mới ra số thật trên VPS.
+- **Chưa kiểm:** lần chạy theo lịch đầu tiên (23:00 ngày 25/11); so số từng mã với web cũ; điện thoại thật, âm thanh,
+  thông báo; tải trong giờ khớp lệnh. Hai lỗi nhỏ thấy thêm, chưa sửa: đổi `#tab` trên địa chỉ khi trang đang mở không
+  chuyển tab; chưa có favicon.

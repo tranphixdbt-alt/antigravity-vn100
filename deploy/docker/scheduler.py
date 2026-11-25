@@ -35,6 +35,11 @@ JOBS = [
     # Bản sao trong repo: deploy/docker/scheduler.py (đồng bộ 22/11/2026, D100) — sửa ở đây thì chép sang đó.
     ("data-update", [0, 3], "08:00", ["python", "-m", "valuation.services.data_update_job"]),
     ("ranking", [0, 3], "08:00", ["python", "scripts/update_vn100_ranking.py"]),
+    # D112 (25/11/2026): sao lưu tệp dữ liệu người dùng của web hợp nhất btinvest.vn (/data/web_user/web_user.db: tài
+    # khoản, lệnh, mức giá) mỗi ngày, giữ 14 bản ở /data/web_user/sao_luu/. Cùng ổ với tệp gốc: chống xóa nhầm và hỏng
+    # tệp, KHÔNG chống mất cả ổ. 23:00 không trùng job nào; ô giờ nằm sát nửa đêm nên chỉ chạy bù được tới 23:59.
+    # Job lỗi: dòng "web-user-backup exit=1" trong nhật ký worker, lý do ở /app/logs/web-user-backup.log.
+    ("web-user-backup", range(0, 7), "23:00", ["python", "scripts/backup_web_user_db.py"]),
 ]
 CATCH_UP = dt.timedelta(hours=3)
 STATE = Path("/data/scheduler_state.json")
@@ -81,6 +86,11 @@ def _selftest() -> None:
     assert not due(dt.datetime(2026, 11, 24, 8, 0), [0, 3], "08:00", None)  # thứ Ba không chạy
     assert due(dt.datetime(2026, 11, 23, 7, 20), range(0, 5), "07:20", None)  # TPCP_10Y thứ Hai 07:20
     assert not due(dt.datetime(2026, 11, 28, 7, 20), range(0, 5), "07:20", None)  # thứ Bảy không nạp TPCP_10Y
+    assert due(dt.datetime(2026, 11, 28, 23, 0), range(0, 7), "23:00", None)  # sao lưu web_user.db chạy cả thứ Bảy
+    assert not due(dt.datetime(2026, 11, 28, 23, 30), range(0, 7), "23:00", "2026-11-28")  # hôm nay đã sao lưu
+    assert not due(dt.datetime(2026, 11, 29, 0, 30), range(0, 7), "23:00", None)  # qua nửa đêm: không chạy bù
+    names = [name for name, *_ in JOBS]
+    assert len(names) == len(set(names)), "tên job trùng nhau thì hai job dùng chung một dòng trạng thái"
     print("selftest OK")
 
 

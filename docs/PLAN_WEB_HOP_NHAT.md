@@ -401,8 +401,9 @@ phần sau. Trước 5b dừng một lần để trình công thức lãi lỗ c
 > **Trạng thái tối 25/11/2026:** người dùng trả lời "Đưa thẳng lên btinvest.vn luôn. còn lại theo bạn": đặt web mới
 > thẳng ở `btinvest.vn`, phần còn lại theo đề xuất (commit tại máy, đọc VPS chỉ đọc, rồi trình các bước ghi). Đã
 > commit tại máy ở hai dự án và xong B0. Sau khi xem kết quả B0 người dùng trả lời "Chạy ngay": **đã làm B1, B2,
-> B4, B5 tối 25/11/2026, web mới đang chạy tại `https://btinvest.vn`** (kết quả ở cuối mục). Còn lại: B3 (người
-> dùng tự thêm `WEB_ADMIN_EMAILS`), B6 (người dùng thử thật), B7 (gắn sao lưu vào lịch), B8 (đo trong giờ khớp lệnh).
+> B4, B5 tối 25/11/2026, web mới đang chạy tại `https://btinvest.vn`** (kết quả ở cuối mục). Cùng tối đó người
+> dùng làm B3 và trả lời "Gắn sao lưu": B7 xong. Còn lại: B6 (người dùng thử thật trên điện thoại, âm thanh, thông
+> báo, so số với web cũ) và B8 (đo trong giờ khớp lệnh).
 
 ### Đích của lát 6
 
@@ -477,11 +478,11 @@ Web mới chạy thật tại `https://btinvest.vn`, đăng nhập bằng tài k
 | B0 | Đọc Caddyfile, compose thật, `docker ps`, `docker stats`, `free -m` | Chỉ đọc | **Xong 25/11**: chốt đoạn Caddy và giới hạn RAM (cuối mục) |
 | B1 | `git push vps main` ở dự án chứng quyền, ngoài giờ khớp lệnh | Ghi | **Xong 25/11 19:14.** Web chứng quyền cũ vẫn chạy; `/api/chung-quyen` trả JSON; 239 test trong container |
 | B2 | `git push origin main` ở dự án định giá (VPS tự dựng lại và khởi động lại ba container cũ) | Ghi | **Xong 25/11 19:19.** Ba container cũ khỏe; web định giá cũ mở được |
-| B3 | Người dùng tự thêm `WEB_ADMIN_EMAILS` vào `.env` trên VPS | Người dùng làm | **CHƯA** (kiểm trong container lúc 19:20: biến còn trống). Không in giá trị |
+| B3 | Người dùng tự thêm `WEB_ADMIN_EMAILS` vào `.env` trên VPS | Người dùng làm | **Xong 25/11 19:28** (người dùng tự chạy; kiểm trong container: biến có 1 mục, không in giá trị) |
 | B4 | Sao lưu rồi sửa compose trên VPS, `docker compose up -d btinvest-web` | Ghi | **Xong 25/11 19:20.** Kiểm sống, RAM, `/api/toi` trả 401 khi gọi trong mạng Docker |
 | B5 | Sao lưu rồi sửa khối `btinvest.vn` trong Caddyfile, `caddy validate`, tải lại | Ghi | **Xong 25/11 19:21.** `https://btinvest.vn/` ra khung web; `/api/toi` trả 401; hai web cũ không đổi |
 | B6 | Người dùng đăng nhập thật trên máy tính và điện thoại, duyệt tài khoản thử | Người dùng làm | Số của vài mã khớp web cũ; chuông, âm thanh, thông báo |
-| B7 | Thêm dòng sao lưu vào `scheduler.py` trên VPS | Ghi | Chạy tay một lần, có bản sao, chạy lại không nhân đôi |
+| B7 | Thêm dòng sao lưu vào `scheduler.py` trên VPS | Ghi | **Xong 25/11 19:30.** Chạy tay một lần, có bản sao, chạy lại không nhân đôi |
 | B8 | Đo trong giờ khớp lệnh phiên kế tiếp | Chỉ đọc | Thời gian trả tin cảnh báo, RAM của `btinvest-web` và `chungquyen` |
 
 Chạy lại 9 test đang trượt ở máy Mac trong container trên VPS thuộc B8 (chỉ 9 test đó, không chạy cả bộ vì RAM).
@@ -620,6 +621,23 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 - **Đăng nhập coin thật chạy được:** mở `https://btinvest.vn/` bằng trình duyệt có sẵn phiên coin: `/api/toi` trả 401
   (phiên hết hạn), trang đăng nhập tự làm mới phiên rồi quay lại, web hiện "Tài khoản đang chờ duyệt" và mọi đường
   số liệu trả 403 cho tới khi được duyệt. Lần mở này tạo một dòng tài khoản chờ duyệt cho phiên coin đó.
-- **Chưa làm, chưa kiểm:** B3 chưa có nên chưa ai là Quản trị, chưa ai xem được số; chưa thấy màn hình số liệu trên
-  VPS, chưa so số với web cũ, chưa thử điện thoại thật, âm thanh, thông báo (B6); sao lưu chưa gắn lịch (B7); chưa
-  đo trong giờ khớp lệnh (B8). Commit ghi các kết quả này mới ở máy, chưa đẩy (đẩy là deploy lại bốn container).
+- **Chưa làm, chưa kiểm lúc 19:25:** B3, B6, B7, B8 (xem mục dưới cho B3 và B7).
+
+### Kết quả B3 và B7 (tối 25/11/2026, người dùng « Gắn sao lưu »)
+
+- **B3 (19:28, người dùng tự chạy lệnh):** `WEB_ADMIN_EMAILS` có một mục, container `btinvest-web` được tạo lại.
+  Tài khoản chờ duyệt lúc trước tự thành Quản trị ở lần mở kế tiếp (nhật ký ghi `quan_tri_dau_tien`).
+- **Màn hình số liệu trên VPS (19:31–19:33, phiên Quản trị trong trình duyệt của ứng dụng, chỉ xem):** cả năm tab ra số
+  thật: Hôm nay (VN-Index 1.697,14, giá đến 23/11/2026), Cổ phiếu (dòng tiền 100 mã, đến 23/11), Chứng quyền (lần
+  quét 14:02 ngày 25/11, 477 mã, 20 mã đạt cả bốn tiêu chí), ETF (21 quỹ), Phái sinh (VN30 1.778,58, giá lấy lúc
+  19:32). Nhật ký máy chủ: các đường số liệu trả 200, không có dòng lỗi. Giá trong DB định giá dừng ở 23/11 vì job
+  cập nhật dữ liệu chạy 08:00 thứ Hai và thứ Năm; web mới đọc cùng DB với web cũ.
+- **B7 (19:30):** `scheduler.py` cũ sao lưu thành `scheduler.py.bak-20261125-truoc-sao-luu-web`; thêm job
+  `web-user-backup` 23:00 mỗi ngày, tự kiểm `--selftest` đạt trên VPS; dựng lại image (2 giây) và chỉ tạo lại
+  `vn100-worker`. Chạy tay script hai lần trong worker: một bản `web_user-20261125.db`, đọc lại đủ dòng như tệp gốc
+  (1 tài khoản, 2 dòng nhật ký, chưa có lệnh hay mức giá), `integrity_check` đạt. Bản sao `deploy/docker/scheduler.py`
+  trùng mã băm với tệp trên VPS.
+- **Chưa kiểm:** lần chạy theo lịch đầu tiên là 23:00 ngày 25/11, chưa ai xem kết quả (dòng `web-user-backup
+  exit=0` trong nhật ký worker); số chưa so từng mã với web cũ; điện thoại thật, âm thanh, thông báo (B6); tải trong
+  giờ khớp lệnh (B8). Thấy thêm: đổi phần `#tab` trên địa chỉ khi trang đang mở không chuyển tab (phải bấm menu);
+  `/favicon.ico` trả 404. Các commit ghi tài liệu mới ở máy, chưa đẩy (đẩy là deploy lại bốn container).

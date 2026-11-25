@@ -7,7 +7,7 @@ nằm NGOÀI repo; bản trong thư mục này chỉ để dựng lại nếu VP
 | Container | Việc |
 |---|---|
 | `vn100` | Giao diện Streamlit (Caddy gọi `vn100:8506`) |
-| `vn100-worker` | `scheduler.py`: TPCP_10Y 07:20 T2–T6 (D100), báo cáo sáng 07:50 T2–T6, cập nhật dữ liệu + xếp hạng 08:00 T2 và T5, tóm tắt tuần CN 18:00 (dòng tiền 08:30 tắt từ D97; chạy bù ≤ 3 giờ) |
+| `vn100-worker` | `scheduler.py`: TPCP_10Y 07:20 T2–T6 (D100), báo cáo sáng 07:50 T2–T6, cập nhật dữ liệu + xếp hạng 08:00 T2 và T5, tóm tắt tuần CN 18:00, sao lưu `web_user.db` của web hợp nhất 23:00 mỗi ngày (D112; giữ 14 bản ở `/data/web_user/sao_luu/`) (dòng tiền 08:30 tắt từ D97; chạy bù ≤ 3 giờ) |
 | `vn100-bot` | Bot Discord (chỉ chạy MỘT nơi — launchd trên Mac đã `launchctl disable`) |
 | `btinvest-web` | Web hợp nhất `https://btinvest.vn` từ 25/11/2026 (D111): FastAPI `valuation.api.web_main` cổng 8600, một tiến trình, giới hạn 768 MB. Caddy gọi `btinvest-web:8600` và KHÔNG chặn hộ: ứng dụng tự hỏi coin `/me`, tự trả 401 |
 
