@@ -738,4 +738,21 @@ vào trang (dịch vụ chứng quyền nhớ giá 5 phút nên tối đa mỗi 
   thuật, khuyến nghị, tin). Cách chia đó trùng với cách trợ lý của dự án đang làm. Chưa rõ người dùng muốn học điểm
   nào (cách trả lời, câu hỏi gợi ý sẵn, hay nguồn số liệu): phải hỏi. Số liệu của góc chat lấy từ chính web này, không
   lấy từ TCBS khi chưa được người dùng cho phép thêm nguồn ngoài.
+- **Thử TCBS MCP ngày 26/11/2026** (người dùng gửi https://help.tcbs.com.vn/tcbs-mcp-server/ và nhờ "thử kết nối xem có gì
+  hay"). Connector đã được người dùng kết nối sẵn vào Claude (công cụ `tcinvest-*`), đăng nhập bằng tài khoản TCBS của
+  chính họ qua OAuth và iOTP, chỉ đọc. Gọi thử với VRE và HOSE, dữ liệu tới phiên 25/11/2026:
+  - **Thị trường:** mã dẫn dắt chỉ số trong một tháng (31/10–25/11: VIC +47,5 điểm; VHM −34,9; TCB, CTG, FPT, VCB mỗi mã
+    khoảng −17 đến −23), độ rộng tăng/giảm từng phiên một năm, mua bán theo ba nhóm nhà đầu tư (cá nhân, tổ chức
+    trong nước, ngoại và tự doanh; cách TCBS tự phân nhóm, chưa rõ phương pháp), bản đồ nhiệt theo ngành.
+  - **Từng mã:** điểm xếp hạng 1–5 nhiều mặt và trung bình ngành (VRE 2,7: sức khỏe tài chính 4,8, định giá 2,5, sức
+    mạnh giá 1,6), danh sách cùng ngành có P/E, P/B, ROE, tương quan, beta, dự phóng chỉ số tài chính tới 2030, tổng
+    hợp tín hiệu kỹ thuật (VRE: "bán mạnh", dưới cả 12 đường trung bình), lịch sử khuyến nghị của TCBS kèm lý do
+    (16/11/2026 NẮM GIỮ VRE), giao dịch nội bộ, hồ sơ doanh nghiệp.
+  - **Không đưa vào web btinvest:** kết nối gắn với tài khoản TCBS cá nhân của người dùng và chỉ dành cho AI agent
+    của chính họ; máy chủ VPS muốn gọi thì phải giữ phiên đăng nhập của người dùng (tôi không được tự đăng nhập hay
+    nhập iOTP) và phát lại dữ liệu, nhận định của TCBS cho cả đội: cần đọc điều khoản và người dùng quyết. DB đồng
+    thuận của dự án đã có TCBS là một trong 44 công ty chứng khoán.
+  - **Học được cho góc chat:** cách TCBS chia công cụ theo nhóm (thị trường, mã, tài chính, xếp hạng, kỹ thuật, dòng
+    tiền, tin) giống trợ lý của bot Discord; các phần trợ lý của mình còn thiếu và tự tính được từ dữ liệu sẵn có:
+    mã dẫn dắt (ước tính trên VN100), độ rộng, tổng hợp tín hiệu kỹ thuật, so với cùng ngành, câu hỏi gợi ý sẵn.
 
