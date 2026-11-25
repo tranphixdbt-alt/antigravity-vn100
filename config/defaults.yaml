@@ -784,6 +784,12 @@ web:
     temperature: 0.3
     timeout_seconds: 120          # chờ DeepSeek tối đa; quá thì báo lỗi, không tính lượt
     dir_name: ban_ngan            # thư mục con trong .deepseek_report_cache, tách khỏi tệp v8_*.json của bản dài
+  lien_he:                        # nút Liên hệ trên thanh đầu và hàng cuối trang chủ (lát 7, D119); lấy từ trang luyện thi CCHN
+    zalo: "https://zalo.me/0942037820"
+    dien_thoai: "0942037820"
+    dien_thoai_hien: "0942 037 820"
+    facebook: "https://www.facebook.com/profile.php?id=61590345622201"
+    facebook_ten: "BT Tài Chính"
   backup:                         # sao lưu tệp dữ liệu người dùng mỗi ngày (lát 6, scripts/backup_web_user_db.py)
     dir_name: sao_luu             # thư mục con nằm cạnh web_user.db
     keep: 14                      # số bản hằng ngày giữ lại; bản cũ hơn bị xóa

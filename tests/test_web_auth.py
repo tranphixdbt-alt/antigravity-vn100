@@ -398,6 +398,17 @@ def test_moi_duong_api_deu_dong_khi_chua_dang_nhap(env):
     assert users(env) == []  # không ai được tạo dòng tài khoản khi chưa đăng nhập
 
 
+def test_lien_he_lay_tu_cau_hinh_ke_ca_khi_cho_duyet(env):
+    """Nút Liên hệ (D119): số và đường dẫn lấy từ cấu hình qua /api/toi; người đang chờ duyệt cũng thấy để liên hệ."""
+    lh = client("t-an").get("/api/toi").json()["lien_he"]
+    assert lh == load_defaults()["web"]["lien_he"]
+    assert lh["zalo"].startswith("https://zalo.me/") and lh["facebook"].startswith(
+        "https://www.facebook.com/"
+    )
+    assert re.fullmatch(r"0[0-9]{9}", lh["dien_thoai"])
+    assert lh["dien_thoai_hien"].replace(" ", "") == lh["dien_thoai"]
+
+
 def test_khung_web_va_bieu_tuong_mo_duoc_khi_chua_dang_nhap(env):
     """Khung web tĩnh (không có số liệu) và biểu tượng trang ai cũng tải được; trang chỉ trỏ tới tệp có thật."""
     c = client()

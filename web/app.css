@@ -396,8 +396,6 @@ td .o-ma { min-height: 32px; font-weight: 700; color: var(--nhan); }
 .o-loc { padding-top: 12px; }
 .o-loc input { width: 100%; max-width: 560px; height: 44px; border-radius: 6px; border: 1px solid var(--ke); background: var(--mat); color: var(--muc); padding: 0 12px; font-size: 16px; }
 .o-loc input::placeholder { color: var(--muc-3); }
-.nut-them { min-height: 44px; margin-block: 12px 4px; padding: 0 16px; border: 1px solid var(--ke); border-radius: 6px; font-weight: 600; font-size: 14px; color: var(--muc); background: var(--mat); }
-.nut-them:hover { background: var(--giay); }
 .gt { display: grid; gap: 2px; margin: 0; max-width: 78ch; } .gt dt { font-weight: 600; color: var(--muc); margin-top: 10px; } .gt dd { margin: 0; color: var(--muc-2); white-space: normal; }
 .dl dt { display: flex; align-items: center; gap: 6px; }
 .kl-hai .ct { margin-left: 6px; }
@@ -504,3 +502,24 @@ td .nut-nho { min-height: 34px; }
 @media (max-width: 599.98px) { .bo-the { display: none; } .bo-so b { font-size: 24px; } .bo-nut { gap: 5px; padding: 10px 10px 12px; } }
 @media (min-width: 960px) { .bo4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding-block: 20px; } .bo-nut { padding: 14px 14px 12px; } .bo-the { padding: 0 14px 14px; } }
 
+/* ---------- Liên hệ: thực đơn trên thanh đầu và hàng cuối trang chủ (D119) ---------- */
+#noi .lh-dong { display: flex; align-items: center; gap: 12px; min-height: 52px; color: inherit; text-decoration: none; border-top: 1px solid rgba(128, 140, 170, .35); }
+#noi .lh-dong svg, .lh-o svg { width: 20px; height: 20px; flex: none; }
+#noi .lh-dong span, .lh-o span { display: grid; line-height: 1.3; }
+#noi .lh-dong b { font-weight: 700; } #noi .lh-dong small { font-size: 12.5px; opacity: .8; }
+.lh { display: flex; flex-wrap: wrap; gap: 10px; padding-block: 6px 24px; }
+/* điện thoại: thanh đầu chật, thêm nút này thì ô tìm mã chỉ còn 57px; liên hệ nằm trong thực đơn tài khoản và cuối trang chủ */
+@media (max-width: 599.98px) { #nut-lh { display: none; } }
+.lh-o { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border: 1px solid var(--ke); border-radius: 6px; color: var(--muc); text-decoration: none; background: var(--mat); }
+.lh-o:hover { background: var(--giay); }
+.lh-o b { font-size: 14px; font-weight: 700; } .lh-o small { font-size: 12px; color: var(--muc-2); }
+
+
+/* ---------- Danh sách và bảng dài trong khung cuộn cùng kiểu ở mọi tab (D119) ---------- */
+:root { --khung-cao: min(560px, 64vh); }
+@media (max-width: 959.98px) { :root { --khung-cao: min(460px, 58vh); } }
+.khung, .cuon.doc { max-height: var(--khung-cao); overflow-y: auto; border-block: 1px solid var(--ke); }
+.khung { overflow-x: hidden; } /* dòng phóng nhẹ khi rê chuột không làm hiện thanh cuộn ngang */
+.khung:focus-visible, .cuon.doc:focus-visible { outline-offset: -2px; }
+.cuon.doc thead th { position: sticky; top: 0; z-index: 2; background: var(--mat); box-shadow: inset 0 -1px 0 var(--ke); }
+.cuon.doc thead th.trai:first-child { z-index: 3; }

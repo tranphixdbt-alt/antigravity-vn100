@@ -656,7 +656,7 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 | 2 | Định giá và giá mục tiêu lên đầu, khoảng 4–5 dòng, rồi mới tới dòng tiền; làm nổi bật phần so sánh với công ty chứng khoán | **Xong tại máy** (D115) |
 | 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | **Xong tại máy** (D116): mọi tài khoản đã duyệt, 5 lượt mỗi ngày, khoảng 500 từ |
 | 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | **Xong tại máy** (D118): bốn ô đầu trang |
-| 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | Đã có đủ liên kết, chờ làm cùng việc 4 |
+| 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | **Xong tại máy** (D119) |
 | 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | Chờ chốt "học theo TCBS" là học điểm nào |
 
 ### Việc 1 và 2: tờ chi tiết mã (đã làm, chỉ đổi bố trí, không đổi số)
@@ -705,6 +705,18 @@ sang tab). Mỗi ô: biểu tượng của tab, tên, con số chính lấy đú
 xả, basis âm: đỏ). Trên điện thoại xếp 2×2, ẩn hàng mã để vẫn thấy phần dưới ngay màn hình đầu. Khối "Chứng quyền
 và ETF" cũ của trang chủ bỏ đi vì số của nó nay nằm trong ô (mỗi chỉ số hiện một lần). Phái sinh nay nạp ngay lúc
 vào trang (dịch vụ chứng quyền nhớ giá 5 phút nên tối đa mỗi 5 phút gọi Vietcap một lần).
+
+### Việc 5: liên hệ (đã làm) và việc 7: danh sách trong khung cuộn (đã làm)
+
+- **Liên hệ** (người dùng "Đồng ý" đề xuất): nút điện thoại trên thanh đầu mở thực đơn Zalo (nhắn 0942 037 820),
+  Gọi điện, Facebook "BT Tài Chính"; cùng ba mục đó thành hàng cuối trang chủ. Số và đường dẫn nằm ở
+  `web.lien_he` của `config/defaults.yaml`, trả qua `/api/toi`. Trên điện thoại thanh đầu quá chật (ô tìm mã còn
+  57px) nên nút ẩn đi và "Liên hệ BT Invest" thành một mục trong thực đơn tài khoản.
+- **Việc 7 (yêu cầu thêm 26/11/2026):** "các mã chứng khoán hay chứng quyền, ETF… quá dài. Cho hiển thị dạng thanh
+  cuộn cho đồng nhất tất cả dữ liệu". Mọi danh sách và bảng dài trong các tab nằm trong khung cuộn cùng một kiểu,
+  cao tối đa 560px (máy tính) hoặc 460px (điện thoại): bản đồ ngành, danh sách 100 mã, bảng xếp hạng VN100 và ứng
+  viên tích sản (dòng tiêu đề đứng yên khi cuộn), danh sách chứng quyền (bỏ nút "Hiện thêm", cả 461 mã trong
+  khung), danh sách và hai bảng ETF, danh sách hợp đồng tương lai. Đổi bộ lọc thì khung cuộn về đầu.
 
 ### Dữ kiện đã tìm cho các việc còn lại
 

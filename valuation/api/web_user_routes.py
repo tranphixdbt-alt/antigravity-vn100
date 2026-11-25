@@ -59,6 +59,7 @@ def toi(user: CurrentUser) -> dict:
         "che_do": settings.web_auth_mode,
         "dang_xuat": cfg["logout_path"],
         "hoi_canh_bao_giay": load_defaults()["web"]["alerts"]["poll_seconds"],
+        "lien_he": load_defaults()["web"]["lien_he"],
     }
 
 

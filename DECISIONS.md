@@ -1390,3 +1390,22 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   tải lại trang là hết.
 - **Kiểm:** trình duyệt tại máy ở 1440×900 (bốn ô cùng cao, mỗi ô 262px rộng) và 375×812 (2×2); bấm ô sang tab, Back về
   trang chủ, bấm mã trong ô mở tờ, console không lỗi. 89 test web qua.
+
+### D119 — Web hợp nhất: nút Liên hệ; danh sách dài trong khung cuộn cùng kiểu (2026-11-26, người dùng « Đồng ý, các mã … quá dài, cho hiển thị dạng thanh cuộn cho đồng nhất tất cả dữ liệu »)
+
+- **Liên hệ (người dùng đồng ý đề xuất):** nút điện thoại trên thanh đầu mở thực đơn ba kênh (Zalo, gọi điện, Facebook
+  "BT Tài Chính"), cùng ba kênh thành hàng cuối trang chủ. Số và đường dẫn lấy từ trang luyện thi của người dùng, đặt ở
+  `web.lien_he` (`config/defaults.yaml`), trả qua `/api/toi` (người chờ duyệt cũng nhận được); giao diện chỉ nhận đường
+  dẫn `https://` và `tel:` chỉ có số. Test `test_lien_he_lay_tu_cau_hinh_ke_ca_khi_cho_duyet`.
+- **Tôi tự quyết khác đề xuất:** trên điện thoại (dưới 600px) thêm nút này làm ô tìm mã chỉ còn 57px (đo thật), nên ẩn
+  nút và đưa "Liên hệ BT Invest" vào thực đơn tài khoản; trên máy tính giữ nút như đã chốt.
+- **Khung cuộn:** tôi hiểu "các mã quá dài" là các danh sách mã trong từng tab kéo trang rất dài (danh sách 100 cổ phiếu
+  làm tab Cổ phiếu cao khoảng 10.000px). Nay mọi danh sách và bảng dài nằm trong khung cuộn cùng một kiểu (`khung()` và
+  `bang(…, true)` trong `web/app.js`, cao `min(560px, 64vh)`, điện thoại `min(460px, 58vh)`): tab Cổ phiếu còn khoảng
+  1.700px. Bảng có dòng tiêu đề đứng yên khi cuộn. Chứng quyền bỏ phân trang "Hiện thêm", vẽ đủ cả nhóm trong khung (461
+  mã vẽ trong khoảng 230ms ở máy Mac). Hiệu ứng phóng dòng khi rê chuột đổi sang đọc vị trí mọi dòng trước rồi mới ghi,
+  bỏ qua dòng không đổi, để vài trăm dòng không làm giật.
+- **Không nằm trong khung:** bảng trong tờ chi tiết, Danh mục, Cảnh báo, Tài khoản (đã ngắn hoặc có nút mở rộng). Nếu
+  người dùng muốn cả bốn ô ở trang chủ cuộn ngang thì là việc khác: hỏi lại.
+- **Kiểm:** trình duyệt tại máy ở 1440×900 và 375×812: thực đơn và hàng liên hệ đúng đường dẫn, khung cuộn ở cả năm tab
+  (cao 558px, nội dung 1.247–39.976px), console không lỗi. 90 test web qua.
