@@ -400,8 +400,9 @@ phần sau. Trước 5b dừng một lần để trình công thức lãi lỗ c
 > Lát đầu tiên đụng máy chủ đang chạy thật (mục 4.7 và 8 của `AGENTS.md`): mỗi bước GHI trên VPS xin duyệt.
 > **Trạng thái tối 25/11/2026:** người dùng trả lời "Đưa thẳng lên btinvest.vn luôn. còn lại theo bạn": đặt web mới
 > thẳng ở `btinvest.vn`, phần còn lại theo đề xuất (commit tại máy, đọc VPS chỉ đọc, rồi trình các bước ghi). Đã
-> commit tại máy ở hai dự án (chưa đẩy) và xong B0; kết quả B0 và hai đoạn cấu hình soạn sẵn ở cuối mục này.
-> **Chưa có bước ghi nào trên VPS.**
+> commit tại máy ở hai dự án và xong B0. Sau khi xem kết quả B0 người dùng trả lời "Chạy ngay": **đã làm B1, B2,
+> B4, B5 tối 25/11/2026, web mới đang chạy tại `https://btinvest.vn`** (kết quả ở cuối mục). Còn lại: B3 (người
+> dùng tự thêm `WEB_ADMIN_EMAILS`), B6 (người dùng thử thật), B7 (gắn sao lưu vào lịch), B8 (đo trong giờ khớp lệnh).
 
 ### Đích của lát 6
 
@@ -474,11 +475,11 @@ Web mới chạy thật tại `https://btinvest.vn`, đăng nhập bằng tài k
 | Bước | Việc | Ghi hay đọc | Kiểm sau bước |
 |---|---|---|---|
 | B0 | Đọc Caddyfile, compose thật, `docker ps`, `docker stats`, `free -m` | Chỉ đọc | **Xong 25/11**: chốt đoạn Caddy và giới hạn RAM (cuối mục) |
-| B1 | `git push vps main` ở dự án chứng quyền, ngoài giờ khớp lệnh | Ghi | Web chứng quyền cũ vẫn chạy; `/api/chung-quyen` trả JSON; 239 test trong container |
-| B2 | `git push origin main` ở dự án định giá (VPS tự dựng lại và khởi động lại ba container cũ) | Ghi | Ba container cũ khỏe; web định giá cũ mở được |
-| B3 | Người dùng tự thêm `WEB_ADMIN_EMAILS` vào `.env` trên VPS | Người dùng làm | Không in giá trị |
-| B4 | Sao lưu rồi sửa compose trên VPS, `docker compose up -d btinvest-web` | Ghi | Kiểm sống, RAM, `/api/toi` trả 401 khi gọi trong mạng Docker |
-| B5 | Sao lưu rồi sửa khối `btinvest.vn` trong Caddyfile, `caddy validate`, tải lại | Ghi | `https://btinvest.vn/` ra khung web; `/api/toi` trả 401; hai web cũ không đổi |
+| B1 | `git push vps main` ở dự án chứng quyền, ngoài giờ khớp lệnh | Ghi | **Xong 25/11 19:14.** Web chứng quyền cũ vẫn chạy; `/api/chung-quyen` trả JSON; 239 test trong container |
+| B2 | `git push origin main` ở dự án định giá (VPS tự dựng lại và khởi động lại ba container cũ) | Ghi | **Xong 25/11 19:19.** Ba container cũ khỏe; web định giá cũ mở được |
+| B3 | Người dùng tự thêm `WEB_ADMIN_EMAILS` vào `.env` trên VPS | Người dùng làm | **CHƯA** (kiểm trong container lúc 19:20: biến còn trống). Không in giá trị |
+| B4 | Sao lưu rồi sửa compose trên VPS, `docker compose up -d btinvest-web` | Ghi | **Xong 25/11 19:20.** Kiểm sống, RAM, `/api/toi` trả 401 khi gọi trong mạng Docker |
+| B5 | Sao lưu rồi sửa khối `btinvest.vn` trong Caddyfile, `caddy validate`, tải lại | Ghi | **Xong 25/11 19:21.** `https://btinvest.vn/` ra khung web; `/api/toi` trả 401; hai web cũ không đổi |
 | B6 | Người dùng đăng nhập thật trên máy tính và điện thoại, duyệt tài khoản thử | Người dùng làm | Số của vài mã khớp web cũ; chuông, âm thanh, thông báo |
 | B7 | Thêm dòng sao lưu vào `scheduler.py` trên VPS | Ghi | Chạy tay một lần, có bản sao, chạy lại không nhân đôi |
 | B8 | Đo trong giờ khớp lệnh phiên kế tiếp | Chỉ đọc | Thời gian trả tin cảnh báo, RAM của `btinvest-web` và `chungquyen` |
@@ -538,7 +539,8 @@ phân tích từng chứng quyền, quỹ, hợp đồng; Lướt CW, CW sắp r
 - Giờ chạy job: `vn100-worker` chỉ có job buổi sáng (07:20–08:00, chạy bù tới 3 giờ sau) và chủ nhật 18:00; đẩy mã buổi tối ngày thường
   không cắt ngang job nào.
 
-**Đoạn thêm vào `/srv/apps/vn100/docker-compose.yml` ở B4** (và một dòng `WEB_USER_DB_URL` trong phần `&env` dùng chung):
+**Đoạn thêm vào `/srv/apps/vn100/docker-compose.yml` ở B4** (và một dòng `WEB_USER_DB_URL` trong phần `&env` dùng
+chung). Bản đang chạy thật, có thêm ghi chú, là `deploy/docker/docker-compose.yml` (trùng mã băm với tệp trên VPS):
 
 ```yaml
     # x-vn100 → environment (&env), thêm:
@@ -562,7 +564,8 @@ phân tích từng chứng quyền, quỹ, hợp đồng; Lướt CW, CW sắp r
       retries: 3
 ```
 
-**Khối `btinvest.vn` mới trong `/srv/web/conf/Caddyfile` ở B5** (thay khối trang chờ; `www` và các tên miền khác giữ nguyên):
+**Khối `btinvest.vn` trong `/srv/web/conf/Caddyfile`, đang chạy thật từ B5** (thay khối trang chờ; `www` và các tên
+miền khác giữ nguyên):
 
 ```
 btinvest.vn {
@@ -575,8 +578,10 @@ btinvest.vn {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
-	# Web hop nhat (FastAPI, container btinvest-web:8600). KHONG dung coin_login: ung dung tu hoi coin /me va tu tra
-	# 401 o tung duong /api/ (test test_moi_duong_api_deu_dong_khi_chua_dang_nhap); giao dien gap 401 thi sang /dang-nhap.
+	# Web hop nhat (FastAPI, /srv/apps/vn100, container btinvest-web:8600; 25/11/2026). KHONG dung coin_login:
+	# ung dung tu hoi coin /me va tu tra 401 o tung duong /api/ (repo antigravity-vn100, test
+	# test_moi_duong_api_deu_dong_khi_chua_dang_nhap); giao dien gap 401 thi chuyen sang /dang-nhap.
+	# Trang cho cu van con o /srv/btinvest; quay lui: Caddyfile.bak-btinvest-web-*
 	handle /api/v1/auth/* {
 		reverse_proxy coin-check-api-1:8090
 	}
@@ -594,3 +599,27 @@ btinvest.vn {
 ```
 
 Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 → B4 → B5; dừng ngay ở bước nào kiểm không đạt.
+
+### Kết quả B1, B2, B4, B5 (tối 25/11/2026, người dùng « Chạy ngay »)
+
+- **B1 (19:11 đẩy, 19:14 xong):** VPS tự deploy `f66bc9c`, hai container chứng quyền khỏe. `chungquyen.btinvest.vn`
+  vẫn chuyển sang trang đăng nhập như trước; gọi trong mạng Docker: trang chủ cũ 200, `/api/chung-quyen`, `/api/etf`,
+  `/api/phai-sinh`, `/api/canh-bao/tin` trả JSON, đường lạ 404. 239 test qua trong container `chungquyen-worker`
+  (Python 3.12.16, chạy với môi trường trống, không có khóa nào).
+- **B2 (19:15 đẩy, 19:19 xong):** VPS dựng lại image và tạo lại ba container cũ ở `f55bde0`, đều khỏe; web định giá
+  cũ trả `ok` ở đường kiểm sống; bot Discord đăng nhập lại; `web_main` nạp được trong image (34 đường).
+- **B4 (19:20):** compose cũ sao lưu thành `docker-compose.yml.bak-20261125-truoc-btinvest-web`; tệp mới qua
+  `docker compose config`; `btinvest-web` lên, khỏe sau chưa tới 30 giây, không khởi động lại lần nào, dùng 160 MB trên
+  giới hạn 768 MB. Trong container: `/api/suc-khoe` 200, khung web và `app.js`, `app.css` 200, năm đường số liệu
+  thử đều 401; gọi được coin `/me` và `chungquyen:8000`. Điều kiện khỏe của lệnh deploy đạt với bốn container.
+  `web_user.db` tự tạo ở `/data/web_user/`.
+- **B5 (19:21):** Caddyfile cũ sao lưu thành `Caddyfile.bak-btinvest-web-20261125-1921`; tệp mới qua `caddy validate`
+  rồi mới thay và nạp lại (không khởi động lại Caddy). Từ ngoài: `https://btinvest.vn/` ra khung web, `/api/toi` và
+  các đường số liệu 401, bốn đường ghi 401, cookie bịa 401, `/openapi.json`, `/docs`, `/.env`, `/web_user.db` 404,
+  tiêu đề bảo mật còn đủ; `www` và `http` vẫn chuyển hướng; `chungkhoan`, `chungquyen`, `crypto` không đổi.
+- **Đăng nhập coin thật chạy được:** mở `https://btinvest.vn/` bằng trình duyệt có sẵn phiên coin: `/api/toi` trả 401
+  (phiên hết hạn), trang đăng nhập tự làm mới phiên rồi quay lại, web hiện "Tài khoản đang chờ duyệt" và mọi đường
+  số liệu trả 403 cho tới khi được duyệt. Lần mở này tạo một dòng tài khoản chờ duyệt cho phiên coin đó.
+- **Chưa làm, chưa kiểm:** B3 chưa có nên chưa ai là Quản trị, chưa ai xem được số; chưa thấy màn hình số liệu trên
+  VPS, chưa so số với web cũ, chưa thử điện thoại thật, âm thanh, thông báo (B6); sao lưu chưa gắn lịch (B7); chưa
+  đo trong giờ khớp lệnh (B8). Commit ghi các kết quả này mới ở máy, chưa đẩy (đẩy là deploy lại bốn container).

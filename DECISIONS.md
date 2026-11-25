@@ -1210,3 +1210,28 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   dự án định giá → B4 thêm container → B5 đổi khối `btinvest.vn` của Caddy; dừng ở bước nào kiểm không đạt.
 - **Chưa làm, chưa kiểm:** chưa có bước ghi nào trên VPS; đăng nhập coin thật, điện thoại thật, âm thanh và thông
   báo trình duyệt chưa thử; chưa biết image của dự án chứng quyền có `pytest` để chạy 239 test trong container.
+
+### D111 — Web hợp nhất lát 6: đưa lên VPS, web mới chạy tại btinvest.vn (2026-11-25, người dùng « Chạy ngay »)
+
+- **Người dùng duyệt** sau khi xem kết quả B0: chạy lần lượt bốn bước ghi B1, B2, B4, B5 ngay tối 25/11 (ngoài giờ
+  khớp lệnh, không trùng job nào). B3 là việc của người dùng, lúc chạy chưa có.
+- **Đã làm, theo đúng thứ tự, kiểm đạt mới sang bước sau** (chi tiết từng phép kiểm ở cuối mục 14 của
+  `docs/PLAN_WEB_HOP_NHAT.md`): B1 `git push vps main` ở dự án chứng quyền (`f66bc9c`); B2 `git push origin HEAD:main`
+  ở đây (`f55bde0`); B4 thêm container `btinvest-web` vào compose trên VPS (sao lưu tệp cũ, `docker compose config`
+  rồi mới thay); B5 thay khối `btinvest.vn` trong Caddyfile (sao lưu, `caddy validate`, nạp lại không khởi động lại).
+- **Cách sửa tệp trên VPS:** compose soạn ở máy từ bản sao đã so mã băm trùng với VPS, chép sang, nên
+  `deploy/docker/docker-compose.yml` nay trùng mã băm với tệp đang chạy. Caddyfile thay bằng script chạy trên VPS, chỉ
+  thay khi tìm thấy đúng một khối `btinvest.vn` còn là trang chờ. Không mở `.env`; chỉ hỏi ứng dụng trong container
+  biến `WEB_ADMIN_EMAILS` có giá trị hay không (kết quả: chưa).
+- **Kết quả:** `https://btinvest.vn/` ra web mới; chưa đăng nhập thì mọi đường `/api/` trả 401 (trừ `/api/suc-khoe`);
+  hai web cũ và `crypto.btinvest.vn` không đổi. Đăng nhập coin thật chạy được với phiên có sẵn trong trình duyệt của
+  ứng dụng: phiên hết hạn được trang đăng nhập làm mới, web hiện "Tài khoản đang chờ duyệt", số liệu trả 403.
+  `btinvest-web` dùng 160 MB trên 768 MB.
+- **Việc tôi tự quyết trong phạm vi được giao:** giới hạn RAM 768 MB thay cho 512 MB dự kiến (máy còn trống hơn 8 GB);
+  không đẩy commit ghi kết quả này, vì đẩy là deploy lại cả bốn container mà không đổi mã.
+- **Hệ quả cần nhớ:** từ nay mỗi lần đẩy `main` là deploy cả web mới, và lệnh deploy chờ cả `btinvest-web` khỏe; đổi
+  `.env` trên VPS thì phải `docker compose up -d --force-recreate btinvest-web`.
+- **Chưa làm, chưa kiểm:** B3 (chưa ai là Quản trị nên chưa ai xem được số trên web mới); màn hình số liệu trên VPS
+  chưa ai thấy, chưa so số với web cũ; điện thoại thật, âm thanh, thông báo trình duyệt (B6); sao lưu `web_user.db`
+  chưa gắn lịch (B7), tức dữ liệu người dùng hiện CHƯA có bản sao lưu nào; đo tải trong giờ khớp lệnh và 9 test trượt
+  (B8); `Dockerfile` trên VPS khác bản sao 4 dòng.

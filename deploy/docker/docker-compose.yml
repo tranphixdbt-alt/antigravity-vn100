@@ -1,4 +1,5 @@
-# VN100 tren VPS: giao dien (vn100) + lich job (vn100-worker) + bot Discord (vn100-bot), dung chung DB /data.
+# VN100 tren VPS: giao dien (vn100) + lich job (vn100-worker) + bot Discord (vn100-bot) + web hop nhat btinvest.vn
+# (btinvest-web, tu 25/11/2026), dung chung DB /data.
 # Tu 18/11/2026 VPS la ban chinh (thay may Mac): DB_SYNC_FROM_REPO=0 -> khong ghi de DB bang vn100_full.db.gz cua repo.
 x-vn100: &vn100
   build: .
@@ -10,6 +11,9 @@ x-vn100: &vn100
     DB_SYNC_FROM_REPO: "0"
     VNSTOCK_OAPI_SESSION_BACKEND: file          # FHSC (vnstock 6): luu phien ra file thay keyring
     VNSTOCK_OAPI_STATE_DIR: /data/vnstock_oapi
+    # tep du lieu nguoi dung cua web hop nhat (tai khoan, lenh, muc gia): song qua deploy, tach khoi DB dinh gia.
+    # Dat o phan dung chung vi job sao luu trong vn100-worker phai thay dung tep nay.
+    WEB_USER_DB_URL: sqlite:////data/web_user/web_user.db
   env_file:
     - path: .env          # API key/token (chep tu Mac qua SSH, chmod 600)
       required: false
@@ -58,6 +62,23 @@ services:
     container_name: vn100-bot
     command: ["python", "scripts/discord_bot.py"]
     mem_limit: 256m
+
+  btinvest-web:               # web hop nhat btinvest.vn (FastAPI; repo docs/PLAN_WEB_HOP_NHAT.md muc 14). Caddy KHONG chan ho:
+    <<: *vn100                # ung dung tu hoi coin /me va tu tra 401 o tung duong /api/
+    container_name: btinvest-web
+    command: ["python", "-m", "uvicorn", "valuation.api.web_main:app", "--host", "0.0.0.0", "--port", "8600"]
+    environment:
+      <<: *env
+      WEB_AUTH_MODE: coin     # "dev" bo qua dang nhap, KHONG duoc dat tren may chu
+      WEB_AUTH_ME_URL: http://coin-check-api-1:8090/api/v1/auth/me
+      WEB_CW_BASE_URL: http://chungquyen:8000
+    mem_limit: 768m           # may Mac dung ~210 MB; VPS 12,9 GB co swap (do 25/11/2026)
+    healthcheck:              # lenh deploy cho MOI container khoe (240 giay), khong dat thi quay ve commit truoc
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8600/api/suc-khoe',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
 volumes:
   vn100_data:

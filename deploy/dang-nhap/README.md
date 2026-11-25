@@ -4,6 +4,10 @@ chungkhoan.btinvest.vn (VN100; tên cũ chungkhoang.btinvest.vn chuyển hướn
 Ai có tài khoản coin.btinvest.vn (tự tạo, đã xác minh email) đều vào được cả hai trang — người dùng chọn « mọi tài khoản coin ».
 
 ## Cách chạy
+- **Ngoại lệ `btinvest.vn` (web hợp nhất, 25/11/2026, D111):** khối này KHÔNG `import coin_login`. Caddy chỉ chuyển
+  `/api/v1/auth/*` sang coin, phục vụ `/dang-nhap`, còn lại sang `btinvest-web:8600`; ứng dụng tự hỏi `/me` bằng cookie
+  phiên và tự trả 401 ở từng đường `/api/`, giao diện gặp 401 thì chuyển sang `/dang-nhap?next=…`. Nguyên văn khối ở
+  cuối mục 14 của `docs/PLAN_WEB_HOP_NHAT.md`.
 - **Caddy** (`/srv/web/conf/Caddyfile`, snippet `(coin_login)`), mỗi trang `import coin_login <upstream> <đường dẫn công khai...>`:
   - `/api/v1/auth/*` → `coin-check-api-1:8090` (đăng nhập / làm mới / đăng xuất gọi từ chính tên miền đó);
   - `/dang-nhap` → `/srv/web/sites/dang-nhap/index.html` (file này; `?next=/duong-dan`, `?dang-xuat=1`);

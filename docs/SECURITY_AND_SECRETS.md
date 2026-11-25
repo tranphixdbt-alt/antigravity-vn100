@@ -106,7 +106,7 @@ git diff --cached --name-only
 - Mức giá tự đặt (lát 5c, D108) là của riêng từng người: mọi truy vấn lọc theo người đang đăng nhập, Quản trị
   cũng không đọc được. Mã và mức giá người dùng nhập được kiểm mẫu ở web mới rồi kiểm lại ở dịch vụ chứng quyền
   trước khi lưu; web mới chỉ gọi dịch vụ đó qua các đường dẫn nằm trong danh sách cho phép của `web_cw.py`.
-- Lát 6 (D109, kế hoạch chờ duyệt): ở `btinvest.vn` Caddy không chặn hộ bằng `forward_auth`; ứng dụng tự đòi đăng
+- Lát 6 (D109; chạy thật trên VPS từ 25/11/2026, D111): ở `btinvest.vn` Caddy không chặn hộ bằng `forward_auth`; ứng dụng tự đòi đăng
   nhập ở từng đường `/api/`. Thêm route mới thì test `test_moi_duong_api_deu_dong_khi_chua_dang_nhap` phải còn qua;
   đường công khai duy nhất là `/api/suc-khoe` (không có số liệu).
 - `WEB_ADMIN_EMAILS` chỉ nằm trong `.env` trên máy chủ, do người dùng tự điền. `WEB_AUTH_MODE`, `WEB_AUTH_ME_URL`,

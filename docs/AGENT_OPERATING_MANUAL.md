@@ -301,3 +301,24 @@ Mô tả đầy đủ ở `valuation/engine/flag_descriptions.py`; level dưới
   `audit.filing_source_domains`, `dcf.minority_book_review` 0,10, `relative_multiples.capital_raise_min_ratio`
   0,05 / `capital_raise_proceeds_tol` 0,10 / `capital_raise_exclusion_groups`, `publication_gate.
   new_listing_hold_*`.
+
+## 15. Web hợp nhất btinvest.vn (chạy thật trên VPS từ 25/11/2026, D102–D111)
+
+- **Là gì:** web gộp cổ phiếu, chứng quyền, ETF, hợp đồng tương lai tại `https://btinvest.vn`, chạy SONG SONG với
+  hai web cũ (`chungkhoan.btinvest.vn` là Streamlit của repo này, `chungquyen.btinvest.vn` là repo `~/cw_scanner`).
+  Quyết định của người dùng, kế hoạch 6 lát và phần còn dở: `docs/PLAN_WEB_HOP_NHAT.md`.
+- **Mã:** ứng dụng FastAPI `valuation/api/web_main.py` (nhóm số liệu chỉ có GET) + `web_user_routes.py` (tài khoản,
+  danh mục, mức giá); giao diện viết tay trong `web/` (không React). Số chứng quyền, ETF, hợp đồng tương lai và phép
+  tính danh mục lấy từ dịch vụ chứng quyền qua `services/web_cw.py` (chỉ các đường dẫn trong danh sách cho phép).
+  Không có công thức định giá nào viết lại ở đây: mọi số lấy từ bộ máy có sẵn.
+- **Chạy tại máy:** hai preview trong `.claude/launch.json`: `cw-dich-vu` (cổng 8000, repo `~/cw_scanner`) và
+  `btinvest-web` (cổng 8600, `WEB_AUTH_MODE=dev`). Sửa Python xong phải khởi động lại preview (uvicorn không tự nạp).
+- **Trên VPS:** container `btinvest-web` trong `/srv/apps/vn100/docker-compose.yml` (bản sao: `deploy/docker/`), cùng
+  image với ba container cũ nên **đẩy `main` lên GitHub là deploy cả web này**. Đăng nhập bằng tài khoản coin; ở
+  tên miền này Caddy không chặn hộ, ứng dụng tự trả 401. Thêm route `/api/` mới thì test
+  `test_moi_duong_api_deu_dong_khi_chua_dang_nhap` phải còn qua.
+- **Dữ liệu người dùng:** tệp SQLite riêng `/data/web_user/web_user.db` (tài khoản, lệnh, mức giá), không nằm trong DB
+  định giá, không commit. Tài khoản mới ở trạng thái chờ duyệt; Quản trị đầu tiên lấy từ `WEB_ADMIN_EMAILS` trong
+  `.env` trên VPS (chủ máy tự điền). Sao lưu: `scripts/backup_web_user_db.py` (giữ 14 bản cùng ổ); đến 25/11/2026
+  CHƯA gắn vào lịch của `vn100-worker` (bước B7 của kế hoạch).
+- **Dự án chứng quyền** nhận mã bằng `git push vps main` từ máy Mac (chỉ ở mạng nhà); VPS tự deploy trong 3 phút.
