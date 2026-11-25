@@ -687,6 +687,13 @@ cty, nhận định về mã đó sâu sắc. Khoảng 500 từ".
 - Hạn mức đếm trên nhật ký `web_audit` (việc `bao_cao_ai`, ngày theo giờ Việt Nam); lỗi không mất lượt. Bản báo
   cáo lưu ở `.deepseek_report_cache/ban_ngan/{MÃ}.json` (trên VPS là volume, còn qua deploy). Không đổi schema.
 - Bản dài của web cũ vẫn đọc được ở cuối phần định giá chi tiết (đổi tên mục thành "Báo cáo AI bản dài").
+- **Sửa cách viết theo góp ý của người dùng (D117):** "nhận định không cần nhắc các con số quá nhiều, chỉ nhận định
+  nhanh chiều hướng, tập trung vào những thứ quan trọng mà ít người nhìn thấy từ công ty này, và so sánh với các đối
+  thủ cùng ngành". Báo cáo nay gồm: kết luận; tổng quan công ty (bằng lời, không liệt kê số theo năm); **Điều ít
+  người để ý** (2–3 ý có căn cứ trong số liệu: lợi nhuận và doanh thu đi ngược nhau, chất lượng lợi nhuận, dòng tiền
+  kinh doanh so với lợi nhuận, nợ vay, công ty chứng khoán nhìn khác nhau, dòng tiền ngược chiều giá…); **So với cùng
+  ngành** (gọi tên đối thủ, mạnh hơn và yếu hơn ở ROE, tăng trưởng, nợ, chuyển đổi tiền, điểm phòng thủ và tích sản);
+  nhận định nghiêng về đâu và vì sao; 3 rủi ro. Cả bài tối đa 5 con số.
 
 ### Dữ kiện đã tìm cho các việc còn lại
 

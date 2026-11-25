@@ -25,7 +25,12 @@ from valuation.services import web_valuation
 PHAN = {
     "ket_luan": "VRE rẻ hơn giá trị hợp lý nhưng dòng tiền chưa xác nhận.",
     "tong_quan": "Công ty cho thuê trung tâm thương mại.",
-    "nhan_dinh": "Định giá thấp hơn trung vị công ty chứng khoán.",
+    "diem_an": [
+        "Lợi nhuận tăng trong khi doanh thu giảm.",
+        "Khối ngoại bán khi giá đi ngang.",
+    ],
+    "so_voi_nganh": "ROE cao hơn phần lớn đối thủ cùng ngành, nợ vay thấp hơn.",
+    "nhan_dinh": "Nghiêng về trung tính: rẻ hơn trung vị công ty chứng khoán nhưng dòng tiền chưa xác nhận.",
     "rui_ro": ["Rủi ro một.", "Rủi ro hai.", "Rủi ro ba."],
 }
 
@@ -261,17 +266,30 @@ def test_van_ban_va_dem_tu_tinh_tay():
     phan = {
         "ket_luan": "A b.",
         "tong_quan": "C d e.",
+        "diem_an": ["J.", "K l."],
+        "so_voi_nganh": "M n.",
         "nhan_dinh": "F.",
         "rui_ro": ["G h.", "I."],
     }
     text = w.to_markdown("VRE", phan)
     assert text == (
-        "**A b.**\n\n#### Tổng quan công ty\nC d e.\n\n#### Nhận định về VRE\nF.\n\n"
-        "#### Rủi ro cần theo dõi\n- G h.\n- I.\n"
+        "**A b.**\n\n#### Tổng quan công ty\nC d e.\n\n#### Điều ít người để ý\n- J.\n- K l.\n\n"
+        "#### So với cùng ngành\nM n.\n\n#### Nhận định về VRE\nF.\n\n#### Rủi ro cần theo dõi\n- G h.\n- I.\n"
     )
-    # đếm từ bỏ dấu đề mục và gạch đầu dòng: thân bài A b C d e F G h I = 9; ba đề mục "Tổng quan công ty" 4,
-    # "Nhận định về VRE" 4, "Rủi ro cần theo dõi" 5 = 13; tổng 22
-    assert w.word_count(text) == 22
+    # đếm từ bỏ dấu đề mục và gạch đầu dòng: thân bài A b C d e J K l M n F G h I = 14; năm đề mục "Tổng quan công
+    # ty" 4, "Điều ít người để ý" 5, "So với cùng ngành" 4, "Nhận định về VRE" 4, "Rủi ro cần theo dõi" 5 = 22; tổng 36
+    assert w.word_count(text) == 36
+
+
+def test_dem_con_so_tinh_tay():
+    """Tính tay: "7.361", "14,9", "2025", "36,9" là 4 con số; chữ "VN30" có 1 (30); "ba" không phải số."""
+    assert (
+        w.number_count(
+            "Doanh thu 7.361 tỷ, ROE 14,9% năm 2025, cao hơn 36,9% so với ba đối thủ VN30."
+        )
+        == 5
+    )
+    assert w.number_count("Lợi nhuận tăng, nợ vay giảm.") == 0
 
 
 class _FakeOpenAI:
@@ -327,6 +345,13 @@ def test_goi_deepseek_dung_mot_lan_voi_goi_du_lieu(fake_openai):
     assert (
         "KHÔNG nêu giá trị hợp lý, giá mục tiêu" in noi_dung and "TRUNG VỊ" in noi_dung
     )
+    # yêu cầu của người dùng 25/11/2026: ít số, chiều hướng, điều ít người thấy, so với đối thủ cùng ngành
+    assert "tối đa 5 con số" in noi_dung and "ÍT\nNGƯỜI NHÌN THẤY" in noi_dung
+    assert (
+        "sector_peers" in noi_dung
+        and '"diem_an"' in noi_dung
+        and '"so_voi_nganh"' in noi_dung
+    )
 
 
 def test_deepseek_tra_loi_hong_thi_bao_loi(fake_openai, monkeypatch):
@@ -337,6 +362,12 @@ def test_deepseek_tra_loi_hong_thi_bao_loi(fake_openai, monkeypatch):
     fake_openai.finish, fake_openai.content = "stop", json.dumps({**PHAN, "rui_ro": []})
     with pytest.raises(w.AiReportError):
         w.call_model({"ticker": "VRE"}, "m")
+    fake_openai.content = json.dumps({k: v for k, v in PHAN.items() if k != "diem_an"})
+    with pytest.raises(w.AiReportError):
+        w.call_model({"ticker": "VRE"}, "m")
+    fake_openai.content = json.dumps({**PHAN, "diem_an": "không phải danh sách"})
+    with pytest.raises(w.AiReportError):
+        w.call_model({"ticker": "VRE"}, "m")
     fake_openai.content = "không phải JSON"
     with pytest.raises(w.AiReportError):
         w.call_model({"ticker": "VRE"}, "m")
@@ -344,6 +375,55 @@ def test_deepseek_tra_loi_hong_thi_bao_loi(fake_openai, monkeypatch):
     with pytest.raises(w.AiReportError) as e:
         w.call_model({"ticker": "VRE"}, "m")
     assert e.value.status == 503
+
+
+def test_an_gia_tri_mo_hinh_trong_bang_cung_nganh():
+    payload = {
+        "consensus_ctck": {"internal_target_vnd": 31852, "consensus_median_vnd": 33200},
+        "market_context": {
+            "sector_peers": {
+                "available": True,
+                "own": {
+                    "ticker": "VRE",
+                    "fair_value": 31852,
+                    "upside_pct": 31.3,
+                    "mos": 0.2,
+                    "roe": 0.149,
+                },
+                "peers": [
+                    {
+                        "ticker": "VRE",
+                        "fair_value": 31852,
+                        "upside_pct": 31.3,
+                        "mos": 0.2,
+                    },
+                    {
+                        "ticker": "VHM",
+                        "fair_value": 50000,
+                        "upside_pct": 10.0,
+                        "mos": 0.1,
+                    },
+                ],
+            }
+        },
+    }
+    w._hide_model_value(payload, "VRE")
+    peers = payload["market_context"]["sector_peers"]
+    assert payload["consensus_ctck"] == {
+        "internal_target_vnd": None,
+        "consensus_median_vnd": 33200,
+    }
+    assert peers["own"] == {
+        "ticker": "VRE",
+        "fair_value": None,
+        "upside_pct": None,
+        "mos": None,
+        "roe": 0.149,
+    }
+    assert (
+        peers["peers"][0]["fair_value"] is None
+        and peers["peers"][1]["fair_value"] == 50000
+    )
 
 
 def test_phan_tram_tinh_san_tinh_tay():
@@ -401,6 +481,19 @@ def test_goi_du_lieu_that_ap_cong_cong_bo(monkeypatch):
         )
         # gói CTCK của bản dài chép giá trị hợp lý của mô hình: bản ngắn phải bỏ ra khi chưa công bố
         assert (p.get("consensus_ctck") or {}).get("internal_target_vnd") is None
+        peers = p["market_context"].get("sector_peers") or {}
+        if peers.get(
+            "available"
+        ):  # bảng cùng ngành lấy từ đợt xếp hạng cũng không được lộ giá trị của mô hình
+            assert (
+                peers["own"]["fair_value"] is None
+                and peers["own"]["upside_pct"] is None
+            )
+            assert all(
+                r["fair_value"] is None
+                for r in peers["peers"]
+                if r.get("ticker") == "VRE"
+            )
         assert p["tinh_san"]["gia_tri_hop_ly_mo_hinh_so_voi_thi_gia_pct"] is None
     else:
         assert p["target_price_vnd"] == pytest.approx(

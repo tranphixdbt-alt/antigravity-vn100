@@ -38,12 +38,12 @@ from valuation.services import web_flow, web_valuation
 logger = logging.getLogger(__name__)
 
 VIEC = "bao_cao_ai"  # tên việc trong web_audit; đổi tên là đếm lại hạn mức từ đầu
-PROMPT_VERSION = (
-    "ngan-v2"  # đổi câu lệnh cho AI thì tăng, để bản cũ không được dùng lại như bản mới
-)
+# đổi câu lệnh cho AI thì tăng, để bản cũ không được dùng lại như bản mới
+PROMPT_VERSION = "ngan-v3"
 _VN = dt.timezone(dt.timedelta(hours=7))
 _MA = re.compile(r"[A-Z0-9]{3,4}")
-_SECTIONS = ("ket_luan", "tong_quan", "nhan_dinh")
+_SECTIONS = ("ket_luan", "tong_quan", "so_voi_nganh", "nhan_dinh")
+_LISTS = ("diem_an", "rui_ro")  # các phần là danh sách ý
 _LOCKS: dict[int, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 _FILE_LOCK = threading.Lock()
@@ -210,6 +210,29 @@ def _derived(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _hide_model_value(payload: dict[str, Any], ma: str) -> None:
+    """Cổng công bố: kết quả chưa được công bố thì AI không được thấy giá trị hợp lý của mô hình cho mã này.
+
+    `_compact_payload` đã bỏ ở phần chính, nhưng gói công ty chứng khoán và bảng cùng ngành (lấy từ đợt xếp hạng
+    VN100) của bản dài vẫn chép lại giá trị đó: bỏ nốt ở hai chỗ này.
+    """
+    if isinstance(payload.get("consensus_ctck"), dict):
+        payload["consensus_ctck"] = {
+            **payload["consensus_ctck"],
+            "internal_target_vnd": None,
+        }
+    peers = (payload.get("market_context") or {}).get("sector_peers")
+    if not isinstance(peers, dict) or not peers.get("available"):
+        return
+    hidden = {"fair_value": None, "upside_pct": None, "mos": None}
+    if isinstance(peers.get("own"), dict):
+        peers["own"] = {**peers["own"], **hidden}
+    peers["peers"] = [
+        {**row, **hidden} if isinstance(row, dict) and row.get("ticker") == ma else row
+        for row in peers.get("peers") or []
+    ]
+
+
 def build_inputs(db: Any, ma: str) -> dict[str, Any]:
     """Gói dữ liệu duy nhất AI được dùng, dấu vân tay của nó và mô hình AI sẽ gọi."""
     from valuation.data_access.corporate_actions import corporate_actions_context
@@ -251,12 +274,8 @@ def build_inputs(db: Any, ma: str) -> dict[str, Any]:
         corporate_actions_context=corp,
         market_context=market,
     )
-    if rec == "NOT_RATED" and isinstance(payload.get("consensus_ctck"), dict):
-        # cổng công bố: gói CTCK của bản dài vẫn chép giá trị hợp lý của mô hình; kết quả chưa công bố thì bỏ ra
-        payload["consensus_ctck"] = {
-            **payload["consensus_ctck"],
-            "internal_target_vnd": None,
-        }
+    if rec == "NOT_RATED":
+        _hide_model_value(payload, ma)
     payload["dong_tien_web"] = _flow_summary(db, ma)
     payload["tinh_san"] = _derived(payload)
     payload["method_label"] = result.get("method_label")
@@ -297,34 +316,42 @@ def prompt(payload: dict[str, Any], words: int) -> str:
     ma = payload.get("ticker")
     return f"""Bạn là chuyên viên phân tích cổ phiếu Việt Nam, viết cho nhà đầu tư cá nhân và đội môi giới.
 
-Viết một báo cáo NGẮN về {ma}, khoảng {words} từ, khách quan, sâu, không hô hào.
+Viết một báo cáo NGẮN về {ma}, khoảng {words} từ. Người đọc cần nắm nhanh CHIỀU HƯỚNG và những điều QUAN TRỌNG MÀ ÍT
+NGƯỜI NHÌN THẤY ở công ty này, cùng vị trí của nó so với đối thủ cùng ngành; không cần đọc lại bảng số.
 
-QUY TẮC SỐ LIỆU (bắt buộc):
-1. Chỉ dùng số có trong JSON bên dưới. Không tự tính phần trăm hay số mới; phần trăm so với thị giá lấy ở
-   `tinh_san`. Được so sánh bằng lời (cao hơn, thấp hơn, tăng, giảm). Thiếu số thì viết "chưa có dữ liệu".
-2. Đơn vị: BCTC tính bằng tỷ đồng (`unit_financials`); giá tính bằng đồng mỗi cổ phiếu. Dòng có `period` là TTM là
+CÁCH VIẾT (bắt buộc):
+1. Ít con số: cả bài dùng tối đa 5 con số, chỉ khi con số đó là then chốt. Còn lại diễn đạt bằng chiều hướng: tăng,
+   giảm, cải thiện, xấu đi, cao hơn, thấp hơn, đi ngược nhau. Không liệt kê số theo từng năm.
+2. Mọi nhận định phải có căn cứ trong JSON bên dưới; số nào nêu ra phải có sẵn trong JSON. Không tự tính phần trăm:
+   phần trăm so với thị giá lấy ở `tinh_san`. Không có căn cứ thì không viết.
+3. Đơn vị: BCTC tính bằng tỷ đồng (`unit_financials`); giá tính bằng đồng mỗi cổ phiếu. Dòng có `period` là TTM là
    4 quý gần nhất, không phải dự phóng.
-3. Nếu `publication_allowed` là false hoặc `recommendation` là NOT_RATED: KHÔNG nêu giá trị hợp lý, giá mục tiêu hay
+4. Nếu `publication_allowed` là false hoặc `recommendation` là NOT_RATED: KHÔNG nêu giá trị hợp lý, giá mục tiêu hay
    khuyến nghị của mô hình; nói kết quả định giá của mô hình đang chờ rà soát và lý do theo `flag_explanations`.
-4. Giá mục tiêu và luận điểm của công ty chứng khoán chỉ lấy từ `consensus_ctck`; không bịa tên, ngày, luận điểm.
+5. Giá mục tiêu và luận điểm của công ty chứng khoán chỉ lấy từ `consensus_ctck`; không bịa tên, ngày, luận điểm.
    `consensus_median_vnd` là TRUNG VỊ, không gọi là trung bình.
-5. Mô tả hoạt động kinh doanh chỉ ở mức chung (ngành, mảng chính), không kèm số liệu ngoài JSON, không dùng từ so
-   sánh nhất (lớn nhất, hàng đầu, số một) khi JSON không có số chứng minh.
-6. Không khuyên mua hay bán, không khẳng định thao túng. Không viết tên trường JSON, mã cờ (như STALE_PRICE) hay chữ
+6. Mô tả hoạt động kinh doanh chỉ ở mức chung (ngành, mảng chính), không dùng từ so sánh nhất (lớn nhất, hàng đầu,
+   số một) khi JSON không có căn cứ. Khi so với đối thủ, không nêu giá trị hợp lý hay upside của từng mã.
+7. Không khuyên mua hay bán, không khẳng định thao túng. Không viết tên trường JSON, mã cờ (như STALE_PRICE) hay chữ
    NOT_RATED: diễn đạt bằng lời thường.
 
-NỘI DUNG (tổng cộng 450 đến 520 từ, không vượt):
-- "ket_luan": 1 đến 2 câu, điều quan trọng nhất về {ma} lúc này.
-- "tong_quan": khoảng 140 từ. Công ty làm gì; kết quả kinh doanh các năm gần nhất (doanh thu, lợi nhuận, xu
-  hướng); chất lượng tài chính (ROE, nợ vay, dòng tiền) và so với cùng ngành nếu `market_context.sector_peers` có.
-- "nhan_dinh": khoảng 200 từ. Định giá so với thị giá và với giá mục tiêu công ty chứng khoán; động lực và điểm mấu
-  chốt; dòng tiền (khối ngoại, tự doanh, nhãn gom hoặc xả trong `dong_tien_web`) và kỹ thuật; bối cảnh ngành, vĩ
-  mô, tin tức liên quan nếu có trong `market_context`.
-- "rui_ro": đúng 3 ý, mỗi ý một câu dưới 25 từ: rủi ro doanh nghiệp, rủi ro định giá, rủi ro dữ liệu (giải thích
-  cờ cảnh báo bằng lời thường nếu có).
+NỘI DUNG (tổng cộng 420 đến 520 từ, không vượt):
+- "ket_luan": 1 đến 2 câu: chiều hướng chính của {ma} lúc này.
+- "tong_quan": khoảng 70 từ: công ty làm gì và xu hướng kinh doanh mấy năm gần đây, bằng lời.
+- "diem_an": 2 đến 3 ý, mỗi ý 1 đến 2 câu: điều quan trọng mà nhìn qua giá hay lợi nhuận dễ bỏ sót. Tìm ở: lợi nhuận
+  và doanh thu đi ngược nhau, chất lượng lợi nhuận (khoản bất thường, thu nhập tài chính), dòng tiền kinh doanh so
+  với lợi nhuận, biên lợi nhuận, nợ vay, phụ thuộc một mảng, các công ty chứng khoán nhìn khác nhau, dòng tiền đi
+  ngược chiều giá, cờ cảnh báo dữ liệu. Mỗi ý nói rõ căn cứ bằng lời.
+- "so_voi_nganh": khoảng 100 từ: {ma} mạnh hơn và yếu hơn các đối thủ cùng ngành ở đâu (ROE, tăng trưởng doanh thu,
+  nợ vay, chuyển đổi tiền, điểm phòng thủ và tích sản), gọi tên đối thủ có trong `market_context.sector_peers`.
+  Không có dữ liệu cùng ngành thì viết đúng câu "Chưa đủ dữ liệu cùng ngành để so sánh."
+- "nhan_dinh": khoảng 100 từ: nghiêng về tích cực, trung tính hay thận trọng, và vì sao: định giá so với thị giá và
+  giá mục tiêu công ty chứng khoán, dòng tiền (nhãn gom hoặc xả trong `dong_tien_web`), kỹ thuật, bối cảnh ngành.
+- "rui_ro": đúng 3 ý, mỗi ý một câu dưới 25 từ.
 
 Trả về JSON thuần đúng schema:
-{{"ket_luan": "...", "tong_quan": "...", "nhan_dinh": "...", "rui_ro": ["...", "...", "..."]}}
+{{"ket_luan": "...", "tong_quan": "...", "diem_an": ["...", "..."], "so_voi_nganh": "...", "nhan_dinh": "...",
+"rui_ro": ["...", "...", "..."]}}
 
 DỮ LIỆU DUY NHẤT ĐƯỢC PHÉP DÙNG:
 {json.dumps(payload, ensure_ascii=False, default=str)}"""
@@ -386,15 +413,18 @@ def call_model(payload: dict[str, Any], model: str) -> dict[str, Any]:
         raise AiReportError(
             502, "AI trả về không đúng định dạng. Lượt này không bị tính."
         ) from exc
-    parts = {k: str(data.get(k) or "").strip() for k in _SECTIONS}
-    risks = [str(x).strip() for x in (data.get("rui_ro") or []) if str(x).strip()]
-    if not all(parts.values()) or not risks:
+    parts: dict[str, Any] = {k: str(data.get(k) or "").strip() for k in _SECTIONS}
+    for k in _LISTS:
+        value = data.get(k)
+        items = value if isinstance(value, list) else []
+        parts[k] = [str(x).strip() for x in items if str(x).strip()]
+    if not all(parts.values()):
         raise AiReportError(
             502, "AI trả thiếu phần bắt buộc của báo cáo. Lượt này không bị tính."
         )
     usage = getattr(response, "usage", None)
     return {
-        "phan": {**parts, "rui_ro": risks},
+        "phan": parts,
         "mo_hinh": str(getattr(response, "model", None) or model),
         "token_vao": getattr(usage, "prompt_tokens", None),
         "token_ra": getattr(usage, "completion_tokens", None),
@@ -402,15 +432,26 @@ def call_model(payload: dict[str, Any], model: str) -> dict[str, Any]:
 
 
 def to_markdown(ma: str, phan: dict[str, Any]) -> str:
-    risks = "\n".join(f"- {r}" for r in phan["rui_ro"])
+    def ds(items: list[str]) -> str:
+        return "\n".join(f"- {x}" for x in items)
+
     return (
-        f"**{phan['ket_luan']}**\n\n#### Tổng quan công ty\n{phan['tong_quan']}\n\n"
-        f"#### Nhận định về {ma}\n{phan['nhan_dinh']}\n\n#### Rủi ro cần theo dõi\n{risks}\n"
+        f"**{phan['ket_luan']}**\n\n"
+        f"#### Tổng quan công ty\n{phan['tong_quan']}\n\n"
+        f"#### Điều ít người để ý\n{ds(phan['diem_an'])}\n\n"
+        f"#### So với cùng ngành\n{phan['so_voi_nganh']}\n\n"
+        f"#### Nhận định về {ma}\n{phan['nhan_dinh']}\n\n"
+        f"#### Rủi ro cần theo dõi\n{ds(phan['rui_ro'])}\n"
     )
 
 
 def word_count(text: str) -> int:
     return len(re.findall(r"[^\s#*\-]+", text))
+
+
+def number_count(text: str) -> int:
+    """Số con số trong bài (kiểu 7.361, 14,9%, 2025), để theo dõi AI có giữ "tối đa 5 con số" không."""
+    return len(re.findall(r"\d+(?:[.,]\d+)*", text))
 
 
 # ---------- sinh mới ----------
@@ -455,6 +496,7 @@ def generate(
             "van_ban": text,
             "phan": out["phan"],
             "so_tu": word_count(text),
+            "so_con_so": number_count(text),
             "nguon": inputs["nguon"],
             "dau_vao": inputs["fingerprint"],
             "token_vao": out["token_vao"],

@@ -1349,3 +1349,25 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   web và báo cáo AI qua; ruff, black, mypy sạch trên tệp mới.
 - **Chưa kiểm:** chưa chạy trên VPS (số thật, thư viện và quyền ghi thư mục đệm trong container `btinvest-web`); chưa
   có test tự động cho JavaScript của khối mới.
+
+### D117 — Báo cáo AI bản ngắn: ít số, nói chiều hướng, điều ít người để ý, so với đối thủ (2026-11-25, góp ý của người dùng)
+
+- **Người dùng góp ý** sau khi xem bản thử của D116: "nhận định không cần nhắc các con số quá nhiều. Chỉ nhận định
+  nhanh chiều hướng là được, tập trung vào những thứ quan trọng mà ít người nhìn thấy từ công ty này. Và so sánh với
+  các đối thủ cùng ngành."
+- **Đã sửa (`web_ai_report.py`, câu lệnh `ngan-v3`):** cả bài tối đa 5 con số, còn lại nói bằng chiều hướng; bố cục mới
+  kết luận, tổng quan, **Điều ít người để ý** (2–3 ý, mỗi ý phải nói căn cứ, gợi ý chỗ tìm: lợi nhuận và doanh thu đi
+  ngược nhau, chất lượng lợi nhuận, dòng tiền kinh doanh so với lợi nhuận, biên, nợ vay, phụ thuộc một mảng, công ty
+  chứng khoán nhìn khác nhau, dòng tiền ngược chiều giá, cờ dữ liệu), **So với cùng ngành** (gọi tên đối thủ trong bảng
+  cùng ngành của đợt xếp hạng VN100: ROE, tăng trưởng doanh thu, nợ, chuyển đổi tiền, điểm phòng thủ và tích sản; không
+  có dữ liệu thì nói thẳng), nhận định nghiêng về đâu, 3 rủi ro. Lưu thêm `so_con_so` trong tệp để theo dõi.
+- **Cổng công bố, lỗ hổng tìm thêm:** bảng cùng ngành (lấy từ đợt xếp hạng) của bản dài chép cả giá trị hợp lý và
+  upside của chính mã; kết quả chưa công bố thì nay bỏ ở đó nữa (`_hide_model_value`), như đã bỏ ở gói công ty chứng
+  khoán. Bản dài của web cũ vẫn gửi các giá trị đó: chưa sửa vì ngoài phạm vi, ghi lại để quyết sau.
+- **Thử thật một lần tại máy (VRE, số liệu cũ):** 544 từ, 11 chuỗi số theo cách đếm của máy nhưng phần lớn là năm; số
+  tiền và phần trăm chỉ còn "khoảng 37%" (làm tròn từ 36,9% Python tính) và hạng phòng thủ 16. Tôi đối chiếu ba "điều ít
+  người để ý" với gói số liệu: lợi nhuận sau thuế FY2025 6.446 tỷ cao hơn EBIT 3.893 tỷ (thu nhập ngoài hoạt động lớn),
+  hệ số chuyển đổi tiền −0,51, vay dài hạn 2.523 tỷ (FY2024) lên 6.341 tỷ (TTM) trong khi tiền mặt giảm: đều có căn cứ.
+  Bài vẫn dài hơn 500 từ một chút và vẫn tự làm tròn phần trăm.
+- **Kiểm:** 17 test của báo cáo AI qua (thêm ca tính tay đếm con số, ca che giá trị mô hình trong bảng cùng ngành, kiểm
+  câu lệnh có đủ yêu cầu mới).
