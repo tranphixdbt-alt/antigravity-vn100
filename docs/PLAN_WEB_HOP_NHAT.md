@@ -395,10 +395,13 @@ phần sau. Trước 5b dừng một lần để trình công thức lãi lỗ c
   đúng mức đang có thì trả mức đó thay cho cột mã yêu cầu; phần chung được nhớ 45 giây dùng cho mọi người.
 - **Lát 5 xong cả ba phần.** Kế tiếp: lát 6 (đưa lên VPS), xin duyệt từng bước.
 
-## 14. Kế hoạch lát 6: đưa web mới lên VPS tại btinvest.vn (25/11/2026, chờ người dùng duyệt)
+## 14. Kế hoạch lát 6: đưa web mới lên VPS tại btinvest.vn (25/11/2026)
 
-> Lát đầu tiên đụng máy chủ đang chạy thật (mục 4.7 và 8 của `AGENTS.md`): mỗi bước trên VPS xin duyệt riêng.
-> Lúc viết mục này chưa vào VPS, chưa commit, chưa đẩy gì.
+> Lát đầu tiên đụng máy chủ đang chạy thật (mục 4.7 và 8 của `AGENTS.md`): mỗi bước GHI trên VPS xin duyệt.
+> **Trạng thái tối 25/11/2026:** người dùng trả lời "Đưa thẳng lên btinvest.vn luôn. còn lại theo bạn": đặt web mới
+> thẳng ở `btinvest.vn`, phần còn lại theo đề xuất (commit tại máy, đọc VPS chỉ đọc, rồi trình các bước ghi). Đã
+> commit tại máy ở hai dự án (chưa đẩy) và xong B0; kết quả B0 và hai đoạn cấu hình soạn sẵn ở cuối mục này.
+> **Chưa có bước ghi nào trên VPS.**
 
 ### Đích của lát 6
 
@@ -419,18 +422,18 @@ Web mới chạy thật tại `https://btinvest.vn`, đăng nhập bằng tài k
 - **Đăng nhập (D98):** Caddy `forward_auth` hỏi coin (`coin-check-api-1:8090`), chưa đăng nhập thì 302 về
   `/dang-nhap`. Web mới tự hỏi coin `/me` bằng cookie phiên và tự trả 401; giao diện gặp 401 thì chuyển sang
   `/dang-nhap?next=…` (`web/app.js`).
-- **RAM:** VPS 3,9 GB không swap, từng treo 18/11. Giới hạn đang đặt: web định giá 1.024 MB, worker 640 MB, bot
+- **RAM** (số lúc viết kế hoạch, đã cũ: xem "Kết quả B0" ở cuối mục): VPS 3,9 GB không swap, từng treo 18/11. Giới hạn đang đặt: web định giá 1.024 MB, worker 640 MB, bot
   256 MB, web chứng quyền 384 MB, worker chứng quyền 768 MB, cộng coin và Caddy. Web mới ở máy Mac dùng 207 MB sau
   hơn 3 giờ chạy thử.
 - **Python:** VPS chạy 3.12, máy Mac 3.14. Toàn bộ tệp mới của hai dự án biên dịch được bằng Python 3.12.
-- **Chưa biết, phải đọc VPS mới chốt được:** nội dung thật của đoạn `(coin_login)` và khối `btinvest.vn` trong
+- **Lúc viết chưa biết, B0 đã trả lời (cuối mục):** nội dung thật của đoạn `(coin_login)` và khối `btinvest.vn` trong
   `/srv/web/conf/Caddyfile`; RAM đang dùng thật; `docker-compose.yml` thật có khác bản sao trong repo không.
 
 ### Thiết kế
 
 1. **Container thứ tư `btinvest-web`** trong `/srv/apps/vn100/docker-compose.yml`, cùng image, lệnh
    `python -m uvicorn valuation.api.web_main:app --host 0.0.0.0 --port 8600`, một tiến trình (bộ nhớ đệm nằm trong
-   tiến trình). Đọc DB định giá ở chế độ chỉ đọc như hiện nay. Giới hạn RAM 512 MB (chốt lại sau khi đo). Kiểm sống
+   tiến trình). Đọc DB định giá ở chế độ chỉ đọc như hiện nay. Giới hạn RAM 768 MB (chốt sau B0; đề xuất ban đầu 512 MB). Kiểm sống
    bằng `/api/suc-khoe`. Biến môi trường đặt ngay trong compose vì không phải bí mật: `WEB_AUTH_MODE=coin`,
    `WEB_AUTH_ME_URL=http://coin-check-api-1:8090/api/v1/auth/me`, `WEB_USER_DB_URL=sqlite:////data/web_user/web_user.db`,
    `WEB_CW_BASE_URL=http://chungquyen:8000`. Riêng `WEB_USER_DB_URL` đặt ở phần dùng chung của compose, vì job sao
@@ -457,8 +460,12 @@ Web mới chạy thật tại `https://btinvest.vn`, đăng nhập bằng tài k
   nay); tự tạo thư mục cha của tệp dữ liệu người dùng; test chặn cả 35 đường `/api/` khi chưa đăng nhập; script sao
   lưu `scripts/backup_web_user_db.py` (chạy hai lần trong ngày không tạo hai bản, giữ đúng số bản, bản sao đọc lại
   đủ dòng). 70 test web qua.
-- **Chờ duyệt:** quét secret (máy không có `gitleaks`: grep các mẫu khóa và soát danh sách tệp), rồi commit từng
-  tệp ở hai dự án.
+- **Xong tối 25/11/2026:** quét secret (máy không có `gitleaks`: grep các mẫu khóa, email, soát danh sách tệp; không
+  thấy khóa nào), chạy lại cả bộ test (ở đây 1.301 qua, vẫn đúng 9 test trượt cũ; dự án chứng quyền 239 qua), rồi
+  commit từng tệp: ở đây `af49a65` (kế hoạch, bản mẫu) và `7d9e8c2` (mã, test, cấu hình, tài liệu); dự án chứng
+  quyền `f66bc9c`. Chưa đẩy. Lúc chạy lại bộ test dự án chứng quyền lộ một lỗi có sẵn của web cũ: từ chối POST
+  thiếu `Origin` khi chưa đọc thân, bên gửi có lần nhận "connection reset" thay vì câu 403 (test trượt 17/60 lần);
+  đã sửa ở `web.py` (đọc thân rồi mới từ chối, 0/60 lần trượt), nằm trong `f66bc9c`.
 - **Làm cùng lúc với bước tương ứng trên VPS**, để bản sao luôn đúng với máy thật: cập nhật `deploy/docker/`
   (compose ở B4, scheduler ở B7, README) và chép đoạn Caddy đã dùng ở B5.
 
@@ -466,7 +473,7 @@ Web mới chạy thật tại `https://btinvest.vn`, đăng nhập bằng tài k
 
 | Bước | Việc | Ghi hay đọc | Kiểm sau bước |
 |---|---|---|---|
-| B0 | Đọc Caddyfile, compose thật, `docker ps`, `docker stats`, `free -m` | Chỉ đọc | Chốt đoạn Caddy và giới hạn RAM |
+| B0 | Đọc Caddyfile, compose thật, `docker ps`, `docker stats`, `free -m` | Chỉ đọc | **Xong 25/11**: chốt đoạn Caddy và giới hạn RAM (cuối mục) |
 | B1 | `git push vps main` ở dự án chứng quyền, ngoài giờ khớp lệnh | Ghi | Web chứng quyền cũ vẫn chạy; `/api/chung-quyen` trả JSON; 239 test trong container |
 | B2 | `git push origin main` ở dự án định giá (VPS tự dựng lại và khởi động lại ba container cũ) | Ghi | Ba container cũ khỏe; web định giá cũ mở được |
 | B3 | Người dùng tự thêm `WEB_ADMIN_EMAILS` vào `.env` trên VPS | Người dùng làm | Không in giá trị |
@@ -487,8 +494,10 @@ Chạy lại 9 test đang trượt ở máy Mac trong container trên VPS thuộ
 
 ### Rủi ro
 
-- **RAM** là rủi ro lớn nhất: tổng giới hạn hiện đã gần hết máy. Nếu B0 cho thấy không đủ chỗ cho 512 MB thì dừng,
-  trình lựa chọn (hạ giới hạn dịch vụ nào, hay chủ máy thêm swap), không tự hạ.
+- **RAM** từng là rủi ro lớn nhất; B0 cho thấy máy đã lên 12,9 GB có swap, còn trống hơn 8 GB, nên không phải hạ
+  giới hạn dịch vụ nào. Vẫn đo lại RAM của `btinvest-web` sau B4 và trong giờ khớp lệnh (B8).
+- **Mọi lần deploy sau B4 đều chờ `btinvest-web` khỏe:** container này không lên được trong 240 giây thì lệnh deploy
+  tự quay về commit trước cho cả dự án định giá. Kiểm sống chỉ gọi `/api/suc-khoe`.
 - B2 khởi động lại web định giá, worker và bot đang chạy (như mọi lần đẩy mã); tránh giờ job sáng 07:20–09:30.
 - B1 khởi động lại web và worker chứng quyền; tránh giờ khớp lệnh vì lịch 5 phút đang chạy.
 - Coin sập thì web mới cũng không vào được (đóng khi lỗi), như hai web cũ.
@@ -501,3 +510,87 @@ Chạy lại 9 test đang trượt ở máy Mac trong container trên VPS thuộ
 
 Tắt hai web cũ và chép danh mục chứng quyền cũ sang (chuyển hẳn); các nút thao tác của Quản trị; dựng lại trang
 phân tích từng chứng quyền, quỹ, hợp đồng; Lướt CW, CW sắp ra mắt, nút quét, trang hướng dẫn; sao lưu ra ngoài máy.
+
+### Kết quả B0 (đọc VPS lúc 19:02–19:20 ngày 25/11/2026, chỉ đọc, không mở `.env`)
+
+- **RAM không còn là rủi ro lớn nhất.** Máy nay có 12.897 MB RAM và 2.047 MB swap, 16 nhân (bật lại 3 ngày trước);
+  còn trống dùng được 8.401 MB. Mười hai container đang dùng khoảng 3,9 GB, lớn nhất là `coin-check-mongo-1`
+  2,1 GB. Câu "VPS 3,9 GB không swap" trong ghi chú của compose đã cũ. Giới hạn cho `btinvest-web` chốt **768 MB**
+  (ở máy Mac dùng 207 MB; web định giá Streamlit đang dùng 290 MB trên giới hạn 1.024 MB).
+- **Image đã có đủ thư viện:** trong container `vn100` có `fastapi 0.141.1` (đúng bản ở máy Mac), `uvicorn 0.52.4`,
+  `httpx 0.28.1`, `sqlalchemy 2.0.52`, `pydantic-settings 2.15.0`, Python 3.12.16. Không phải sửa `Dockerfile`.
+- **`/data` ghi được** bằng người dùng `app` (uid 10001) của container: `web_user.db` tự tạo được ở lần chạy đầu.
+- **Bản sao cấu hình:** `docker-compose.yml`, `entrypoint.sh`, `scheduler.py` trên VPS trùng bản sao trong
+  `deploy/docker/`. Riêng `Dockerfile` trên VPS **khác** bản sao (còn 4 dòng: liên kết tệp bản tin vĩ mô sang
+  `/data` và bước chạy `patches/vps_hotfix.py`); không thuộc lát 6, chưa đụng, cần người dùng chốt bản nào đúng.
+- **Lệnh deploy** (`/usr/local/bin/deploy`, hẹn giờ 3 phút cho cả hai dự án): `docker compose build` rồi
+  `up -d --remove-orphans` cho MỌI dịch vụ trong compose; chờ tới 240 giây cho mọi container chạy và khỏe, kèm gọi
+  thử `https://chungkhoan.btinvest.vn/_stcore/health`; không đạt thì tự quay về commit trước và báo Discord. Hệ
+  quả: sau B4, `btinvest-web` nằm trong điều kiện khỏe của mọi lần deploy sau này, nên kiểm sống của nó phải nhẹ
+  và chắc (`/api/suc-khoe`, không đụng DB hay dịch vụ ngoài).
+- **Dự án chứng quyền:** `app/` trên VPS kéo từ `repo.git` cùng máy; cả hai đang ở `5498c12`, máy Mac hơn đúng
+  một commit `f66bc9c`.
+- **Caddy** chạy trong container `web-caddy-1`, thư mục `/srv/web/conf` gắn chỉ đọc vào `/etc/caddy`, trang tĩnh ở
+  `/srv/web/sites` gắn vào `/srv`. `Caddyfile` thuộc root: sửa bằng `sudo` (tài khoản `ubuntu` có sudo không hỏi
+  mật khẩu). Khối `btinvest.vn` hiện chỉ có `root * /srv/btinvest` và `file_server`.
+- **Kiểm `Origin` chạy đúng sau Caddy:** `same_origin` so `Origin` với tiêu đề `Host`, mà Caddy giữ nguyên `Host`
+  khi chuyển tiếp, nên các nút ghi (duyệt người, lệnh, mức giá) không bị từ chối nhầm.
+- Giờ chạy job: `vn100-worker` chỉ có job buổi sáng (07:20–08:00, chạy bù tới 3 giờ sau) và chủ nhật 18:00; đẩy mã buổi tối ngày thường
+  không cắt ngang job nào.
+
+**Đoạn thêm vào `/srv/apps/vn100/docker-compose.yml` ở B4** (và một dòng `WEB_USER_DB_URL` trong phần `&env` dùng chung):
+
+```yaml
+    # x-vn100 → environment (&env), thêm:
+    WEB_USER_DB_URL: sqlite:////data/web_user/web_user.db   # tep du lieu nguoi dung cua web hop nhat, song qua deploy
+
+  btinvest-web:               # web hop nhat btinvest.vn (FastAPI, docs/PLAN_WEB_HOP_NHAT.md muc 14)
+    <<: *vn100
+    container_name: btinvest-web
+    command: ["python", "-m", "uvicorn", "valuation.api.web_main:app", "--host", "0.0.0.0", "--port", "8600"]
+    environment:
+      <<: *env
+      WEB_AUTH_MODE: coin
+      WEB_AUTH_ME_URL: http://coin-check-api-1:8090/api/v1/auth/me
+      WEB_CW_BASE_URL: http://chungquyen:8000
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8600/api/suc-khoe',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+```
+
+**Khối `btinvest.vn` mới trong `/srv/web/conf/Caddyfile` ở B5** (thay khối trang chờ; `www` và các tên miền khác giữ nguyên):
+
+```
+btinvest.vn {
+	import access_log
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	# Web hop nhat (FastAPI, container btinvest-web:8600). KHONG dung coin_login: ung dung tu hoi coin /me va tu tra
+	# 401 o tung duong /api/ (test test_moi_duong_api_deu_dong_khi_chua_dang_nhap); giao dien gap 401 thi sang /dang-nhap.
+	handle /api/v1/auth/* {
+		reverse_proxy coin-check-api-1:8090
+	}
+	handle /dang-nhap {
+		root * /srv/dang-nhap
+		rewrite * /index.html
+		file_server
+	}
+	handle {
+		reverse_proxy btinvest-web:8600 {
+			lb_try_duration 30s
+		}
+	}
+}
+```
+
+Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 → B4 → B5; dừng ngay ở bước nào kiểm không đạt.

@@ -1186,3 +1186,27 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   `yaml`. Web tại máy khởi động lại và trả đúng `/api/suc-khoe`, `/api/chung-quyen`, `/api/canh-bao/tin`, `/api/muc-gia`.
 - **Hạn chế:** bản sao lưu nằm cùng ổ với tệp gốc, không chống được mất cả ổ; job sao lưu lỗi chỉ ghi vào nhật ký,
   chưa báo đi đâu; bản sao cấu hình trong `deploy/docker/` chưa đổi (đổi khi VPS thật sự đổi); RAM trên VPS chưa đo.
+
+### D110 — Web hợp nhất lát 6: commit tại máy và bước B0 đọc VPS (2026-11-25, người dùng « Đưa thẳng lên btinvest.vn luôn. còn lại theo bạn »)
+
+- **Người dùng chốt:** đặt web mới thẳng ở `btinvest.vn` (không thử ở tên miền phụ); phần còn lại theo đề xuất của
+  tôi, tức là commit tại máy ở hai dự án, đọc VPS ở chế độ chỉ đọc, rồi trình các bước ghi. Tôi KHÔNG hiểu câu này
+  là cho phép đẩy mã hay sửa VPS ngay: đẩy mã chính là deploy, vẫn xin duyệt.
+- **Commit (chưa đẩy):** ở đây `af49a65` (kế hoạch, bản mẫu) và `7d9e8c2` (mã, test, cấu hình, tài liệu D102–D109);
+  dự án chứng quyền `f66bc9c`. Commit thẳng trên `main` theo quy ước của dự án (`.agents/AGENT_HANDOFF.md` mục 5).
+  Không đưa `valuation/views/.last_ticker.txt`. Quét secret: grep mẫu khóa, email, địa chỉ; không thấy khóa nào.
+- **Chạy lại cả bộ test trước khi commit:** ở đây 1.301 qua, vẫn đúng 9 test trượt cũ. Dự án chứng quyền lộ một lỗi
+  có sẵn của web cũ: `do_POST` từ chối yêu cầu thiếu `Origin` (403) khi chưa đọc thân, nên lúc đóng kết nối bên gửi
+  có lần nhận "connection reset" thay vì câu 403 (test trượt 17/60 lần). Sửa tận gốc ở `web.py`: đọc thân (tối đa
+  10.000 byte như cũ) rồi mới từ chối; 0/60 lần trượt, 239 test qua. Kết quả từ chối không đổi.
+- **B0 (chỉ đọc, không mở `.env`, che mọi chuỗi dài giống khóa trước khi đưa về máy):** chi tiết và hai đoạn cấu
+  hình soạn sẵn ở cuối mục 14 của `docs/PLAN_WEB_HOP_NHAT.md`. Điều đổi so với kế hoạch: (1) VPS nay 12,9 GB RAM có
+  swap, còn trống hơn 8 GB, nên RAM không còn là rủi ro lớn nhất, giới hạn `btinvest-web` chốt 768 MB; (2) image đã
+  có đủ `fastapi`, `uvicorn`, `httpx`, không sửa `Dockerfile`; (3) lệnh deploy dựng lại MỌI dịch vụ trong compose và
+  tự quay về commit trước nếu có container không khỏe trong 240 giây, nên sau B4 `btinvest-web` là một phần điều
+  kiện khỏe của mọi lần deploy; (4) `Dockerfile` trên VPS khác bản sao trong `deploy/docker/` 4 dòng (không thuộc
+  lát 6, chưa đụng).
+- **Thứ tự các bước ghi (chờ duyệt):** B3 người dùng tự thêm `WEB_ADMIN_EMAILS` → B1 đẩy dự án chứng quyền → B2 đẩy
+  dự án định giá → B4 thêm container → B5 đổi khối `btinvest.vn` của Caddy; dừng ở bước nào kiểm không đạt.
+- **Chưa làm, chưa kiểm:** chưa có bước ghi nào trên VPS; đăng nhập coin thật, điện thoại thật, âm thanh và thông
+  báo trình duyệt chưa thử; chưa biết image của dự án chứng quyền có `pytest` để chạy 239 test trong container.

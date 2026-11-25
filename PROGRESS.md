@@ -5,7 +5,7 @@
 
 ## Đang chờ
 
-- [ ] Web hợp nhất btinvest.vn: lát 6 đưa lên VPS: kế hoạch ở mục 14 của `docs/PLAN_WEB_HOP_NHAT.md` CHỜ DUYỆT (địa chỉ đặt web, commit và đẩy mã = deploy, quyền đọc VPS); phần chuẩn bị tại máy đã xong; còn 9 bước trên VPS B0–B8, mỗi bước xin duyệt (D109)
+- [ ] Web hợp nhất btinvest.vn: lát 6 đưa lên VPS: người dùng chốt đặt thẳng ở `btinvest.vn` (25/11); đã commit tại máy ở hai dự án (CHƯA đẩy: đẩy = deploy) và xong B0 đọc VPS (RAM nay 12,9 GB có swap, image đủ thư viện); CHỜ DUYỆT các bước ghi B3 → B1 → B2 → B4 → B5, hai đoạn cấu hình soạn sẵn ở cuối mục 14 của `docs/PLAN_WEB_HOP_NHAT.md` (D110)
 - [ ] Web hợp nhất, cảnh báo: chỉ báo khi web đang mở (người dùng chốt); chưa nghe thử âm thanh và chưa thử thông báo của trình duyệt trên điện thoại thật; mức giá tự đặt đang riêng từng người, Quản trị không xem (mặc định của kế hoạch, chưa hỏi lại) (D108)
 - [ ] Web hợp nhất, danh mục: thước và lãi lỗ chưa cùng thời điểm giá (thước theo đợt định giá hoặc lần quét, lãi lỗ theo giá trực tiếp; đã ghi ở chân trang); cổ tức bằng cổ phiếu và chia tách chưa tự điều chỉnh; hợp đồng hết hạn phải tự ghi lệnh đóng (D107)
 - [ ] Web hợp nhất: đăng nhập thật với coin chưa thử được ở máy Mac; lát 6 phải kiểm `/me` nhận cookie do ứng dụng gửi lại và đổi Caddy để `/api/*` trả 401 thay vì 302 (D106)
