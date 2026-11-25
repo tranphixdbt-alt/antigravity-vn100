@@ -93,3 +93,23 @@ git diff --cached --name-only
   trước khi mã đi vào lời gọi API và đường dẫn cache. `run_ingest()` mặc định `is_vn100=False` để mã mới không
   tự vào rổ VN100.
 - Không tải tài liệu khi chứng chỉ TLS lỗi (không tắt kiểm tra chứng chỉ để lấy cho được).
+
+## Web hợp nhất: tài khoản được duyệt (lát 5a, D106)
+
+- `WEB_ADMIN_EMAILS` (email hoặc tên đăng nhập coin của Quản trị đầu tiên), `WEB_AUTH_ME_URL`, `WEB_AUTH_MODE`,
+  `WEB_USER_DB_URL`, `WEB_DEV_USER` nằm trong `.env`, không viết vào code hay tài liệu.
+- Trên VPS `WEB_AUTH_MODE` phải là `coin` (mặc định). Chế độ `dev` bỏ qua đăng nhập, chỉ để chạy tại máy; nó tự từ
+  chối yêu cầu không đến từ 127.0.0.1, nhưng vẫn không được đặt trên máy chủ.
+- `web_user.db` chứa email và nhật ký của cả đội: không commit (đã có `*.db` trong `.gitignore`), không đính kèm khi
+  gửi bản đóng gói dữ liệu định giá.
+- Ứng dụng chỉ chuyển cho dịch vụ coin đúng cookie `access_token`; không ghi cookie hay kết quả `/me` ra log.
+- Mức giá tự đặt (lát 5c, D108) là của riêng từng người: mọi truy vấn lọc theo người đang đăng nhập, Quản trị
+  cũng không đọc được. Mã và mức giá người dùng nhập được kiểm mẫu ở web mới rồi kiểm lại ở dịch vụ chứng quyền
+  trước khi lưu; web mới chỉ gọi dịch vụ đó qua các đường dẫn nằm trong danh sách cho phép của `web_cw.py`.
+- Lát 6 (D109, kế hoạch chờ duyệt): ở `btinvest.vn` Caddy không chặn hộ bằng `forward_auth`; ứng dụng tự đòi đăng
+  nhập ở từng đường `/api/`. Thêm route mới thì test `test_moi_duong_api_deu_dong_khi_chua_dang_nhap` phải còn qua;
+  đường công khai duy nhất là `/api/suc-khoe` (không có số liệu).
+- `WEB_ADMIN_EMAILS` chỉ nằm trong `.env` trên máy chủ, do người dùng tự điền. `WEB_AUTH_MODE`, `WEB_AUTH_ME_URL`,
+  `WEB_USER_DB_URL`, `WEB_CW_BASE_URL` là địa chỉ trong mạng Docker, không phải bí mật, đặt được trong compose.
+- Bản sao lưu `web_user-YYYYMMDD.db` chứa đúng dữ liệu của `web_user.db`: không commit, không gửi đi; job sao lưu
+  chỉ in số dòng từng bảng ra nhật ký.

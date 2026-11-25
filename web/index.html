@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BT Invest</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <div id="vo">
+    <header class="dau"><div class="dau-trong le">
+      <div class="hieu"><span class="hieu-dau" aria-hidden="true">B<i>T</i></span><span class="hieu-ten">BT Invest</span></div>
+      <div class="dau-ten" id="dau-ten">Cổ phiếu</div>
+      <div class="tim" role="search">
+        <label class="an-doc" for="o-tim">Tìm mã chứng khoán</label>
+        <input id="o-tim" type="search" placeholder="Tìm mã hoặc tên công ty" autocomplete="off" spellcheck="false" aria-controls="goi-y" aria-expanded="false">
+        <ul id="goi-y" hidden></ul>
+      </div>
+      <div class="dau-phai">
+        <button class="nut-tron" id="nut-nen" type="button" aria-label="Chế độ tối" aria-pressed="false"><svg class="bt" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
+        <button class="nut-tron nut-cb" id="nut-cb" type="button" aria-label="Cảnh báo" hidden><svg class="bt" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2.5h-15zM10 21a2 2 0 0 0 4 0"/></svg><span class="cb-so" id="cb-so" hidden></span></button>
+        <button class="nut-tron" id="nut-dm" type="button" aria-label="Danh mục" hidden><svg class="bt" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg></button>
+        <button class="nut-tron" id="nut-tk" type="button" aria-label="Tài khoản" aria-haspopup="true" aria-expanded="false" hidden><span class="tk" id="tk-chu"></span></button>
+      </div>
+    </div></header>
+    <main class="trang" id="trang"></main>
+    <nav class="tab" id="tab" aria-label="Mục chính">
+      <div class="tab-dau"><span class="hieu-dau" aria-hidden="true">B<i>T</i></span>BT Invest</div>
+      <span class="tab-vach" id="tab-vach" aria-hidden="true"></span>
+    </nav>
+  </div>
+  <div id="man" hidden></div>
+  <section id="to" hidden aria-label="Chi tiết mã"></section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

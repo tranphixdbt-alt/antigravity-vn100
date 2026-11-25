@@ -146,6 +146,15 @@ class Settings(BaseSettings):
     discord_owner_id: str = Field(default="")
     discord_channel_id: str = Field(default="")
 
+    # Web hợp nhất, lát 5a (docs/PLAN_WEB_HOP_NHAT.md mục 13): tài khoản được duyệt
+    web_user_db_url: str = Field(default="sqlite:///web_user.db")  # tệp riêng, không chung DB định giá
+    web_auth_mode: str = Field(default="coin")  # "coin" (mặc định) hoặc "dev" (chỉ trên chính máy này)
+    web_auth_me_url: str = Field(default="")  # địa chỉ /api/v1/auth/me của dịch vụ coin
+    web_admin_emails: str = Field(default="")  # email hoặc tên đăng nhập của Quản trị đầu tiên, cách nhau dấu phẩy
+    web_dev_user: str = Field(default="")  # email của người dùng thử khi WEB_AUTH_MODE=dev
+    # lát 6: địa chỉ dịch vụ chứng quyền khi không cùng máy (VPS: tên container); trống thì dùng web.cw_base_url
+    web_cw_base_url: str = Field(default="")
+
     erp_vn: float = Field(default=_defaults.get("erp_vn", 8.5))
 
     model_config = SettingsConfigDict(

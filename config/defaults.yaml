@@ -757,6 +757,30 @@ money_flow_chart:
   engine: lightweight             # lightweight (TradingView Lightweight Charts, D90) | plotly (bản cũ)
   spark_sessions: 20              # dải cột khối ngoại trên thẻ mã
 
+# Web hợp nhất btinvest.vn: API chỉ đọc gọi lại các hàm của app (docs/PLAN_WEB_HOP_NHAT.md mục 12).
+web:
+  cache_seconds: 600              # giữ kết quả tính trong bộ nhớ, bằng ttl của _history ở tab dòng tiền cũ
+  cache_entries: 40               # số mục tối đa trong bộ nhớ đệm (1 bảng VN100 + lịch sử từng mã đang xem)
+  search_limit: 12                # số gợi ý tối đa của ô tìm mã
+  cw_base_url: "http://127.0.0.1:8000"  # dịch vụ chứng quyền, ETF, phái sinh (repo cw_scanner, web.py) trên cùng máy
+  cw_timeout_seconds: 30          # trang phân tích từng mã ở dịch vụ đó tải giá trực tiếp, có lúc mất hơn 10 giây
+  auth:
+    cookie_name: access_token     # cookie phiên của dịch vụ coin (D98), Domain=.btinvest.vn
+    cache_seconds: 60             # nhớ kết quả hỏi coin /me theo mã băm cookie; coin giới hạn 600 lượt/phút/IP
+    cache_entries: 500            # số phiên tối đa trong bộ nhớ đệm
+    timeout_seconds: 5            # hạn chờ coin trả lời; quá hạn thì báo 503, không cho vào
+    seen_refresh_seconds: 600     # ghi lại "thấy lần cuối" của một người nhiều nhất 10 phút một lần
+    logout_path: "/dang-nhap?dang-xuat=1"   # trang đăng nhập chung của *.btinvest.vn (deploy/dang-nhap)
+    login_path: "/dang-nhap"
+  alerts:                         # cảnh báo trong web (lát 5c); mọi con số do dịch vụ chứng quyền tính
+    cache_seconds: 45             # nhớ phần cảnh báo chung cho mọi người: dịch vụ chứng quyền 1 luồng, mỗi lượt tải cả bảng giá
+    error_cache_seconds: 10       # dịch vụ đó lỗi thì nhớ lỗi ngần này giây, không để mọi người cùng chờ hết hạn
+    poll_seconds: 60              # trình duyệt hỏi tin mới mỗi phút, như GIAY_HOI_CANH_BAO của web chứng quyền
+    max_levels: 50                # số mức giá mỗi người được đặt, như SO_MUC_TOI_DA của web chứng quyền
+  backup:                         # sao lưu tệp dữ liệu người dùng mỗi ngày (lát 6, scripts/backup_web_user_db.py)
+    dir_name: sao_luu             # thư mục con nằm cạnh web_user.db
+    keep: 14                      # số bản hằng ngày giữ lại; bản cũ hơn bị xóa
+
 learning:
   # Chép knowledge/ (.md/.csv/.jsonl/.json) sang thư mục Drive riêng sau mỗi bản tóm tắt tuần — routine Claude cloud
   # Chủ nhật 20:00 đọc ở đây (D85). Máy không có thư mục cha (VPS) → bỏ qua. Để trống = tắt.

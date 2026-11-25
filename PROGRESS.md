@@ -5,6 +5,17 @@
 
 ## Đang chờ
 
+- [ ] Web hợp nhất btinvest.vn: lát 6 đưa lên VPS: kế hoạch ở mục 14 của `docs/PLAN_WEB_HOP_NHAT.md` CHỜ DUYỆT (địa chỉ đặt web, commit và đẩy mã = deploy, quyền đọc VPS); phần chuẩn bị tại máy đã xong; còn 9 bước trên VPS B0–B8, mỗi bước xin duyệt (D109)
+- [ ] Web hợp nhất, cảnh báo: chỉ báo khi web đang mở (người dùng chốt); chưa nghe thử âm thanh và chưa thử thông báo của trình duyệt trên điện thoại thật; mức giá tự đặt đang riêng từng người, Quản trị không xem (mặc định của kế hoạch, chưa hỏi lại) (D108)
+- [ ] Web hợp nhất, danh mục: thước và lãi lỗ chưa cùng thời điểm giá (thước theo đợt định giá hoặc lần quét, lãi lỗ theo giá trực tiếp; đã ghi ở chân trang); cổ tức bằng cổ phiếu và chia tách chưa tự điều chỉnh; hợp đồng hết hạn phải tự ghi lệnh đóng (D107)
+- [ ] Web hợp nhất: đăng nhập thật với coin chưa thử được ở máy Mac; lát 6 phải kiểm `/me` nhận cookie do ứng dụng gửi lại và đổi Caddy để `/api/*` trả 401 thay vì 302 (D106)
+- [ ] Web hợp nhất: các nút thao tác của Quản trị (cập nhật vĩ mô, làm mới tin, định giá lại VN100, sinh báo cáo AI, lưu kịch bản, xuất tệp) để sau khi lên VPS, người dùng chốt 25/11/2026
+- [ ] Web hợp nhất: phần phân tích theo giá lúc mở của từng chứng quyền, quỹ, hợp đồng vẫn là trang cũ đặt trong khung (đổi màu, phông); dựng lại theo giao diện mới cần tách số khỏi HTML trong `~/cw_scanner` (D105)
+- [ ] Web hợp nhất: chưa có Lướt CW, CW sắp ra mắt, nút quét, trang hướng dẫn của web chứng quyền (D105; danh mục và cảnh báo giá đã có ở D107, D108)
+- [ ] Web hợp nhất: hợp đồng tương lai chưa có tiêu chí "nên xem xét", tab Phái sinh chỉ hiện basis; chờ người dùng đặt ngưỡng nếu muốn xếp nhóm (D105)
+- [ ] Chạy cả bộ test trên máy Mac 24/11/2026: 1.257 qua, 9 trượt, 4 bỏ qua. 7 test đã rõ tên đều đọc DB thật hoặc số golden (`test_golden_banks` TCB số cổ phiếu lệch 50% so với vốn điều lệ, `test_sotp_holdings` MSN 56.124 so với 57.851, `test_freshness_gate`, `test_extreme_review_gate`, `test_broker_synth`, `test_data_flag_fixes`, `test_golden_consensus`); không test nào dùng tệp của web hợp nhất. Chạy lại 25/11 sau lát 5b: 1.278 qua, vẫn đúng 9 trượt (sau lát 5c: 1.290 qua, vẫn 9 trượt đó); hai test chưa rõ tên lần trước là `test_batch_engine::test_bank_dispatch` và `::test_nonfin_dispatch` (TypeError khi so sánh). Chưa rõ do DB máy Mac cũ hay lỗi thật: cần chạy lại trên VPS (D105)
+- [ ] Web hợp nhất: máy Mac ra NOT_RATED cho mọi mã vì DB cũ (cờ STALE_PRICE, STALE_MACRO_RF); muốn thử lát 2 với nhãn thật thì cập nhật DB máy Mac hoặc chạy trên VPS (D102)
+- [ ] Web hợp nhất: người dùng chốt "Rẻ x%" của cổ phiếu tính theo biên an toàn hay upside, và cách quy đổi nhãn MUA/NẮM GIỮ/BÁN (`docs/PLAN_WEB_HOP_NHAT.md` mục 9)
 - [ ] VPS: đăng nhập vnstock 6 trong vn100-worker (golden đủ 2 máy Linux → gỡ một thiết bị cũ tại vnstocks.com/account?section=devices). KHÔNG cần cho FHSC (đã chạy bằng `FHSC_API_KEY`), chỉ cần khi làm S3–S7 (D96)
 - [ ] Người dùng đăng nhập thử bằng tài khoản coin ở chungkhoang và chungquyen (điện thoại + máy tính); nếu lỗi gửi ảnh (D98)
 - [ ] Thứ 2 23/11: kiểm chứng quyền trên VPS chạy đúng — ETF 09:40 và quét 14:00 (`docker logs chungquyen-worker`, `app/log.txt`)
@@ -35,6 +46,17 @@
 - [ ] KIỂM THỬ 29/10 — bộ test mất 61 phút (dựng lại dữ liệu mã cùng ngành mỗi lần); tin vĩ mô AI cũ 9 ngày
 
 ## Đã xong
+
+### 2026-11-24
+- [x] Web hợp nhất btinvest.vn: 32 câu hỏi-đáp, hai bản mẫu, kế hoạch 6 lát (`docs/PLAN_WEB_HOP_NHAT.md`) (D102)
+- [x] Web hợp nhất lát 1: API chỉ đọc + giao diện thật cho tìm mã và dòng tiền 100 mã, chạy tại máy cổng 8600; 8 test mới, 95 test qua (D102)
+- [x] Web hợp nhất lát 2: định giá, kịch bản, độ nhạy, dự phóng, giả định, WACC, báo cáo tài chính, công ty chứng khoán, cổ tức, báo cáo AI đã lưu của từng mã; 5 test mới, thử VRE, VCB, SSI, BVH, FPT (D103)
+- [x] Web hợp nhất lát 3: tab Hôm nay (thị trường, vĩ mô, bản tin, lịch quyền 90 ngày) và xếp hạng VN100 + tích sản trong tab Cổ phiếu; 5 test mới, 18 test web qua (D104)
+- [x] Web hợp nhất lát 6, phần chuẩn bị tại máy (25/11/2026): biến `WEB_CW_BASE_URL`, tự tạo thư mục của tệp dữ liệu người dùng, script sao lưu `web_user.db` (giữ 14 bản), test chặn cả 35 đường `/api/` khi chưa đăng nhập; sửa ba test « chỉ có route đọc » kiểm rỗng; 11 test mới, 70 test web qua; chưa đụng VPS (D109)
+- [x] Web hợp nhất lát 5c (25/11/2026): cảnh báo trong web: chuông có số, tờ Cảnh báo (tin chưa xem, mức giá tôi đặt, bốn nhóm bất thường đang mua được), hỏi tin mỗi phút trong giờ khớp lệnh; bảng `web_price_levels`, 5 route; ngưỡng lãi lỗ tự đặt của cổ phiếu và ETF nay sinh tin; 9 test mới ở cw_scanner (239 qua), 12 test mới ở đây (59 test web qua); phần chung trùng tin trang cũ khi so cùng lúc (D108)
+- [x] Web hợp nhất lát 5b (25/11/2026): danh mục 4 loại của từng người (bảng `web_orders`, 5 route, giao diện Danh mục); vị thế và lãi lỗ do `~/cw_scanner/vi_the.py` tính theo ba công thức người dùng duyệt; Quản trị xem được danh mục của mọi người, chỉ xem; 11 test mới ở cw_scanner (230 qua), 9 test mới ở đây (47 test web qua) (D107)
+- [x] Web hợp nhất lát 5a (25/11/2026): tài khoản được duyệt và hai vai; tệp dữ liệu người dùng riêng `web_user.db` (3 bảng); mọi route số liệu đòi đã đăng nhập và đã duyệt; màn hình chờ duyệt, nút tài khoản, tờ Tài khoản cho Quản trị; 12 test mới, 38 test web qua (D106)
+- [x] Web hợp nhất lát 4 (24/11/2026): tab Chứng quyền (461 mã lần quét 17/11), ETF (21 quỹ), Phái sinh (8 hợp đồng, giá Vietcap trực tiếp) với số thật qua `~/cw_scanner/web_api.py` và cầu nối `web_cw.py`; tờ chi tiết nhúng trang phân tích cũ; ô tìm đủ bốn loại mã; dấu "!"; 12 test mới ở cw_scanner (219 qua), 8 test mới ở đây (26 test web qua) (D105)
 
 ### 2026-11-22
 - [x] Kế hoạch Wyckoff cho tab money (nghiên cứu có nguồn, đọc code, đo dữ liệu) + 8 quyết định của người dùng (D101)

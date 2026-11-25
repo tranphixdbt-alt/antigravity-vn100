@@ -874,3 +874,315 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   2. **Thiếu mã 24/09–21/10:** mỗi phiên chỉ 45–63/100 mã; 22/10 không có mã nào.
   - Job vẫn lưu số gốc (FHSC chỉ giữ 61 phiên, bỏ thì mất). Phân tích W4 chỉ dùng sau khi xác minh định nghĩa.
   - **Người dùng chọn giữ job** trong lúc chờ xác minh (22/11/2026, được hỏi « giữ hay tắt »).
+
+### D102 — Web hợp nhất btinvest.vn: kế hoạch 6 lát và lát 1 (tìm mã + dòng tiền thật) (2026-11-24, người dùng « tiến hành »)
+- **Vì sao:** người dùng muốn gộp chungkhoan và chungquyen thành một web đồng nhất, giao diện mới, giữ logic cũ.
+  32 câu hỏi-đáp, hai bản mẫu và góp ý của họ nằm ở `docs/PLAN_WEB_HOP_NHAT.md` (mục 1–11); kế hoạch xây ở mục 12.
+- **Người dùng chọn:** giao diện viết tay HTML/CSS/JS (không React); xây cổ phiếu trước; giữ gần đúng logic và bằng
+  chứng của web cũ, chỉ đổi bố trí; API chỉ gọi lại hàm sẵn có, không đổi công thức hay ngưỡng.
+- **Lát 1 — làm:**
+  - `valuation/services/web_flow.py`: lắp ráp y như `views.money_flow._compute`, `_history`, `_chart_block`, `_card`
+    rồi đổi sang JSON (NaN → null). Bộ nhớ đệm trong tiến trình theo `web.cache_seconds` (config mới `web:`).
+  - `valuation/api/web_main.py`: app FastAPI **riêng, chỉ có GET** (`/api/ma`, `/api/dong-tien`,
+    `/api/co-phieu/{ma}/dong-tien`, `/api/co-phieu/{ma}/bieu-do`), phục vụ luôn thư mục `web/`. Không dùng
+    `valuation.api.main` vì app đó có route ghi DB và khởi động job.
+  - `web/`: ô tìm mã (theo mã hoặc tên, không dấu), tab Cổ phiếu (tóm tắt, bản đồ ngành, 100 mã có nhãn và ba
+    phiếu, lọc theo nhãn và ngành, chế độ Loại/Gồm), trang một mã (thẻ, biểu đồ Lightweight Charts của tab cũ
+    nhúng nguyên qua iframe với đủ khung thời gian, tầng, volume profile; bảng phiếu, cửa sổ 5/20/60, phiên thỏa
+    thuận). Bốn tab còn lại ghi rõ "chưa nối dữ liệu thật".
+  - 8 test `tests/test_web_flow.py` đối chiếu API với `compute_money_flow` trên DB tạm, có ca tính tay cho `clean`,
+    kiểm mã lạ/tham số sai và kiểm app chỉ có route đọc. 95 test (web + dòng tiền cũ) qua; ruff, black, mypy sạch.
+- **Lỗi tự gây và đã sửa:** `_cached` lồng nhau (ticker_list gọi `_result` trong khi giữ khóa tính) treo test → đổi
+  sang `RLock`. Tham số `?ma=` bị `ghiDiaChi` xóa trước khi đọc → đọc trước khi đặt tab.
+- **Đo trên máy Mac (DB cũ: giá tới 16/11, dòng tiền tới 12/11):** cả VN100 nạp 0,8 s + tính 1,6 s + upside 0,25 s.
+  `build_company_data` + `valuate`: VRE 0,7 s, HPG 0,6 s, VCB 11 s (ngân hàng nạp chậm) → lát 2 cần bộ nhớ đệm.
+  Ba mã này ở máy Mac đều ra NOT_RATED/không công bố, khác VPS (VRE: MUA 31.856). Nguyên nhân: DB máy Mac cũ nên
+  bộ máy tự gắn cờ `STALE_PRICE`, `STALE_MACRO_RF`, `DATA_REVIEW_REQUIRED`; giá trị hợp lý của VRE vẫn khớp VPS
+  (31.852 so với 31.856). Lát 2 thử trên máy Mac sẽ thấy NOT_RATED; số đúng chỉ có khi chạy trên VPS.
+- **Chưa làm:** lát 2–6; chưa chạy trên VPS (số sống ở đó); chưa thử trên điện thoại thật; chưa có đăng nhập ở
+  bản chạy tại máy (trên VPS dùng lại `forward_auth` của Caddy, D98).
+- **Chạy tại máy:** `~/.venv/bin/python -m uvicorn valuation.api.web_main:app --host 127.0.0.1 --port 8600`.
+
+### D103 — Web hợp nhất lát 2: định giá, báo cáo tài chính, công ty chứng khoán, cổ tức, báo cáo AI của một mã (2026-11-24, người dùng « Tiếp 2 »)
+- **Làm:**
+  - `valuation/services/web_valuation.py`: một lần `build_company_data(mode="TTM", fetch_live=False)` → `valuate`
+    cho mỗi mã (đúng đường `select_ticker.py` gọi), giữ trong bộ nhớ đệm của `web_flow`. Các bảng lấy nguyên từ
+    `report/report_data.py` (`build_historical_analysis`, `build_appendix_financials`, `build_assumptions_table`,
+    `build_wacc_breakdown`, `build_scenarios`, `build_consensus_comparison`); độ nhạy lắp như `views/results.py`
+    (trục X là WACC, ngân hàng là COE); cờ qua `describe_flags`; cổ tức qua `load_corporate_actions`; tổng hợp luận
+    điểm đọc bảng `consensus_synthesis`.
+  - Báo cáo AI: **chỉ đọc bản đã lưu** mới nhất trong `.deepseek_report_cache/` đúng phiên bản schema hiện hành
+    (`report_markdown`), không gọi DeepSeek. Bộ đệm của app khóa theo dấu vân tay đầu vào nên bản lấy ra có thể
+    cũ hơn số đang hiện; giao diện ghi rõ ngày sinh.
+  - 5 route GET mới trong `valuation/api/web_main.py`: `/api/co-phieu/{ma}/dinh-gia`, `/tai-chinh`, `/ctck`,
+    `/co-tuc`, `/ai`; mã phải có trong bảng `tickers` (404 nếu không).
+  - `web/app.js`: phần "Định giá" trên trang một mã (giá trị hợp lý + thước, nhãn của hệ thống, cờ kèm mô tả) và
+    9 mục mở ra: kịch bản, độ nhạy, dự phóng 5 năm, giả định, chi phí vốn, báo cáo tài chính, công ty chứng khoán,
+    cổ tức và quyền mua, phân tích AI (bốn mục sau nạp khi mở). Số "9,124.0" của `report_data` đổi sang kiểu
+    Việt Nam ở trình duyệt, không đổi giá trị.
+- **Không tự quyết thay người dùng:** nhãn hiển thị đúng chữ của bộ máy (MUA/NẮM GIỮ/BÁN, NOT_RATED ghi "Chưa xếp
+  hạng"), chưa quy đổi sang "Nên xem xét/Theo dõi/Bỏ qua"; tiêu đề ghi upside của bộ máy, chưa dùng "Rẻ x%". Hai
+  việc này chờ người dùng chốt (mục 9 của kế hoạch).
+- **Phương pháp không áp dụng:** các hàm dựng bảng bọc bằng `_try` bắt đúng `ValueError`, `ZeroDivisionError`,
+  `AttributeError`, `TypeError`, `KeyError` rồi trả `{"ap_dung": false, "ly_do": ...}` để hiện "không áp dụng" kèm
+  lý do; lỗi khác vẫn thành HTTP 500. Khi phương pháp là BROKER_SYNTH, giao diện ghi rõ kịch bản và độ nhạy tính
+  trên mô hình riêng (VRE: 9.521 đ) còn giá trị hợp lý lấy từ tổng hợp công ty chứng khoán (31.852 đ).
+- **Kiểm:** 5 test `tests/test_web_valuation.py` trên DB thật của máy, chặn mạng: API bằng đúng `valuate` và
+  `report_data` cho VRE; ca kiểm tay: ô giữa bảng độ nhạy bằng kịch bản Base. 13 test web qua; ruff, black, mypy
+  sạch cho các tệp mới. Gọi thử `dinh-gia` và 4 route kia cho VCB (11,8 s lần đầu), SSI, BVH, FPT: đều 200.
+  Mở VRE và VCB ở cỡ điện thoại: đủ 10 mục, không lỗi console của trang.
+- **Hạn chế:** máy Mac ra "Chưa xếp hạng" cho mọi mã vì DB cũ (D102); chưa có nút đổi TTM/FY, chưa cho sửa giả
+  định hay lưu kịch bản (việc ghi, để lát 5); chưa có biểu đồ waterfall FCFF và khoảng định giá ±15% của tab cũ;
+  máy Mac không có báo cáo AI nào đúng phiên bản schema nên mục AI chưa được nhìn thấy với nội dung thật.
+
+### D104 — Web hợp nhất lát 3: tab Hôm nay (thị trường, vĩ mô), xếp hạng VN100, lịch quyền (2026-11-24, người dùng « Làm tiếp 3 »)
+- **Làm:**
+  - `valuation/services/web_market.py`: `market` lắp ráp y như `render_market_overview` (bốn trụ cột, đèn tổng,
+    `index_view`, `outlook`, `leaders`, nhãn tin); `macro` dùng `PANEL`, `build_snapshot`, `_fmt_value`,
+    `is_stale`, `quick_takes` và bản tin `get_macro_bulletin_cached(force=False)` (chỉ đọc bản lưu, đã bỏ dòng
+    TAGS); `ranking` y như `render_vn100_ranking` (`ranking_table` + `snapshot_closes` + `accumulation_picks`,
+    bỏ các cột `_HIDDEN`); `upcoming` gọi `load_upcoming_vn100_corporate_actions` với `market_upcoming_days`.
+  - 4 route GET: `/api/thi-truong`, `/api/vi-mo`, `/api/xep-hang`, `/api/lich-quyen`.
+  - `web/app.js`: tab Hôm nay thật (dải VN-Index, bốn trụ cột mở ra được, kịch bản sắp tới, ngành mạnh/yếu, mã
+    có lực bấm được, bảng ngành, mã mạnh nhất, 7 chỉ số vĩ mô, nhận định nhanh, bản tin vĩ mô, lịch quyền nạp
+    khi mở) và là tab mở đầu; tab Cổ phiếu thêm công tắc "Dòng tiền / Xếp hạng VN100" (bảng tích sản + bảng 100
+    mã, cột Mã bấm được). `clean` đổi `Decimal` thành số (trước đó tiền cổ tức ra chuỗi).
+- **Trình bày, không đổi số:** bản tin vĩ mô đã lưu có cờ và emoji đầu mục; giao diện bỏ các ký tự đó (mục 9
+  `AGENTS.md`), giữ nguyên chữ.
+- **Kiểm:** 5 test `tests/test_web_market.py` trên DB thật, chặn mạng: API bằng đúng các hàm gốc (nhãn và trụ cột,
+  `outlook`, mã có lực, từng chỉ số vĩ mô với `_fmt_value`, `quick_takes`, thứ tự bảng xếp hạng, tích sản, lịch
+  quyền); ca tính tay cho `Decimal`. 18 test web qua; ruff, black, mypy sạch. Mở ở cỡ điện thoại: Hôm nay đủ các
+  khối, lịch quyền 11 dòng, xếp hạng 100 dòng, tích sản 5 dòng.
+- **Hạn chế:** chưa có nút "Cập nhật vĩ mô", "Làm mới tin tức", "Định giá lại VN100", "Xuất Excel" (đều là thao
+  tác ghi hoặc gọi mạng, để lát 5); trang Hôm nay chưa có chứng quyền, ETF, phái sinh (lát 4).
+
+### D105 — Web hợp nhất lát 4: chứng quyền, ETF, phái sinh qua API chỉ đọc của cw_scanner (2026-11-24, người dùng « Ok tiếp tục »)
+- **Vì sao hai dịch vụ:** chứng quyền, ETF, hợp đồng tương lai do repo `~/cw_scanner` tính (file quét, Black-Scholes,
+  NAV, basis) bằng `http.server` thuần và venv riêng. Không chép công thức sang đây: web mới gọi sang dịch vụ đó.
+- **Làm ở `~/cw_scanner` (chưa commit):**
+  - `web_api.py` (mới): `chung_quyen` (danh sách theo đúng thứ tự file quét, số theo nhóm, ngưỡng lấy từ hằng số
+    `cw_scanner`, lời giải thích cột lấy từ `W.COT`), `chung_quyen_mot_ma` (dòng quét, 4 tiêu chí, ngày đáo hạn,
+    chứng quyền cùng mã cơ sở), `quy_etf` (ba bảng của `trang_etf` ở dạng cột + dòng, cùng thứ tự, kèm cảnh báo
+    trung vị cũ), `hop_dong_tuong_lai` (`phai_sinh.lay_du_lieu` + `web_phai_sinh.chi_so_hd`), `trang_cu` (trang
+    HTML cũ bỏ thanh menu và nút quét, thêm đoạn script báo chiều cao và chuyển cú bấm liên kết ra ngoài).
+  - `web.py`: 9 dòng, nhánh `/api/` trong `do_GET` gọi `web_api.tra_loi`; đang quét thì 503, lỗi lúc tính thì 500
+    kèm tên lỗi và in dấu vết ra stderr. Các hàm `trang_*` và mọi công thức không bị sửa.
+  - 4 tiêu chí của một dòng quét dựng lại từ cột của file (ô IV − HV trống thì đọc cột Ghi chú IV), cùng ngưỡng
+    `MIN_NGAY_CON_LAI`, `MAX_IV_TRU_HV`, `MAX_TANG_DE_HOA_VON`, `MIN_KHOI_LUONG`.
+- **Làm ở đây:**
+  - `valuation/services/web_cw.py`: `fetch(path)` chỉ GET, chỉ đường dẫn trong danh sách cho phép (regex), địa chỉ
+    dịch vụ ở `web.cw_base_url` (mặc định `http://127.0.0.1:8000`), hạn chờ `web.cw_timeout_seconds`. Mã 404 và 503
+    của dịch vụ giữ nguyên, lỗi khác thành 502, mất kết nối thành 503; câu báo giữ nguyên văn.
+  - `web_main.py`: 7 route GET (`/api/chung-quyen`, `/api/chung-quyen/{ma}`, `/api/chung-quyen/{ma}/trang-cu`,
+    `/api/etf`, `/api/etf/{ma}/trang-cu`, `/api/phai-sinh`, `/api/phai-sinh/{ma}/trang-cu`), mã phải đúng mẫu.
+  - `web/app.js`, `web/app.css`: ba tab thật thay ba tấm "chưa nối dữ liệu"; tờ chi tiết của chứng quyền, quỹ,
+    hợp đồng; ô tìm thêm chứng quyền, quỹ, hợp đồng; mục "Chứng quyền và ETF" ở tab Hôm nay; dấu "!" giải thích
+    (lời lấy từ lời giải thích cột của trang cũ); địa chỉ `?ma=` mở được cả bốn loại mã.
+  - `.claude/launch.json`: thêm preview `cw-dich-vu` (cổng 8000).
+- **Trang phân tích cũ đặt trong khung:** phần định giá lại theo giá trực tiếp, nến, sổ lệnh, IV theo thời gian,
+  mức theo kịp, lãi lỗ nếu giữ đến đáo hạn nằm lẫn trong HTML của `trang_chi_tiet` (hơn 400 dòng). Tách số ra JSON
+  là viết lại phần điều phối đó, dễ lệch số, nên lát này lấy nguyên trang cũ vào `iframe sandbox="allow-scripts"`.
+  Giao diện gán lại 16 biến màu của trang cũ bằng màu của web mới (đọc lúc vẽ, theo chế độ sáng / tối) và phông Be
+  Vietnam Pro; biểu đồ nến đọc màu từ các biến đó nên đổi theo. Bấm một dòng trong bảng của trang cũ thì web mới mở
+  tờ của mã đó (postMessage, chỉ nhận từ đúng khung đang mở và chỉ đường dẫn đúng mẫu).
+- **Trình bày, không đổi số:** thước của chứng quyền = giá mua so với giá hợp lý (± 50% như cổ phiếu); của quỹ =
+  giá chào bán so với iNAV (± 5%); của hợp đồng = giá so với chỉ số (± 2%), không tô màu rẻ / đắt vì chưa có giá hợp
+  lý cho hợp đồng (`phai_sinh.py` cố ý không tính: chưa có tỷ suất cổ tức q). Tab Phái sinh không xếp nhóm "nên xem
+  xét". Chữ "Rẻ 18,4%" lấy nguyên từ `W.dat_re` của trang cũ.
+- **Sửa kèm:** `thuoc()` gán lớp `bang` khi lệch gần 0, trùng tên dải navy `.bang` nên thước biến thành thanh
+  navy dày (lộ ra ở quỹ E1VFVN30, lệch 0,01%); đổi thành `tt`.
+- **Kiểm:** cw_scanner: 12 test `test_web_api.py` (file quét dựng tạm, không gọi mạng): JSON đúng thứ tự và đúng chữ
+  với bảng "Tất cả" của trang HTML cũ; ca tính tay 4 tiêu chí (45 ngày < 60 nên trượt đúng 1); số tiêu chí trượt
+  0 / 1 / ≥ 2 ra đúng Đánh giá của `danh_gia` trên cả 461 dòng file quét thật 17/11; hợp đồng tương lai tính tay
+  (1900 so với 1890: basis 10 điểm, 0,5291%, năm hóa 6,42%, ký quỹ 32,3 triệu); đang quét 503; lỗi mạng 500 và có
+  dấu vết; 219 test của cw_scanner qua, ruff và black sạch. Ở đây: 8 test `tests/test_web_cw.py` với dịch vụ giả
+  (`httpx.MockTransport`, chặn socket): JSON đi qua nguyên vẹn, mã sai mẫu không gọi dịch vụ, đường dẫn ngoài danh
+  sách bị từ chối, mã lỗi và câu báo đúng; 26 test web qua; ruff, black sạch, mypy không lỗi ở tệp mới.
+  Trình duyệt (máy tính và cỡ điện thoại, sáng và tối): 26 chứng quyền nên xem xét, lọc và tìm; tờ CVRE2609 có khung
+  cao 7.455 px định giá lại lúc 22:44 (950 so với 1.198); bấm dòng CVRE2608 trong khung mở tờ CVRE2608; 21 quỹ;
+  8 hợp đồng; tìm "vre" ra cổ phiếu VRE và 11 chứng quyền.
+- **Hạn chế:** file quét trên máy Mac là 17/11 (ETF 18/11), web báo "số liệu cũ 7 ngày"; số sống ở VPS. Trang
+  trong khung còn ký hiệu ⚠ ℹ của trang cũ. Chưa có Lướt CW, CW sắp ra mắt, cảnh báo giá, danh mục, nút quét,
+  trang hướng dẫn. Chưa thử trên điện thoại thật. Chưa commit ở cả hai repo.
+
+
+
+### D106 — Web hợp nhất lát 5a: tài khoản được duyệt, hai vai, tệp dữ liệu người dùng riêng (2026-11-25, người dùng « giờ làm 5a »)
+- **Người dùng chốt trước khi làm** (`docs/PLAN_WEB_HOP_NHAT.md` mục 13): lát 5 chỉ gồm tài khoản, danh mục, cảnh
+  báo; Quản trị duyệt người ngay trên web; danh mục đủ 4 loại có nhập lệnh; danh mục chứng quyền cũ giữ ở web cũ tới
+  lúc chuyển hẳn; cảnh báo chỉ báo trong web; lãi lỗ sau phí và thuế như web cũ; **Quản trị xem được lệnh của các
+  tài khoản dưới** (hiểu là chỉ xem, không sửa; không xem của Quản trị khác; xác nhận lại khi trình 5b).
+- **Vì sao phải tự nhận diện:** đăng nhập chung (D98) là `forward_auth` ở Caddy, chỉ cho qua hay chặn; ứng dụng
+  không biết ai đang dùng. Đọc mã coin trên VPS (chỉ đọc, người dùng cho phép 25/11): `GET /api/v1/auth/me` trả
+  `{user: {_id, username, email (có thể trống), firstName, lastName, …}, …}`, cookie `access_token`, giới hạn 600
+  lượt mỗi phút mỗi IP.
+- **Schema mới (người dùng duyệt):** tệp SQLite RIÊNG `web_user.db` (`WEB_USER_DB_URL`), không nằm trong DB định giá
+  vì DB định giá có thể bị thay bằng bản đóng gói. Bảng `web_users` (`coin_user_id` duy nhất, `email`, `username`,
+  `ten_hien_thi`, `vai`, `trang_thai`, `tao_luc`, `duyet_luc`, `duyet_boi`, `thay_luc`), `web_audit` (ai làm gì, lúc
+  nào), `web_meta` (`schema_version` = 1). Tạo bằng `create_all`, chạy lại không tạo trùng. Bảng lệnh và mức giá
+  thêm ở 5b, 5c.
+- **Làm:**
+  - `valuation/db/web_user.py`: ba bảng trên, engine tạo ở lần dùng đầu.
+  - `valuation/services/web_auth.py`: lấy cookie `access_token`, hỏi coin `/me` (`WEB_AUTH_ME_URL`), chỉ gửi đúng
+    cookie đó; nhớ kết quả 60 giây theo mã băm SHA-256 của cookie. Coin không trả lời, trả lỗi lạ, thiếu cấu hình
+    hoặc chế độ lạ: 503, không cho vào. Chế độ `dev` (`WEB_AUTH_MODE=dev`, `WEB_DEV_USER`) cho máy Mac không có
+    coin, chỉ nhận yêu cầu đến từ 127.0.0.1 nên sau Caddy trên VPS tự vô hiệu.
+  - `valuation/services/web_users.py`: lần đầu thấy thì tạo dòng `cho_duyet`; email hoặc tên đăng nhập có trong
+    `WEB_ADMIN_EMAILS` thì là Quản trị đã duyệt (thêm vào danh sách sau cũng được nâng lên); duyệt, khóa, đổi vai có
+    nhật ký; không khóa hay hạ vai Quản trị đang hoạt động cuối cùng.
+  - `valuation/api/web_deps.py`, `web_user_routes.py`: `GET /api/toi`; Quản trị: `GET /api/tai-khoan`,
+    `POST /api/tai-khoan/{id}/duyet`, `/khoa`, `/vai`. Route ghi đòi `Origin` (hoặc `Referer`) trùng tên miền và
+    thân JSON.
+  - `web_main.py`: 20 route số liệu của lát 1–4 chuyển sang một router có điều kiện "đã đăng nhập và đã duyệt".
+    `/api/suc-khoe` và tệp tĩnh của khung web vẫn công khai (không có số liệu).
+  - `web/`: màn hình chắn (chờ duyệt, bị khóa, chưa hỏi được máy chủ) che cả web và không nạp số liệu nào phía
+    sau; nút tài khoản ở góc trên (tên, vai, đăng xuất); tờ Tài khoản cho Quản trị; `api()` gặp 401 thì về
+    `/dang-nhap?next=…`, gặp 403 giữa chừng thì hỏi lại trạng thái.
+  - `config/defaults.yaml` mục `web.auth`; `.env.example` thêm 5 biến; `.claude/launch.json` chạy preview ở chế độ
+    `dev`.
+- **Kiểm:** 12 test `tests/test_web_auth.py` (coin giả, SQLite tạm, chặn socket): chưa đăng nhập 401 ở cả route số
+  liệu; người mới chờ duyệt, gọi nhiều lần vẫn một dòng; Quản trị đầu tiên từ `WEB_ADMIN_EMAILS` (email viết hoa,
+  tên đăng nhập, thêm sau); duyệt hai lần không thêm nhật ký; nhân viên gọi route Quản trị 403; không `Origin`,
+  `Origin` lạ 403, gửi kiểu form 415; coin sập, lỗi lạ, thiếu cấu hình, chế độ lạ đều 503; ca tính tay cho bộ nhớ
+  đệm (giây 0 hỏi, giây 59 còn nhớ, giây 60 hỏi lại); chỉ cookie phiên được gửi cho coin; chế độ `dev` từ địa chỉ
+  khác 127.0.0.1 bị 403. 26 test số liệu cũ đi qua bằng fixture `web_approved`; 38 test web qua; ruff, black sạch,
+  mypy không lỗi ở tệp mới. Trình duyệt: nhân viên mới thấy màn hình chờ duyệt và `/api/xep-hang` trả 403; Quản
+  trị duyệt trong tờ Tài khoản; nhân viên vào lại xem được 26 chứng quyền, không có mục Tài khoản, gọi
+  `/api/tai-khoan` bị 403; tự khóa Quản trị cuối cùng bị 409.
+- **Chưa kiểm, chỉ làm được trên VPS (lát 6):** đăng nhập thật với coin (hình dạng `/me` lấy từ mã nguồn, chưa gọi
+  thử); coin có nhận cookie do ứng dụng gửi lại không; Caddy phải trả 401 cho `/api/*` thay vì chuyển hướng 302 để
+  giao diện tự về trang đăng nhập.
+- **Rủi ro:** người vừa bị khóa ở coin còn vào được tối đa 60 giây; ai có tên trong `WEB_ADMIN_EMAILS` thì dù bị
+  khóa trên web vẫn được nâng lại ở lần mở sau (muốn khóa hẳn phải bỏ khỏi danh sách); `web_user.db` cần sao lưu
+  trên VPS.
+
+
+### D107 — Web hợp nhất lát 5b: danh mục 4 loại của từng người, công thức lãi lỗ người dùng duyệt (2026-11-25, người dùng « Làm tiếp »)
+- **Người dùng chốt bằng hộp chọn trước khi viết (25/11/2026):**
+  1. Cổ phiếu và ETF: « Theo giá chờ mua ». Cùng cách của danh mục chứng quyền cũ: giá vốn bình quân gồm phí mua
+     0,15%; lãi nếu bán ngay = (giá chờ mua cao nhất × (1 − 0,15% − 0,1%) − giá vốn) × số lượng; không ai chờ mua thì
+     giá khớp gần nhất. Ví dụ đã duyệt: mua 1.000 VRE giá 23.000 → vốn 23.034,5; chờ mua 24.000 → +905.500 đ.
+  2. Hợp đồng tương lai: « Sau phí và thuế ». Lãi lỗ nếu đóng ngay = chiều × (giá khớp gần nhất − giá mở bình
+     quân) × 100.000 × số HĐ − phí và thuế lúc mở − phí và thuế lúc đóng; phí 8.250 đ mỗi HĐ mỗi lần, thuế mỗi lần
+     = 0,1% × giá × 100.000 × 17% ÷ 2 (hằng số của `phai_sinh.py`; cách tính thuế ở đó ghi « chưa đối chiếu văn bản
+     BTC », web ghi rõ là giả định). Ví dụ đã duyệt: Long 2 HĐ giá 1.780, hiện 1.790 → ròng +1.906.310 đ.
+  3. Quyền xem: « Xem của tất cả mọi người ». Quản trị xem được danh mục của mọi tài khoản, kể cả Quản trị khác;
+     chỉ xem, không thêm hay xóa lệnh hộ. (Thay cho cách hiểu « chỉ xem của Nhân viên » ghi ở D106.)
+- **Làm ở `~/cw_scanner` (chưa commit):**
+  - `vi_the.py` (mới, chỉ tính): chứng quyền gọi nguyên `danh_muc.tinh_vi_the` + `danh_gia_danh_muc` (tín hiệu giữ
+    hay bán như trang Danh mục cũ); cổ phiếu, ETF dùng cùng `tinh_vi_the` và `gia_ban_ngay` (giá chờ mua cao nhất);
+    hợp đồng tương lai `vi_the_hop_dong` (vị thế ròng theo chỉ số + ngày giao dịch cuối, đóng bớt, đảo chiều) và
+    `lai_neu_dong`. Mất mạng ở loại nào thì loại đó chỉ có số đang nắm và giá vốn, kèm câu báo.
+  - `web_api.tinh` + nhánh POST `/api/tinh/danh-muc` trong `web.py`: nhận danh sách lệnh, kiểm kiểu từng lệnh, trả
+    vị thế đã định giá; `chi_kiem` thì chỉ dựng thử vị thế, không gọi giá. Không đọc `danh_muc.csv`, không ghi
+    tệp, không gửi Discord. Bắt buộc thân JSON (415 nếu không), nên trang web lạ không khiến máy chủ gọi bảng giá hộ.
+- **Làm ở đây:**
+  - `valuation/db/web_user.py`: bảng `web_orders` (`user_id`, `loai` cp/cw/etf/hd, `ma`, `chieu` MUA/BAN,
+    `so_luong`, `gia`, `ngay`, `chot_loi`, `cat_lo`, `ghi_chu`, `hop_dong_gd_cuoi`, `ma_yeu_cau` duy nhất theo
+    người, `tao_luc`, `xoa_luc`); `schema_version` 1 → 2 (chỉ thêm bảng). Người dùng đã duyệt schema này ở mục 13.
+  - `valuation/services/web_portfolio.py`: kiểm đầu vào, mã phải có thật ở đúng loại (cổ phiếu trong `tickers`,
+    chứng quyền trong lần quét, quỹ trong kết quả ETF, hợp đồng lấy ngày giao dịch cuối từ dịch vụ), nhờ dịch vụ
+    dựng thử vị thế trước khi lưu, xóa mềm, nhật ký `them_lenh` / `xoa_lenh`. Không tự tính con số nào.
+  - `web_cw.compute`, 5 route trong `web_user_routes.py`: `GET /api/danh-muc[?nguoi=]`, `GET /api/danh-muc/lenh`,
+    `GET /api/danh-muc/nguoi` (Quản trị), `POST /api/danh-muc/lenh`, `POST /api/danh-muc/lenh/{id}/xoa`.
+  - `web/`: nút Danh mục ở góc trên; tổng lãi lỗ, 4 nhóm vị thế có thước, tín hiệu chứng quyền, form ghi lệnh,
+    sổ lệnh (xóa phải bấm hai lần), ô chọn người cho Quản trị (chỉ xem); Nhân viên thấy dòng « Quản trị xem được
+    danh mục này ».
+- **Khác bản kế hoạch:** cột `loai` lưu mã ngắn `cp/cw/etf/hd` thay cho `co_phieu/…`; thước của cổ phiếu dùng
+  upside của đợt định giá VN100 gần nhất (giá trong DB), của chứng quyền dùng đắt rẻ lúc quét, của ETF dùng chiết
+  khấu lúc lập báo cáo: thước và lãi lỗ vì thế không cùng thời điểm giá; chân trang Danh mục ghi rõ điều này.
+- **Kiểm:** cw_scanner 11 test `test_vi_the.py` (hai ví dụ đã duyệt; giá bán và lãi khớp `danh_gia_danh_muc` trên
+  cùng bảng giá mẫu; Short đóng bớt và đảo chiều; hợp đồng nhận diện bằng ngày giao dịch cuối, hết hạn thì không
+  bịa giá; kiểm đầu vào; POST chỉ tính không cần `Origin` còn form ghi cũ vẫn 403); 230 test qua. Ở đây 9 test
+  `tests/test_web_portfolio.py` (dịch vụ giả): gửi lại cùng mã yêu cầu không nhân đôi; 16 kiểu lệnh sai không lưu;
+  bán quá số đang nắm 422; người khác không xem, không xóa được; Quản trị xem được nhưng xóa hộ 404; xóa mềm có
+  nhật ký; dịch vụ sập thì không lưu; 47 test web qua; ruff, black sạch, mypy không lỗi ở tệp mới. Trình duyệt với
+  hai dịch vụ thật và giá Vietcap trực tiếp: ghi 4 lệnh đủ 4 loại, tổng +2.757.753 đ tính tay lại khớp từng dòng
+  (VRE +506.500; CVRE2609 −164.160; E1VFVN30 +9.145; VN30F1M +2.406.268); bán 400 VRE qua form ra lãi đã chốt
+  +282.400 đ; xóa hai bước; Quản trị chọn xem danh mục nhân viên, không có form và nút xóa.
+- **Hạn chế:** cổ tức bằng cổ phiếu, chia tách không tự điều chỉnh; hợp đồng đã qua ngày giao dịch cuối phải tự ghi
+  lệnh đóng ở giá thanh toán cuối cùng; phí thuế là giả định chung, chưa cho từng người đổi; ngưỡng chốt lời, cắt
+  lỗ của cổ phiếu và ETF mới được lưu, chưa sinh cảnh báo (5c); chưa kiểm bước giá cổ phiếu; chưa commit.
+
+### D108 — Web hợp nhất lát 5c: cảnh báo trong web (2026-11-25, người dùng « Tiếp »)
+- **Phạm vi người dùng đã chốt từ kế hoạch mục 13:** chỉ báo trong web (chuông, âm thanh, thông báo của trình duyệt
+  khi đang mở); không Discord, không lịch chạy nền. Hệ quả: một mức chạm lúc không ai mở web thì không được ghi lại,
+  web ghi rõ điều này.
+- **Ba nguồn tin, đều do `~/cw_scanner` tính:**
+  1. Bất thường đang mua được, chung cho mọi người: chứng quyền rẻ bất thường, ETF dưới iNAV, hợp đồng tương lai đắt
+     hoặc rẻ, chứng quyền giảm mạnh. Cùng hàm với trang `/canh-bao` cũ (`web_canh_bao.tinh_canh_bao`).
+  2. Mức giá từng người tự đặt: trạng thái bằng `canh_bao_gia.trang_thai_muc` (giá khớp; khớp lẻ thì giá giao dịch
+     được đủ 5 triệu), tối đa 50 mức mỗi người như cũ.
+  3. Tín hiệu danh mục của người đó: chứng quyền dùng đúng bộ lọc `danh_muc.bat_thuong` của tin Discord cũ; cổ phiếu
+     và ETF báo khi lãi, lỗ nếu bán ngay chạm ngưỡng **người đó tự đặt ở lệnh mua** (ô « Báo khi lãi từ / lỗ từ » đã
+     có từ 5b). Cùng cách so của chứng quyền, nhưng **không áp ngưỡng mặc định +50% / −30%** của chứng quyền cho cổ
+     phiếu và ETF: không đặt ngưỡng thì không báo. Ca tính tay: mua 1.000 cp giá 23.000 (vốn 23.034,5), ngưỡng lãi
+     3%, chờ mua 24.000 → 24.000 × 0,9975 / 23.034,5 − 1 = +3,93% → báo; ngưỡng lỗ 4%, chờ mua 22.000 → −4,73% → báo.
+     Hợp đồng tương lai không có ngưỡng.
+- **Làm ở `~/cw_scanner` (chưa commit):**
+  - `web_canh_bao.py`: tách phần dựng tin của `tin_canh_bao` thành `mot_tin`, `tin_thi_truong`, `tin_muc_gia`,
+    `tin_giam_manh`, `tin_danh_muc`; `tin_canh_bao` gọi lại đúng các hàm đó, kết quả không đổi (test cũ giữ nguyên).
+  - `canh_bao_gia.py`: tách `loi_muc_so_voi_gia` khỏi `them_muc_gia` (kiểm mã có trên bảng giá, mức không lệch quá 10
+    lần giá hiện tại); `them_muc_gia` gọi lại, hành vi không đổi.
+  - `vi_the.py`: `canh_bao_nguong` (cổ phiếu, ETF) và khóa `bat_thuong` trong kết quả `danh_gia`.
+  - `web_api.py`: `GET /api/canh-bao` (đủ bảng, xem được cả ngoài giờ), `GET /api/canh-bao/tin` (ngoài giờ khớp lệnh
+    trả ngay, không tải gì), `POST /api/tinh/muc-gia` (chỉ tính; `chi_kiem` để kiểm một mức sắp lưu);
+    `/api/tinh/danh-muc` trả thêm `tin`. Mức giá trong `muc_gia.csv` và danh mục trong `danh_muc.csv` của web cũ
+    không đi vào web mới. Danh sách chứng quyền giảm mạnh gộp file do lịch 5 phút ghi với các mã đang giảm lúc này.
+- **Làm ở đây:**
+  - `valuation/db/web_user.py`: bảng `web_price_levels` (`user_id`, `ma`, `chieu` duoi/tren, `muc`, `ghi_chu`,
+    `tao_luc`, `xoa_luc`), đúng cột của kế hoạch mục 13; `schema_version` 2 → 3 (chỉ thêm bảng).
+  - `valuation/services/web_alerts.py`: lưu, xóa mềm mức giá (nhật ký `them_muc_gia` / `xoa_muc_gia`); đặt lại đúng
+    mức đang có thì trả mức đó (bảng không có cột mã yêu cầu); nhờ dịch vụ kiểm trước khi lưu; gộp ba nguồn tin.
+    Phần chung nhớ 45 giây cho mọi người và giữ khóa lúc gọi, vì dịch vụ chứng quyền chạy một luồng và mỗi lượt tải cả
+    bảng giá; dịch vụ lỗi thì nhớ lỗi 10 giây. Ngoài giờ không gọi giá cho mức giá và danh mục. Không tự tính con số
+    nào.
+  - `web_cw.py`: thêm hai đường GET và một đường POST vào danh sách cho phép. `config/defaults.yaml`: `web.alerts`.
+  - `web_user_routes.py`: `GET /api/canh-bao`, `GET /api/canh-bao/tin`, `GET /api/muc-gia`, `POST /api/muc-gia`,
+    `POST /api/muc-gia/{id}/xoa`; `/api/toi` trả thêm `hoi_canh_bao_giay`.
+  - `web/`: chuông ở góc trên có số tin chưa xem (số cũng hiện ở tên thẻ trình duyệt); tờ Cảnh báo gồm tin chưa xem,
+    bật tắt âm thanh, mức giá tôi đặt (form, xóa bấm hai lần), bốn nhóm bất thường có dấu « ! » giải thích ngưỡng;
+    hỏi tin mỗi 60 giây, nhiều thẻ chỉ một thẻ hỏi; « đã báo », « chưa xem », bật tắt âm thanh nhớ trong trình duyệt
+    theo từng tài khoản. Lượt hỏi lỗi thì chuông hiện dấu « ! » và tờ Cảnh báo ghi câu lỗi.
+- **Quyền xem mức giá (mặc định của kế hoạch, người dùng chưa đổi):** của ai người đó thấy; Quản trị cũng không xem.
+- **Kiểm:** cw_scanner thêm 7 test `test_web_api.py` và 2 test `test_vi_the.py` (tin chung trùng tin trang cũ trừ phần
+  riêng; ngoài giờ không tải; mức giá và ngưỡng lãi lỗ tính tay; kiểm đầu vào; mất mạng báo 500), 239 test qua. Ở đây
+  11 test `tests/test_web_alerts.py` và 1 test thêm ở `test_web_cw.py` (mức giá của ai người đó thấy kể cả với Quản
+  trị; quá số mức 422; mã sai mẫu không gọi dịch vụ, không lưu; ngoài giờ không gọi giá; phần chung nhớ và dùng chung;
+  lỗi từng phần không làm mất phần khác), 59 test web qua; cả bộ 1.290 qua, vẫn đúng 9 test trượt cũ. Trình duyệt với
+  hai dịch vụ thật trong phiên chiều 25/11: 6 tin chung trùng cả mã lẫn chữ với `/canh-bao/tin` của trang cũ cùng lúc
+  (4 tin còn lại của trang cũ là danh mục dùng chung, đúng là không sang web mới); mức VRE « lên tới 20.000 » báo đang
+  chạm ở 23.300 (cách mức +16,5% = 23.300 / 20.000 − 1); lệnh mua 100 VRE giá 20.000 ngưỡng lãi 5% sinh tin « lãi nếu
+  bán ngay +16,0% » (23.300 × 0,9975 / 20.030 − 1 = +16,04%); đặt mức 24,5 cho VPB bị từ chối vì nghi sai đơn vị.
+- **Hạn chế:** âm thanh chưa nghe thử được trong trình duyệt nhúng (thông báo của trình duyệt bị chặn ở đó); iPhone
+  chỉ cho thông báo khi web được thêm vào màn hình chính; chưa thử điện thoại thật; trên máy Mac không có lịch 5
+  phút nên « giờ báo đầu tiên » của chứng quyền giảm mạnh trống; mỗi người có mức giá hoặc lệnh thì mỗi phút thêm
+  một đến hai lượt gọi bảng giá ở dịch vụ chứng quyền (cần đo ở lát 6); chưa commit.
+
+### D109 — Web hợp nhất lát 6: kế hoạch đưa lên VPS và phần chuẩn bị tại máy (2026-11-25, người dùng « Tiếp tục công việc »)
+- **Trạng thái:** kế hoạch ở mục 14 của `docs/PLAN_WEB_HOP_NHAT.md`, **chưa được duyệt**; chưa vào VPS, chưa commit,
+  chưa đẩy. Hộp chọn hỏi địa chỉ đặt web bị người dùng đóng, nên các điểm cần chốt được hỏi lại bằng chữ.
+- **Rà (không vào VPS):** `btinvest.vn` đang là trang chờ « Website đang được xây dựng »; mọi tên miền phụ trỏ cùng
+  địa chỉ. Dự án định giá deploy bằng cách đẩy `main` lên GitHub (VPS tự dựng lại, khởi động lại ba container cũ);
+  dự án chứng quyền deploy bằng `git push vps main`. Vì vậy **đẩy mã chính là deploy**, phải xin duyệt như một bước
+  trên VPS. Tệp mới của hai dự án biên dịch được bằng Python 3.12 (VPS), máy Mac chạy 3.14. Web mới ở máy Mac dùng
+  207 MB sau hơn 3 giờ.
+- **Thiết kế đề xuất:** container thứ tư `btinvest-web` cùng image; ở `btinvest.vn` Caddy **không** dùng
+  `forward_auth` mà để ứng dụng tự kiểm đăng nhập ở từng route (nhờ vậy `/api/*` trả 401 như giao diện chờ, việc treo
+  từ D106); tệp dữ liệu người dùng ở `/data/web_user/web_user.db`; sao lưu mỗi ngày, giữ 14 bản.
+- **Đã làm tại máy (không đụng VPS):**
+  - `WEB_CW_BASE_URL` (`valuation/config`, `web_cw.base_url`): địa chỉ dịch vụ chứng quyền khi là container khác; để
+    trống thì dùng `web.cw_base_url` như cũ; địa chỉ không bắt đầu bằng `http://` hay `https://` thì báo 503, không gọi.
+  - `web_user.session_factory` tự tạo thư mục cha của tệp SQLite (trên VPS `/data/web_user/` chưa có ở lần chạy đầu).
+  - `valuation/services/web_backup.py` + `scripts/backup_web_user_db.py`: chép bằng cơ chế sao lưu của SQLite, mở tệp
+    gốc chỉ đọc, kiểm `integrity_check` rồi mới thay bản của hôm nay, giữ `web.backup.keep` bản (14), chỉ xóa tệp đúng
+    mẫu `web_user-YYYYMMDD.db`. Chạy thử hai lần trên bản chép của dữ liệu thử: một bản, tệp gốc không đổi.
+  - Test `test_moi_duong_api_deu_dong_khi_chua_dang_nhap`: duyệt cả 35 cặp phương thức và đường dẫn `/api/` (trừ
+    `/api/suc-khoe`), chưa đăng nhập phải 401. Thử gỡ điều kiện tài khoản của nhóm số liệu: test trượt.
+- **Lỗi lộ ra và sửa:** ba test « chỉ có route đọc » (`test_web_flow`, `test_web_valuation`, `test_web_market`) kiểm
+  rỗng từ lát 5a: FastAPI 0.141 giữ route của `include_router` trong vỏ riêng nên `app.routes` không còn liệt kê
+  chúng. Sửa thành kiểm đúng nhóm số liệu `web_main.data` chỉ có GET.
+- **Kiểm:** 70 test web qua (59 trước đó + 11 mới); ruff, black sạch trên các tệp đổi; mypy chỉ còn lỗi cũ thiếu stub
+  `yaml`. Web tại máy khởi động lại và trả đúng `/api/suc-khoe`, `/api/chung-quyen`, `/api/canh-bao/tin`, `/api/muc-gia`.
+- **Hạn chế:** bản sao lưu nằm cùng ổ với tệp gốc, không chống được mất cả ổ; job sao lưu lỗi chỉ ghi vào nhật ký,
+  chưa báo đi đâu; bản sao cấu hình trong `deploy/docker/` chưa đổi (đổi khi VPS thật sự đổi); RAM trên VPS chưa đo.
