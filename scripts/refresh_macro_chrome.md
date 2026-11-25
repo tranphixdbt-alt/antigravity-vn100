@@ -1,5 +1,9 @@
 # Quy trình refresh vĩ mô qua Chrome (nguồn JS-render)
 
+> **CPI, bán lẻ, GDP tự động từ 26/11/2026 (D121):** job `scripts/update_vn_macro.py` (07:25 T2–T6) đọc báo cáo
+> kinh tế – xã hội của Cục Thống kê (nso.gov.vn). tradingeconomics chặn tải tự động (403), không lách. Quy trình tay
+> dưới đây chỉ còn cho lãi suất điều hành, tín dụng (số cả năm) và khi job báo lỗi.
+>
 > **TPCP_10Y đã tự động từ 22/11/2026 (D100):** job `scripts/update_tpcp_10y.py` trên VPS (07:20 T2–T6) mở
 > trang lịch sử worldgovernmentbonds bằng Chromium headless. Quy trình tay dưới đây chỉ còn cho CPI, lãi suất
 > điều hành, GDP, bán lẻ — hoặc khi job TPCP báo lỗi trên Discord.

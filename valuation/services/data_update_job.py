@@ -52,17 +52,6 @@ def start_job(store: Path = STORE) -> bool:
         return False
 
 
-_FLOW_EXIT_TEXT = {0: "dòng tiền đã cập nhật", 1: "dòng tiền cập nhật, một số mã lỗi",
-                   3: "dòng tiền: job khác đang chạy, bỏ qua"}
-
-
-def _run_flow_update() -> int:
-    """Chạy job flow_daily (cùng script với lịch sáng); trả mã thoát, log vào logs/flow_daily.log."""
-    with (ROOT / "logs" / "flow_daily.log").open("a", encoding="utf-8") as log:
-        return subprocess.run([sys.executable, "scripts/update_flow_daily.py"], cwd=ROOT,
-                              stdout=log, stderr=subprocess.STDOUT).returncode
-
-
 def main(store: Path = STORE) -> None:
     from valuation.db.session import SessionLocalRead, SessionLocalWrite
     from valuation.ingest.weekly_updater import run_weekly_auto_update
@@ -78,16 +67,14 @@ def main(store: Path = STORE) -> None:
         db_read, db_write = SessionLocalRead(), SessionLocalWrite()
         try:
             result = run_weekly_auto_update(db_read, db_write, progress_callback=progress)
-            write_json(store / "status.json", {"status": "RUNNING", "completed": result["total"],
-                                               "total": result["total"], "started_at": started, "updated_at": _now(),
-                                               "message": "Đang cập nhật dòng tiền khối ngoại/tự doanh (~10 phút)..."})
-            flow_exit = _run_flow_update()
-            flow_text = _FLOW_EXIT_TEXT.get(flow_exit, f"dòng tiền lỗi (mã {flow_exit}, xem logs/flow_daily.log)")
+            # D121: bỏ lời gọi job flow_daily (khớp/thỏa thuận tách qua vnstock_data, đã khóa từ 10/11/2026 và tắt
+            # ở lịch sáng từ D97). Khối ngoại/tự doanh gộp đã vào prices_daily qua FHSC ngay trong đợt quét này.
             write_json(store / "status.json", {
-                "status": "DONE", "message": f"{result['message']} · {flow_text}", "flow_exit": flow_exit,
+                "status": "DONE", "message": result["message"],
                 "completed": result["total"],
                 "total": result["total"], "started_at": started, "updated_at": _now(), "finished_at": _now(),
                 "success": result["success_count"], "partial": result["partial_count"], "failed": result["fail_count"],
+                "missing": result.get("missing", {}), "missing_summary": result.get("missing_summary", {}),
             })
         except Exception as exc:  # báo lỗi lên UI thay vì chết im lặng
             last = read_json(store / "status.json", {}) or {}
@@ -97,6 +84,45 @@ def main(store: Path = STORE) -> None:
         finally:
             db_read.close()
             db_write.close()
+
+
+def retry_missing(store: Path = STORE, run=None, sleep=None, pause_s: float = 3.0, today: str | None = None) -> dict:
+    """Quét bù (D121): tải lại ĐÚNG phần còn thiếu của các mã trong đợt Quét VN100 cùng ngày.
+
+    Đợt quét 08:00 trên VPS hay bị nguồn VCI trả 418/quá giờ chờ (23/11/2026: 45/100 mã chỉ lấy được một phần).
+    Buổi tối thử lại riêng những mã đó, giãn nhịp. Ghi DB như đợt quét (upsert BCTC DO NOTHING, giá coalesce) nên
+    chạy lại vô hại. Kết quả ở `retry.json`; status.json của đợt quét giữ nguyên để còn đối chiếu.
+    """
+    import time
+
+    from valuation.ingest.pipeline import run_ingest
+    from valuation.ingest.weekly_updater import missing_parts
+
+    run = run or run_ingest
+    sleep = sleep or time.sleep
+    today = today or _now()[:10]
+    status = read_json(store / "status.json", {}) or {}
+    missing: dict[str, list[str]] = status.get("missing") or {}
+    out: dict = {"ran_at": _now(), "scan_finished_at": status.get("finished_at"), "tried": {}, "still_missing": {}}
+    if status.get("status") != "DONE" or not str(status.get("finished_at", "")).startswith(today) or not missing:
+        out["skipped"] = "không có đợt Quét VN100 xong hôm nay với mã thiếu"
+        write_json(store / "retry.json", out)
+        return out
+    with exclusive_lock(store / "worker.lock"):
+        for ticker, parts in sorted(missing.items()):
+            types = (["prices"] if any(p in ("giá", "dòng tiền") for p in parts) else []) + (
+                ["financials"] if any(p.startswith("BCTC") for p in parts) else []
+            )
+            if not types:
+                continue
+            res = run(ticker, types, include_yearly=any(p.endswith("năm") for p in parts))
+            out["tried"][ticker] = types
+            left = missing_parts(res.get("errors") or [])
+            if left:
+                out["still_missing"][ticker] = left
+            sleep(pause_s)
+    write_json(store / "retry.json", out)
+    return out
 
 
 if __name__ == "__main__":

@@ -61,6 +61,7 @@ def run_weekly_auto_update(
     }
     consensus_counts: dict[str, int] = {name: 0 for name, _ in _CONSENSUS_SOURCES}
     consensus_errors: list[str] = []
+    missing: dict[str, list[str]] = {}
 
     from valuation.ingest import fhsc_bridge
     from valuation.ingest.pipeline import _incremental_price_start
@@ -97,6 +98,9 @@ def run_weekly_auto_update(
                     logger.warning(f"Lỗi crawl báo cáo CTCK — {msg}")
                     consensus_errors.append(msg)
 
+            if ingest_result["status"] != "SUCCESS":
+                # D121: ghi rõ mã nào thiếu phần nào (giá, dòng tiền, BCTC BS/IS/CF) để quét bù đúng phần.
+                missing[ticker] = missing_parts(ingest_result["errors"])
             if ingest_result["status"] == "SUCCESS":
                 success_count += 1
             elif ingest_result["status"] == "PARTIAL":
@@ -172,5 +176,30 @@ def run_weekly_auto_update(
         "fail_count": fail_count,
         "consensus": {**consensus_counts, "errors": consensus_errors},
         "sotp_subs": sotp_subs,
+        "missing": missing,
+        "missing_summary": summarize_missing(missing),
         "message": summary_msg,
     }
+
+
+def missing_parts(errors: list[dict]) -> list[str]:
+    """Tên ngắn các phần lỗi của một mã: 'giá', 'dòng tiền', 'BCTC BS quý'… (theo thứ tự gặp, không trùng)."""
+    out: list[str] = []
+    for e in errors:
+        comp = e.get("component")
+        if comp == "financials":
+            name = f"BCTC {e.get('statement')} {'quý' if e.get('period') == 'quarter' else 'năm'}"
+        else:
+            name = {"prices": "giá", "market_flows": "dòng tiền"}.get(str(comp), str(comp))
+        if name not in out:
+            out.append(name)
+    return out
+
+
+def summarize_missing(missing: dict[str, list[str]]) -> dict[str, int]:
+    """{phần: số mã thiếu phần đó}, để status.json cho thấy lỗi nằm ở đâu (vd 'BCTC IS quý': 21)."""
+    count: dict[str, int] = {}
+    for parts in missing.values():
+        for p in parts:
+            count[p] = count.get(p, 0) + 1
+    return dict(sorted(count.items(), key=lambda kv: -kv[1]))

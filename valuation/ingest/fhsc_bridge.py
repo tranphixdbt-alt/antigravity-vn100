@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from valuation.config import PROJECT_ROOT, load_defaults
+from valuation.ingest.session_guard import drop_unfinished_session
 
 logger = logging.getLogger(__name__)
 SCRIPT = PROJECT_ROOT / "scripts" / "fhsc_fetch.py"
@@ -92,10 +93,9 @@ def prefetch(
             errors[key] = item["error"]
             continue
         try:
-            df = _frame(item)
-            if item["kind"] != "prices" and not df.empty:
-                # Phiên hôm nay chưa chốt: FHSC trả khối ngoại/tự doanh trong ngày → bỏ, lượt sau lấy (lỗi 18/11/2026)
-                df = df[pd.to_datetime(df["time"]) < pd.Timestamp(now.astimezone(VN).date())]
+            # Phiên hôm nay chưa chốt: FHSC trả giá, khối ngoại, tự doanh trong ngày → bỏ, lượt sau lấy (lỗi
+            # 18/11/2026 với dòng tiền, 25/11/2026 với giá). Sau giờ đóng phiên (D121) thì giữ: số đã chốt.
+            df = drop_unfinished_session(_frame(item), now)
             _CACHE[(item["ticker"], item["kind"])] = (starts[item["ticker"]], now, df)
             ok += 1
         except ValueError as exc:

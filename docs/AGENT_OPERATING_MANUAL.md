@@ -184,6 +184,13 @@ AI vì phần đó đã có tab dữ liệu chi tiết riêng.
      số kỳ chưa đối chiếu vượt `audit.max_unaudited_periods` → STALE chặn hàng loạt.
   5. Đổi MÔ HÌNH (dữ liệu giữ nguyên) không làm audit cũ hết hạn, nhưng số ΔFV F2c trong status được đo bằng
      mô hình cũ → chạy lại audit, hoặc đo lại ΔFV các mã đang `SOURCE_CONFLICT*`.
+- **Độ mới dữ liệu trên VPS (D121, `docs/PLAN_CAP_NHAT_DU_LIEU.md`):** giá vào DB hai lần mỗi ngày giao dịch,
+  07:50 (báo cáo sáng) và 15:45 (`gia-cuoi-phien`). Trước 15:00, mọi đường ghi bỏ dòng của phiên hôm nay
+  (`ingest/session_guard.py`), kể cả nút "Tải mới" ở web cũ. CPI, bán lẻ, GDP tự nạp 07:25 từ Cục Thống kê
+  (`ingest/nso_reports.py`, chỉ thêm kỳ mới, số đã sửa thì báo chứ không ghi đè). Tín dụng vẫn nạp tay, số cả năm.
+  `kiem-du-lieu-sang`/`-chieu` (08:20, 16:10) báo Discord khi giá chậm hoặc thiếu mã, vĩ mô cũ (thứ Hai). Job lỗi
+  nào cũng báo Discord. Quét VN100 ghi `missing` trong `.data_update/status.json`; `quet-bu` 20:00 T2, T5 tải lại
+  phần thiếu (`retry.json`).
 - Client VNStock phải đưa `settings.vnstock_api_key` vào biến môi trường của
   tiến trình trước request đầu tiên. Không gọi `setup_api_key()` trong app vì
   hàm đó tạo thêm file chứa key trong thư mục HOME; `.env` vẫn là nơi lưu duy

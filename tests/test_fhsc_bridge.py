@@ -116,18 +116,26 @@ def test_prefetch_feeds_existing_clients_in_vci_shape(monkeypatch):
     assert fhsc_bridge.cached("FPT", "prices", "2026-01-01") is None
 
 
-def test_prefetch_drops_flows_of_unfinished_session():
+def test_prefetch_drops_unfinished_session_until_close():
     # Lỗi 18/11/2026: vá lúc 12:40 ghi khối ngoại phiên 18/11 đang dở (FHSC trả số trong ngày) thành 98 dòng chỉ có
-    # dòng tiền, tab money coi là phiên mới nhất. Phiên hôm nay chưa chốt → bỏ, lượt sáng hôm sau lấy (đệm 5 ngày).
-    noon = DAY.replace(hour=12, minute=40)
+    # dòng tiền, tab money coi là phiên mới nhất. D121 (lỗi MCH 25/11/2026): giá trong phiên cũng bỏ. Sau giờ đóng
+    # phiên 15:00 thì số đã chốt → giữ cả giá lẫn dòng tiền (job gia-cuoi-phien 15:45).
     flow = [{"time": f"2026-11-{d}T00:00:00.000+07:00", "buy_vol": 1.0, "buy_val": 2.0, "sell_vol": 3.0,
              "sell_val": 4.0, "net_vol": -2.0, "net_val": -2.0} for d in (12, 13)]
-    price = [{"time": "2026-11-13T07:00:00.000+07:00", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}]
-    run = _fake_run([_item("FPT", "foreign", flow), _item("FPT", "prop", flow), _item("FPT", "prices", price)])
-    fhsc_bridge.prefetch({"FPT": "2026-11-12"}, ["foreign", "prop", "prices"], now=noon, run=run)
+    price = [{"time": f"2026-11-{d}T07:00:00.000+07:00", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+             for d in (12, 13)]
+    items = [_item("FPT", "foreign", flow), _item("FPT", "prop", flow), _item("FPT", "prices", price)]
+
+    noon = DAY.replace(hour=12, minute=40)
+    fhsc_bridge.prefetch({"FPT": "2026-11-12"}, ["foreign", "prop", "prices"], now=noon, run=_fake_run(items))
     for kind in ("foreign", "prop"):
         assert fhsc_bridge.cached("FPT", kind, "2026-11-12")["time"].tolist() == [dt.date(2026, 11, 12)]
-    assert len(fhsc_bridge.cached("FPT", "prices", "2026-11-12")) == 1  # giá trong phiên giữ như trước (nút Tải mới)
+    assert fhsc_bridge.cached("FPT", "prices", "2026-11-12")["time"].tolist() == [pd.Timestamp("2026-11-12")]
+
+    after_close = DAY.replace(hour=15, minute=45)
+    fhsc_bridge.prefetch({"FPT": "2026-11-12"}, ["foreign", "prop", "prices"], now=after_close, run=_fake_run(items))
+    for kind in ("foreign", "prop", "prices"):
+        assert len(fhsc_bridge._CACHE[("FPT", kind)][2]) == 2  # cả phiên 13/11 đã chốt
 
 
 def test_prefetch_guards_hours_unit_profile_and_ttl(monkeypatch):

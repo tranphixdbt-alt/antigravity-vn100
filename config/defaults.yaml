@@ -257,6 +257,16 @@ macro_sources:
     sane_range_pct: [0.5, 15.0]  # ngoài khoảng → lỗi dữ liệu, không ghi (lịch sử 2016–2026: 1,93–6,76%)
     alert_after_days: 21         # điểm mới nhất cũ hơn → báo Discord (cờ chặn STALE_MACRO_RF ở > 30 ngày)
     page_timeout_sec: 60         # tải trang + chờ số liệu render, mỗi bước
+  # CPI, bán lẻ, GDP từ báo cáo kinh tế – xã hội hằng tháng của Cục Thống kê (D121, valuation/ingest/nso_reports.py;
+  # job scripts/update_vn_macro.py 07:25 T2–T6 trên VPS). Chỉ mở được từ IP Việt Nam.
+  nso_reports:
+    list_url: "https://www.nso.gov.vn/bao-cao-tinh-hinh-kinh-te-xa-hoi-hang-thang/"
+    reports_to_read: 4           # 4 bài mới nhất: bù được khi job lỡ 3 tháng; bài theo quý có GDP
+    timeout_sec: 30              # trang bài dài ~120 KB, đo từ VPS 26/11/2026 mất vài giây
+    sane_range_pct:              # ngoài khoảng → lỗi, không ghi gì (lịch sử: CPI −2,6…28%, GDP −6…14%, bán lẻ −34…77%)
+      CPI_YOY: [-5.0, 30.0]
+      RETAIL_SALES_YOY: [-50.0, 90.0]
+      GDP_YOY: [-15.0, 25.0]
 
 # ===================================================================
 # Registry chuỗi vĩ mô chuẩn hóa (Luật vàng #5 — truy vết).
@@ -746,6 +756,33 @@ fhsc:
   rate_limit_retries: 2
   timeout_sec: 1800               # cả lượt 100 mã × 3 loại ≈ 7–8 phút
   cache_ttl_sec: 1800             # dữ liệu tải trước chỉ dùng trong lượt job đó
+# Phiên giao dịch (D121): trước giờ đóng phiên, mọi đường ghi giá/khối ngoại/tự doanh bỏ dòng của hôm nay
+# (số trong phiên còn đổi; lỗi MCH 25/11/2026 ghi đóng cửa 133.000 lúc giữa phiên, thật 130.000). Sau giờ này
+# số của phiên đã chốt (khớp lệnh và thỏa thuận kết thúc 15:00) → job `gia-cuoi-phien` 15:45 ghi ngay trong ngày.
+market_session:
+  timezone: "Asia/Ho_Chi_Minh"
+  close: "15:00"
+  # Kiểm sau mỗi lượt tải giá (job kiem-du-lieu): ngày giá mới nhất cũ hơn ngần này ngày làm việc (T2–T6) → báo
+  # Discord. 1 = chịu được một ngày nghỉ lễ giữa tuần (như 24/11/2026); Tết sẽ báo nhầm, tin báo có ghi chú.
+  max_lag_weekdays: 1
+  min_tickers_on_latest: 95       # số mã VN100 tối thiểu có giá ở phiên mới nhất; ít hơn → báo, kèm mã thiếu
+# Quét VN100 (job data-update 08:00 T2, T5) và quét bù các mã thiếu (job quet-bu 20:00 cùng ngày, D121).
+data_update:
+  retry_pause_sec: 3.0            # nghỉ giữa các mã khi quét bù; đợt 08:00 bị VCI trả 418/quá giờ chờ khi gọi dồn
+# Báo Discord khi dữ liệu cũ (D121, valuation/services/freshness_alert.py; job kiem-du-lieu 08:20 và 16:10 T2–T6).
+freshness_alert:
+  after_close_check: "16:00"      # từ giờ này ngày thường, phiên hôm nay phải có trong DB (job gia-cuoi-phien 15:45)
+  macro_alert_weekdays: [0]       # chỉ báo vĩ mô cũ vào thứ Hai (số đổi theo tháng/quý, báo mỗi ngày thành ồn)
+  # Tuổi tối đa (ngày) tính từ KỲ số liệu, không phải ngày nạp. CPI, bán lẻ: Cục Thống kê công bố khoảng ngày 6
+  # tháng sau → kỳ tháng 10 có số mới (tháng 11) trước ~6/12, tức 36 ngày; 50 cho trễ hai tuần. GDP theo quý: kỳ
+  # 30/9 → quý sau công bố đầu tháng 1, ~97 ngày. Tín dụng là số CẢ NĂM (31/12), kỳ mới công bố đầu năm sau.
+  macro_max_age_days:
+    CPI_YOY: 50
+    RETAIL_SALES_YOY: 50
+    GDP_YOY: 125
+    CREDIT_GROWTH: 430
+    USDVND: 7
+    UST_10Y: 10
 # Mua/bán chủ động FHSC → active_flow_daily (D101, W0 docs/PLAN_WYCKOFF_FLOW.md); job scripts/update_active_flow.py
 active_flow:
   lookback_days: 120              # ngày lịch xin từ FHSC; nguồn chỉ trả ~61 phiên gần nhất (đo 22/11/2026)

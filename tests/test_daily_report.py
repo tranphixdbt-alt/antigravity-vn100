@@ -207,6 +207,7 @@ def _fake_refresh(monkeypatch, tmp_path, skipped):
     calls, kinds = [], []
     monkeypatch.setattr(dr, "DATA_LOCK", tmp_path / "worker.lock")
     monkeypatch.setattr(dr, "_cfg", lambda: {"corporate_actions_refresh": False})
+    monkeypatch.setattr(dr, "_last_session_rows", lambda t: (None, {}))  # so số trước/sau: test riêng bên dưới
     monkeypatch.setattr(session_mod, "SessionLocalRead", _S)
     monkeypatch.setattr(session_mod, "SessionLocalWrite", _S)
     monkeypatch.setattr(fred_mod, "fetch_fred", lambda db: None)
@@ -246,3 +247,37 @@ def test_refresh_market_skips_flows_outside_fhsc_hours(monkeypatch, tmp_path):
     )
     assert calls == [("AAA", False), ("VNINDEX", False)]
     assert "flow_updated" not in info
+
+
+def test_recheck_session_counts_changed_tickers_d121():
+    # Lượt 15:45 ghi phiên 25/11; sáng 26/11 tải lại: AAA đổi giá (số 15:45 chưa chốt), BBB thêm khối ngoại, CCC giữ.
+    from valuation.services.daily_report import recheck_session
+
+    before = (date(2026, 11, 25), {"AAA": (100.0, 10, 5.0), "BBB": (50.0, 20, None), "CCC": (7.0, 3, 1.0)})
+    after = {"AAA": (101.0, 12, 5.0), "BBB": (50.0, 20, -2.0), "CCC": (7.0, 3, 1.0)}
+    rc = recheck_session(before, after)
+    assert rc == {"date": "2026-11-25", "checked": 3, "price_changed": ["AAA"], "flow_changed": ["BBB"]}
+
+
+def test_build_message_reports_recheck_only_when_changed_d121():
+    state = _state(["FPT"], {"FPT": ""}, {}, completed="2026-11-23T09:00:00+07:00", price_date="2026-11-25")
+    base = {"skipped": None, "price_errors": [], "macro_errors": [], "price_total": 101}
+    quiet = {**base, "recheck": {"date": "2026-11-25", "checked": 100, "price_changed": [], "flow_changed": []}}
+    assert "Tải lại phiên" not in build_message(state, None, quiet, CFG, date(2026, 11, 26))["embed_desc"]
+    loud = {**base, "recheck": {"date": "2026-11-25", "checked": 100, "price_changed": ["MCH"], "flow_changed": []}}
+    desc = build_message(state, None, loud, CFG, date(2026, 11, 26))["embed_desc"]
+    assert "Tải lại phiên 25/11/2026: 1/100 mã đổi giá (MCH), 0 mã đổi khối ngoại." in desc
+
+
+def test_refresh_market_can_skip_corporate_actions_d121(monkeypatch, tmp_path):
+    import valuation.services.daily_report as dr
+
+    monkeypatch.setattr(dr, "refresh_all_corporate_actions", lambda *a: (_ for _ in ()).throw(AssertionError("gọi CA")))
+    orig_cfg = dr._cfg
+    try:
+        _fake_refresh(monkeypatch, tmp_path, skipped=None)  # dựng nguồn giả
+        monkeypatch.setattr(dr, "_cfg", lambda: {"corporate_actions_refresh": True})
+        info = dr.refresh_market(corporate_actions=False)
+    finally:
+        monkeypatch.setattr(dr, "_cfg", orig_cfg)
+    assert "corporate_actions" not in info and info["price_errors"] == []

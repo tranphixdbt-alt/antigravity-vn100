@@ -46,6 +46,7 @@ Config chính (`config/`): `defaults.yaml`, `scenarios.yaml`, `valuation_reviews
 | Dòng tiền ngành | `ingest/flow_client.py`, `analysis/money_flow.py`, `views/money_flow.py` |
 | Báo cáo sáng / Discord | `services/daily_report.py`, `scripts/discord_bot.py` |
 | Cờ cảnh báo mới | nơi sinh cờ + mô tả ở `engine/flag_descriptions.py` |
+| Lịch job VPS, độ mới dữ liệu (D121) | `deploy/docker/scheduler.py` (bản trên VPS: `/srv/apps/vn100/scheduler.py`), `ingest/session_guard.py` (chặn phiên chưa chốt), `ingest/nso_reports.py` (CPI, bán lẻ, GDP), `services/freshness_alert.py` (báo dữ liệu cũ), `scripts/update_close_prices.py` |
 | Web hợp nhất `btinvest.vn` (FastAPI + HTML viết tay, chạy thật trên VPS) | `api/web_main.py` (số liệu, chỉ GET), `api/web_user_routes.py` + `api/web_deps.py` (tài khoản, danh mục, mức giá), `services/web_*.py` (góc chat `web_chat*.py` dùng chung `services/assistant.py` với bot Discord), `db/web_user.py` (tệp `web_user.db` riêng), `web/` (giao diện), `tests/test_web_*.py`; kế hoạch và trạng thái: `docs/PLAN_WEB_HOP_NHAT.md`; vận hành: `docs/AGENT_OPERATING_MANUAL.md` mục 15 |
 
 Bẫy dữ liệu và luật định giá: skill `financial-data-integrity`, `valuation-models`; luật chung: `vn-finance-data`, `vn-valuation-rules`.

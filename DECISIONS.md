@@ -1448,3 +1448,46 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   bộ công cụ của bot không đổi; hạn mức 20 câu, lỗi và câu ngoài phạm vi không mất lượt; chặn quyền; công cụ chạy trên
   DB thật với mạng bị chặn). Trình duyệt tại máy ở 1440×900 (sáng, tối) và 375×812: Back và Forward, nút mở mã, gợi ý
   theo mã đang mở, console không lỗi. 109 test web và trợ lý qua.
+
+### D121 — Dữ liệu luôn mới: giá cuối phiên, chặn phiên chưa chốt, vĩ mô Cục Thống kê, báo dữ liệu cũ (2026-11-26, người dùng « Làm tất cả »)
+- **Vì sao:** người dùng thấy "nhiều thông tin bị cũ". Kiểm trên VPS (chỉ đọc, sáng 26/11; kế hoạch
+  `docs/PLAN_CAP_NHAT_DU_LIEU.md`): giá chỉ vào DB lúc 07:50 sáng hôm sau (chiều tối web chậm một phiên; ngày 24/11 sàn
+  nghỉ, TCBS và FHSC đều không có phiên này, không phải lỗi); CPI, bán lẻ, GDP nạp tay, đứng ở tháng 9, tháng 6, quý 2;
+  ETF chỉ chạy 09:40; Quét VN100 23/11 chỉ đủ 55/100 mã (VCI trả 418 64 lần, quá giờ chờ 106 lần); dòng giá MCH 25/11 ghi
+  giữa phiên (đóng 133.000, khối lượng 22.200; thật 130.000, 472.904); `ingested_at` của BCTC quý 3 trống cả 22.358 dòng.
+- **A. Chặn phiên chưa chốt + lượt cuối phiên:** `valuation/ingest/session_guard.py`: trước `market_session.close`
+  (15:00) mọi đường ghi (`pipeline.run_ingest`: job giá, Quét VN100, nút "Tải mới" ở web cũ; `fhsc_bridge.prefetch`) bỏ
+  dòng của hôm nay, cả giá lẫn khối ngoại, tự doanh (D97 trước đây chỉ bỏ dòng tiền và bỏ cả sau giờ đóng). Hệ quả: nút
+  "Tải mới" của web cũ trong giờ giao dịch không còn hiện giá giữa phiên (người dùng duyệt trong kế hoạch). Job mới
+  `gia-cuoi-phien` 15:45 T2–T6 (`scripts/update_close_prices.py` = `refresh_market(corporate_actions=False)`, không gửi
+  Discord). Mỗi lượt tải so phiên mới nhất trước/sau (`recheck_session`); báo cáo sáng ghi "Tải lại phiên …: x mã đổi
+  giá" khi lượt 15:45 hôm trước chưa chốt số → tự đo ba ngày đầu thay cho bước đo tay trong kế hoạch.
+- **B. Vĩ mô Việt Nam:** tradingeconomics chặn mọi lượt tải tự động (403 cả trình duyệt headless) → không lách. Dùng
+  nguồn gốc: báo cáo kinh tế – xã hội hằng tháng của Cục Thống kê (`valuation/ingest/nso_reports.py`, httpx, chỉ mở được
+  từ IP Việt Nam). Đọc 4 bài mới nhất, tìm đúng ba câu mẫu (CPI so cùng kỳ, bán lẻ so cùng kỳ, GDP quý); không thấy câu
+  thì không ghi. Chỉ thêm kỳ chưa có; kỳ đã có mà số khác thì báo `revisions`, không ghi đè. Đối chiếu trên 3 bài thật:
+  CPI 9/2026 5,08% và bán lẻ 6/2026 14,8% khớp DB; CPI 10/2026 5,09%, bán lẻ 10/2026 14,7%, GDP quý III 9,95% khớp
+  tradingeconomics. Job `vi-mo-vn` 07:25 T2–T6. **Tín dụng (`CREDIT_GROWTH`) không tự nạp:** chuỗi là số cả năm (31/12);
+  số lũy kế giữa năm (báo cáo quý III: 10,89% tới 28/9) cho vào cùng chuỗi thì `MacroContext.from_db_momentum` so 10,89%
+  với 15,08% cả năm 2024 → sai chiều. Điểm 31/12/2025 vẫn là số mới nhất. **GDP quý II/2026:** DB 8,39% (ước tính đầu),
+  Cục Thống kê đã sửa thành 8,81% → chờ người dùng quyết có sửa không.
+- **C. Báo dữ liệu cũ, job lỗi:** `valuation/services/freshness_alert.py` + job `kiem-du-lieu-sang` 08:20 và
+  `kiem-du-lieu-chieu` 16:10 T2–T6: giá chậm quá `max_lag_weekdays` (1) ngày làm việc, phiên mới nhất thiếu mã (dưới 95),
+  vĩ mô cũ hơn ngưỡng theo kỳ số liệu (chỉ thứ Hai) → một tin Discord. Không có lịch nghỉ lễ: Tết sẽ báo nhầm, tin có ghi
+  chú. `scheduler.py` gọi `scripts/notify_job_failure.py` khi job thoát mã khác 0 (tin chỉ có tên job, mã, giờ, đường dẫn
+  nhật ký; không chép nội dung nhật ký). Quét VN100 thôi gọi job `flow_daily` đã tắt (hết dòng "dòng tiền lỗi (mã 4)").
+- **D. ETF:** `~/cw_scanner/chay_etf_tu_dong.sh --no-discord`; lịch `etf-chieu` 15:10 T2–T6 thêm vào
+  `/srv/apps/chungquyen/scheduler.py` (chỉ có trên VPS). Web chứng quyền khi đó ghi "Số liệu lúc 15:10" không kèm "trong
+  phiên".
+- **E. Quét VN100:** `status.json` có `missing` (mã → phần thiếu: giá, dòng tiền, BCTC BS/IS/CF quý/năm) và
+  `missing_summary`; job `quet-bu` 20:00 thứ Hai, thứ Năm (`scripts/retry_partial_update.py`) tải lại đúng phần thiếu,
+  giãn 3 giây/mã, kết quả `retry.json`, còn thiếu thì thoát mã 1 (báo Discord). `ingested_at` ghi rõ khi thêm BCTC (bảng
+  thật không có DEFAULT) và khuyến nghị CTCK 24hmoney/Simplize (dòng cũ trống thì điền lần thấy lại đầu tiên). Chuyển BCTC
+  sang FHSC (`docs/PLAN_VNSTOCK_V6.md`) là kế hoạch riêng, chưa làm.
+- **Không đổi:** schema, mô hình định giá, ngưỡng định giá. Dữ liệu vĩ mô mới đi vào lớp phủ vĩ mô sẵn có
+  (`forecast/drivers.py`) ở đợt định giá kế tiếp, như thiết kế.
+- **Kiểm:** test mới `tests/test_session_guard.py` (tái hiện MCH 25/11 10:05; sau 15:00 ghi), `tests/test_nso_reports.py`
+  (câu mẫu tháng/quý, tháng 12 đăng năm sau, số âm, dấu chấm hàng nghìn, chữ không ở dạng NFC, chỉ thêm kỳ mới, ngoài
+  khoảng thì không ghi, chặn host lạ), `tests/test_freshness_alert.py` (ngày nghỉ giữa tuần không báo, chậm 2 ngày thì
+  báo, dòng lạc một mã, vĩ mô theo tuổi kỳ, quét bù chỉ gọi phần thiếu), cập nhật `test_fhsc_bridge`,
+  `test_daily_report`, `test_data_update_job`; `scheduler.py --selftest`.

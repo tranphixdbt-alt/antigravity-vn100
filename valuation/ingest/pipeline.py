@@ -1,6 +1,6 @@
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -10,6 +10,7 @@ from valuation.db.session import SessionLocalWrite
 from valuation.db.upsert import dialect_insert
 from valuation.ingest.market_client import market_client
 from valuation.ingest.normalizer import normalize_daily_prices, unpivot_financials
+from valuation.ingest.session_guard import drop_unfinished_session
 from valuation.ingest.vnstock_client import vnstock_client
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,7 @@ def upsert_financials(df: pd.DataFrame, ticker: str):
         return
 
     records = []
+    ingested_at = datetime.now(timezone.utc)
     for _, row in df.iterrows():
         val = row.get("value")
         if pd.isna(val):
@@ -197,6 +199,9 @@ def upsert_financials(df: pd.DataFrame, ticker: str):
                 "currency": str(row.get("currency", "VND")),
                 "source": str(row.get("source", "vnstock")),
                 "published_at": published_at,
+                # D121: cột có server_default ở model nhưng bảng thật trên VPS không có DEFAULT → BCTC quý 3/2026
+                # trống cả 22.358 dòng. Ghi rõ ở đây; dòng đã có không đổi (DO NOTHING) nên là lần nạp đầu.
+                "ingested_at": ingested_at,
             }
         )
 
@@ -438,17 +443,18 @@ def run_ingest(
             df_prices = fetch(
                 "prices", vnstock_client.get_historical_prices, ticker, price_start
             )
-            df_norm = normalize_daily_prices(df_prices)
+            # D121: phiên hôm nay chưa chốt thì không ghi (số trong phiên còn đổi, lỗi MCH 25/11/2026).
+            df_norm = drop_unfinished_session(normalize_daily_prices(df_prices))
             if df_norm.empty:
-                raise ValueError("Nguồn không trả dữ liệu giá")
+                raise ValueError("Nguồn không trả dữ liệu giá (hoặc chỉ có phiên hôm nay, chưa chốt)")
             full_refresh = incremental and _overlap_was_readjusted(ticker, df_norm)
             if full_refresh:
                 price_start = _earliest_price_start(ticker)
                 df_prices = vnstock_client.get_historical_prices(ticker, price_start)
-                df_norm = normalize_daily_prices(df_prices)
+                df_norm = drop_unfinished_session(normalize_daily_prices(df_prices))
             upsert_prices(df_norm, ticker)
             successful_units += 1
-            last_price = pd.to_datetime(df_prices["time"]).max().date()
+            last_price = pd.to_datetime(df_norm["time"]).max().date()
             result["prices"] = {
                 "status": "UPDATED",
                 "rows": len(df_norm),
@@ -466,6 +472,10 @@ def run_ingest(
                     df_prop = fetch(
                         "prop", market_client.fetch_proprietary_flow, ticker, flow_start
                     )
+                    if df_foreign is not None:
+                        df_foreign = drop_unfinished_session(df_foreign)
+                    if df_prop is not None:
+                        df_prop = drop_unfinished_session(df_prop)
                     upsert_market_flows(ticker, df_foreign, df_prop)
                     result["market_flows"] = {
                         "status": "UPDATED",

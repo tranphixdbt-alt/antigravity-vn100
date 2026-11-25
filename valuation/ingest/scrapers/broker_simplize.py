@@ -18,6 +18,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 import httpx
+from sqlalchemy import func
 
 from valuation.db.models import Consensus
 from valuation.db.session import SessionLocalWrite
@@ -83,7 +84,8 @@ def import_reports(ticker: str, size: int = 30) -> List[Dict[str, Any]]:
             # qua `broker_canon`, xem calibration/consensus_view.py.
             canon, _ = normalize_broker(rec["broker"])
             row = {**rec, "broker_canon": canon, "source_site": "SIMPLIZE",
-                   "currency_unit": "VND", "is_synthetic": False}
+                   "currency_unit": "VND", "is_synthetic": False,
+                   "ingested_at": datetime.datetime.now(datetime.timezone.utc)}  # D121: truy vết lúc nạp (cột trước đây trống)
             stmt = dialect_insert(db, Consensus).values(row)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["ticker", "broker", "report_date"],
@@ -95,6 +97,8 @@ def import_reports(ticker: str, size: int = 30) -> List[Dict[str, Any]]:
                     "report_title": stmt.excluded.report_title,
                     "broker_canon": stmt.excluded.broker_canon,
                     "source_site": stmt.excluded.source_site,
+                    # giữ lần nạp đầu; dòng cũ còn trống thì điền lần thấy lại đầu tiên
+                    "ingested_at": func.coalesce(Consensus.ingested_at, stmt.excluded.ingested_at),
                 },
             )
             db.execute(stmt)

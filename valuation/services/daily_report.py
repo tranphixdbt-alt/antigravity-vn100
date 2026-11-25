@@ -87,9 +87,63 @@ def refresh_all_corporate_actions(tickers: list[str], pause_s: float, sleep=None
     return out
 
 
-def refresh_market() -> dict:
+def _rows_of_day(tickers: list[str], day: date) -> dict[str, tuple]:
+    """{mã: (đóng cửa, khối lượng, khối ngoại ròng)} của một phiên trong DB."""
+    from valuation.db.models import PricesDaily
+    from valuation.db.session import SessionLocalRead
+
+    db = SessionLocalRead()
+    try:
+        rows = db.query(
+            PricesDaily.ticker, PricesDaily.close, PricesDaily.volume, PricesDaily.foreign_net_val
+        ).filter(PricesDaily.ticker.in_(tickers), PricesDaily.trade_date == day)
+        return {t: (c, v, f) for t, c, v, f in rows}
+    finally:
+        db.close()
+
+
+def _last_session_rows(tickers: list[str]) -> tuple[date | None, dict[str, tuple]]:
+    """Phiên mới nhất của rổ trong DB và số của phiên đó (xem `_rows_of_day`)."""
+    from sqlalchemy import func
+
+    from valuation.db.models import PricesDaily
+    from valuation.db.session import SessionLocalRead
+
+    db = SessionLocalRead()
+    try:
+        day = (
+            db.query(func.max(PricesDaily.trade_date))
+            .filter(PricesDaily.ticker.in_(tickers), PricesDaily.close.isnot(None))
+            .scalar()
+        )
+    finally:
+        db.close()
+    return (None, {}) if day is None else (day, _rows_of_day(tickers, day))
+
+
+def recheck_session(before: tuple[date | None, dict[str, tuple]], after: dict[str, tuple]) -> dict:
+    """So số một phiên trước và sau khi tải lại (D121).
+
+    Lượt 07:50 tải lại phiên mà lượt 15:45 hôm trước đã ghi → mã nào đổi là số 15:45 chưa chốt. Đổi giá cũng có
+    thể do điều chỉnh quyền hồi tố (ngày GDKHQ), nên chỉ báo để xem, không tự sửa gì.
+    """
+    day, old = before
+    price, flow = [], []
+    for t, (c0, v0, f0) in sorted(old.items()):
+        if t not in after:
+            continue
+        c1, v1, f1 = after[t]
+        if (c0, v0) != (c1, v1):
+            price.append(t)
+        if f0 != f1:
+            flow.append(t)
+    return {"date": day.isoformat() if day else None, "checked": len(old), "price_changed": price, "flow_changed": flow}
+
+
+def refresh_market(corporate_actions: bool = True) -> dict:
     """Kéo giá VN100 + VNINDEX và vĩ mô (FRED, yfinance — giống nút "Cập nhật vĩ mô").
 
+    `corporate_actions=False`: bỏ bước kiểm cổ tức/quyền mua (lượt 15:45 chỉ cần giá, D121).
     Lỗi từng mã/nguồn được ghi lại để in trong báo cáo, không nuốt im lặng.
     """
     from valuation.db.models import Ticker
@@ -120,6 +174,7 @@ def refresh_market() -> dict:
             from valuation.ingest import fhsc_bridge
             from valuation.ingest.pipeline import _incremental_price_start
 
+            before = _last_session_rows(tickers)
             # D95: tải trước cả rổ từ FHSC trong một tiến trình; mã thiếu/lỗi tự đi VCI trong run_ingest.
             # D97: thêm khối ngoại/tự doanh FHSC (gộp khớp + thỏa thuận, cùng định nghĩa cột prices_daily);
             # ngoài giờ FHSC thì bỏ, vì nguồn dự phòng cũ (vnstock_data) đã bị khóa từ 10/11/2026.
@@ -154,6 +209,8 @@ def refresh_market() -> dict:
                     )
             info["price_total"] = len(tickers) + 1
             fhsc_bridge.clear()
+            if before[0] is not None:
+                info["recheck"] = recheck_session(before, _rows_of_day(tickers, before[0]))
             db_w = SessionLocalWrite()
             try:
                 for name, fn in (
@@ -172,7 +229,7 @@ def refresh_market() -> dict:
             finally:
                 db_w.close()
             cfg = _cfg()
-            if cfg.get("corporate_actions_refresh", True):
+            if corporate_actions and cfg.get("corporate_actions_refresh", True):
                 info["corporate_actions"] = refresh_all_corporate_actions(
                     tickers, float(cfg.get("ca_pause_seconds", 1.0))
                 )
@@ -393,6 +450,15 @@ def build_message(
             more = "…" if len(info["price_errors"]) > limit else ""
             warn.append(
                 f"⚠️ {len(info['price_errors'])}/{info['price_total']} mã không cập nhật được giá: {names}{more}"
+            )
+        rc = info.get("recheck") or {}
+        if rc.get("price_changed") or rc.get("flow_changed"):
+            pc, fc = rc["price_changed"], rc["flow_changed"]
+            names = ", ".join(pc[:limit]) + ("…" if len(pc) > limit else "")
+            warn.append(
+                f"ℹ️ Tải lại phiên {_ddmm(rc['date'])}: {len(pc)}/{rc['checked']} mã đổi giá"
+                + (f" ({names})" if pc else "")
+                + f", {len(fc)} mã đổi khối ngoại. Số ghi lúc 15:45 chưa chốt, hoặc giá điều chỉnh theo quyền."
             )
         for e in info["macro_errors"]:
             warn.append(f"⚠️ Vĩ mô lỗi — {e}")
