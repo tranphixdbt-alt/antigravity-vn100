@@ -46,6 +46,7 @@ const HINH = {
   lui: "M15 5l-7 7 7 7", xuong: "M6 9l6 6 6-6",
   canh: "M12 4l9 16H3zM12 10v4M12 17.3v.2", tin: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v.2M12 11v5",
   goi: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2",
+  dong: "M6 6l12 12M18 6 6 18", gui: "M12 19V6M6.5 11.5 12 6l5.5 5.5",
   zalo: "M4 5h16v11H10l-5 4v-4H4zM8 9h5l-5 4h5", fb: "M14 21v-8h3l.5-3H14V8.5c0-1 .4-1.5 1.6-1.5h1.9V4.2A19 19 0 0 0 15 4c-2.5 0-4 1.5-4 4.2V10H8v3h3v8",
 };
 const hinh = (ten, lop = "bt") => `<svg class="${lop}" viewBox="0 0 24 24" aria-hidden="true"><path d="${HINH[ten]}"/></svg>`;
@@ -58,7 +59,8 @@ const docPhieu = (v) => (v === 1 ? "gom" : v === -1 ? "xả" : v === 0 ? "trung 
 // Trạng thái của trang: chế độ loại/gồm thỏa thuận, tổng quan, danh sách mã, bộ lọc, mã đang mở, lựa chọn biểu đồ
 const S = { cheDo: "loai", tq: null, ds: [], loc: { nhan: "tat", nganh: null }, ma: null, bd: null, xem: "dt", xh: null, tt: null, vm: null,
   loai: null, cq: null, cqLoc: "NÊN XEM XÉT", cqTim: "", etf: null, etfXem: "ck", ps: null, trangCu: null,
-  dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null };
+  dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null,
+  chat: { tt: null, tin: [], dang: false, mo: false } };
 const tenMa = (ma) => { const r = S.ds.find((x) => x.ma === ma); return r ? [r.ten, r.nganh].filter(Boolean).join(" · ") : ""; };
 const dangToi = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
 
@@ -91,7 +93,7 @@ let giuBuoc = false, choDong = null;
 const laBuoc = (b) => (b && b.bt ? b : null);
 function ghiDiaChi(them) {
   const cu = laBuoc(history.state), moi = !!them && !giuBuoc;
-  const buoc = { bt: 1, tab: dangXem, loai: S.loai || null, ma: S.ma || null, sau: moi ? 1 : (cu && cu.sau) || 0 };
+  const buoc = { bt: 1, tab: dangXem, loai: S.loai || null, ma: S.ma || null, chat: chatTrongLichSu() ? 1 : 0, sau: moi ? 1 : (cu && cu.sau) || 0 };
   const dc = `${location.pathname}${S.ma ? `?ma=${S.ma}` : ""}#${TAB[dangXem][0]}`;
   try { if (moi) history.pushState(buoc, "", dc); else history.replaceState(buoc, "", dc); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ }
 }
@@ -114,6 +116,8 @@ function theoBuoc(b, truot) {
     if (coTo && !giuTo) dongTaiCho(truot);
     if (Number.isInteger(i) && i >= 0 && i < TAB.length && i !== dangXem) datDangXem(i, true);
     if (b && b.loai && MO_LAI[b.loai] && !(coTo && S.loai === b.loai && S.ma === b.ma)) MO_LAI[b.loai](b.ma);
+    // khung chat trên điện thoại: Back đóng khung, Forward mở lại (máy tính không ghi khung chat vào lịch sử)
+    if (b && !rong.matches) { if (!b.chat && S.chat.mo) anChat(); else if (b.chat && !S.chat.mo) moChat(); }
     ghiDiaChi(false);
   } finally { giuBuoc = false; }
 }
@@ -741,7 +745,7 @@ function veCong(tieuDe, doan, coThuLai) {
   c.classList.remove("roi");
 }
 function goCong() { const c = $("#dang-nhap"); if (!c) return; c.classList.add("roi"); setTimeout(() => c.remove(), itChuyenDong ? 0 : 480); }
-function veNutTK() { const n = $("#nut-tk"); n.hidden = false; $("#nut-dm").hidden = false; $("#nut-lh").hidden = !TK.lien_he; veChuong(); $("#tk-chu").textContent = tenTat(TK); n.setAttribute("aria-label", `Tài khoản ${TK.ten}`); }
+function veNutTK() { const n = $("#nut-tk"); n.hidden = false; $("#nut-dm").hidden = false; nutEch.hidden = S.chat.mo; $("#nut-lh").hidden = !TK.lien_he; veChuong(); $("#tk-chu").textContent = tenTat(TK); n.setAttribute("aria-label", `Tài khoản ${TK.ten}`); }
 async function vaoCong() {
   let d;
   try { d = await api("/api/toi"); }
@@ -1107,6 +1111,121 @@ window.addEventListener("storage", (e) => { if (TK && e.key === khoaKho("chua_xe
 // Safari cũ nhận hàm gọi lại, trình duyệt mới trả Promise
 function xinQuyen() { try { const p = Notification.requestPermission(veTinCB); if (p && p.then) p.then(veTinCB, veTinCB); } catch (e) { veTinCB(); } }
 
+/* ---------- Góc chat "Hỏi Ếch" (lát 7, D120) ---------- */
+// Người dùng chốt 26/11/2026: con ếch ở góc dưới bên phải, bấm vào mở khung chat; Ếch chỉ trả lời bằng số liệu của web
+// (máy chủ: valuation/services/web_chat.py chọn công cụ, Python lấy số, AI viết lời), mỗi tài khoản 20 câu mỗi ngày.
+// Mỗi câu được trả lời riêng, Ếch không nhớ câu trước; cuộc trò chuyện chỉ nằm trong trang đang mở, không lưu lại.
+// Hình con ếch theo nhân vật "Ếch tay mơ" của kênh (~/video/luat_ck/video/src/Ech.tsx), chỉ lấy phần đầu.
+const ECH = `<svg class="ech" viewBox="26 14 268 218" aria-hidden="true">
+  <g class="mam"><path d="M160 74 Q158 52 164 36" stroke="#23874a" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <path d="M164 40 Q188 22 204 34 Q186 52 164 40 Z" fill="#8ee05a" stroke="#17140f" stroke-width="3"/>
+    <path d="M162 46 Q140 30 126 42 Q144 58 162 46 Z" fill="#8ee05a" stroke="#17140f" stroke-width="3"/></g>
+  <g fill="#17140f" stroke="#17140f" stroke-width="12"><ellipse cx="160" cy="146" rx="120" ry="76"/><circle cx="102" cy="74" r="40"/><circle cx="218" cy="74" r="40"/></g>
+  <g fill="#3fbf6b"><ellipse cx="160" cy="146" rx="120" ry="76"/><circle cx="102" cy="74" r="40"/><circle cx="218" cy="74" r="40"/></g>
+  <circle cx="102" cy="74" r="30" fill="#fbf8ee"/><circle cx="218" cy="74" r="30" fill="#fbf8ee"/>
+  <circle cx="106" cy="78" r="13" fill="#17140f"/><circle cx="222" cy="78" r="13" fill="#17140f"/>
+  <circle cx="111" cy="72" r="4.5" fill="#fff"/><circle cx="227" cy="72" r="4.5" fill="#fff"/>
+  <circle cx="90" cy="166" r="14" fill="#ff8fa3" opacity=".45"/><circle cx="230" cy="166" r="14" fill="#ff8fa3" opacity=".45"/>
+  <path d="M104 154 Q160 198 216 154" stroke="#17140f" stroke-width="7" stroke-linecap="round" fill="none"/></svg>`;
+const TIN_TOI_DA = 40; // số tin giữ trong khung; cũ hơn thì bỏ để trang không nặng dần
+const nutEch = document.createElement("button");
+nutEch.id = "nut-ech"; nutEch.type = "button"; nutEch.hidden = true; nutEch.innerHTML = ECH;
+nutEch.setAttribute("aria-label", "Hỏi Ếch về thị trường"); nutEch.setAttribute("aria-haspopup", "dialog");
+app.appendChild(nutEch);
+const chat = document.createElement("section");
+chat.id = "chat"; chat.hidden = true; chat.setAttribute("role", "dialog"); chat.setAttribute("aria-labelledby", "chat-ten");
+chat.innerHTML = `<div class="chat-dau"><span class="chat-ech">${ECH}</span><div class="chat-ten"><h2 id="chat-ten">Hỏi Ếch</h2><p id="chat-con">Đang nạp…</p></div>
+  <button class="nut-tron" type="button" id="chat-dong" aria-label="Đóng khung hỏi Ếch">${hinh("dong")}</button></div>
+  <div class="chat-than" id="chat-than" tabindex="-1" aria-live="polite"></div>
+  <form class="chat-o" id="chat-form"><label class="an-doc" for="chat-hoi">Câu hỏi cho Ếch</label>
+    <textarea id="chat-hoi" rows="1" placeholder="Hỏi về thị trường hay một mã" enterkeyhint="send" autocomplete="off"></textarea>
+    <button class="nut-gui" type="submit" id="chat-gui" aria-label="Gửi câu hỏi">${hinh("gui")}</button></form>
+  <p class="chat-chu">Ếch chỉ dùng số liệu của web, không phải khuyến nghị đầu tư.</p>`;
+app.appendChild(chat);
+const oHoi = $("#chat-hoi", chat), chatThan = $("#chat-than", chat);
+// khung chat chỉ vào lịch sử trình duyệt trên điện thoại, nơi nó che cả màn hình và người dùng quen bấm Back để đóng
+const chatTrongLichSu = () => S.chat.mo && !rong.matches;
+// câu gợi ý của máy chủ; đang mở tờ một cổ phiếu thì thêm hai câu về đúng mã đó
+function goiYChat() {
+  const g = [...((S.chat.tt && S.chat.tt.goi_y) || [])];
+  if (S.loai === "cp" && S.ma) g.unshift(`Tín hiệu kỹ thuật của ${S.ma} thế nào?`, `So sánh ${S.ma} với các mã cùng ngành`);
+  return [...new Set(g)].slice(0, 6);
+}
+function veTinChat(m) {
+  if (!m.ai) return `<div class="tin toi"><p>${esc(m.chu)}</p></div>`;
+  if (m.cho) return `<div class="tin ech dang" aria-busy="true"><p>Ếch đang tra số liệu…</p></div>`;
+  if (m.loi) return `<div class="tin ech"><p class="loi">${esc(m.loi)}</p></div>`;
+  const d = m.d;
+  return `<div class="tin ech"><div class="vb">${mdNho(d.tra_loi)}</div>`
+    + (d.ma && d.ma.length ? `<div class="the-ma">${d.ma.map((x) => `<button type="button" class="o-ma" data-chat-ma="${esc(x)}">Mở ${esc(x)}</button>`).join("")}</div>` : "")
+    + (d.nguon ? `<details class="chat-nguon"><summary>Số liệu gốc</summary><div class="vb">${mdNho(d.nguon)}</div></details>` : "") + "</div>";
+}
+function veChat() {
+  const c = S.chat, tt = c.tt, het = !!tt && tt.con_lai <= 0, cuoi = c.tin[c.tin.length - 1];
+  const chao = `<div class="tin ech"><p>Chào bạn. Ếch trả lời về thị trường và cổ phiếu VN100 bằng số liệu của web. Mỗi câu được trả lời riêng, nên nhắc rõ tên mã trong câu hỏi.</p></div>`;
+  const coGoiY = tt && !het && !c.dang && (!c.tin.length || (cuoi && cuoi.d && cuoi.d.ngoai_pham_vi));
+  const goiY = coGoiY ? `<div class="chat-goi" role="group" aria-label="Câu hỏi gợi ý">${goiYChat().map((g) => `<button type="button" data-hoi="${esc(g)}">${esc(g)}</button>`).join("")}</div>` : "";
+  chatThan.innerHTML = chao + c.tin.map(veTinChat).join("") + goiY;
+  $("#chat-con", chat).textContent = !tt ? (c.loi || "Đang nạp…") : het ? `Đã hết ${so(tt.gioi_han)} câu hôm nay, lượt mới có lại sau 0 giờ` : `Còn ${so(tt.con_lai)}/${so(tt.gioi_han)} câu hôm nay`;
+  if (tt) oHoi.maxLength = tt.toi_da_ky_tu;
+  oHoi.disabled = !tt || het; $("#chat-gui", chat).disabled = !tt || het || c.dang;
+  chat.classList.toggle("dang", c.dang);
+}
+// cuộn tới đầu tin cuối: câu trả lời dài thì đọc từ đầu, không bị đẩy xuống đáy
+function cuonTinCuoi() { const ds = chatThan.querySelectorAll(".tin"), t = ds[ds.length - 1]; if (t) chatThan.scrollTop = Math.max(t.offsetTop - 12, 0); }
+async function napChat() {
+  try { S.chat.tt = await api("/api/hoi-ai"); S.chat.loi = null; } catch (e) { if (!S.chat.tt) S.chat.loi = `Chưa nạp được. ${e.message}`; }
+  if (S.chat.mo) veChat();
+}
+function moChat() {
+  const c = S.chat;
+  if (!c.mo) {
+    c.mo = true; dongNoi(); dongGoiY(); chat.hidden = false; nutEch.hidden = true;
+    void chat.offsetHeight; chat.classList.add("mo");
+    ghiDiaChi(!rong.matches); // điện thoại: thêm một bước để nút Back đóng khung
+  }
+  veChat(); napChat(); // hỏi lại lượt còn mỗi lần mở: thẻ khác của cùng tài khoản có thể đã hỏi
+  if (rong.matches) oHoi.focus({ preventScroll: true }); else chatThan.focus({ preventScroll: true }); // điện thoại: không bật bàn phím ngay
+  chatThan.scrollTop = chatThan.scrollHeight;
+}
+function anChat() {
+  const c = S.chat; if (!c.mo) return;
+  const coFocus = chat.contains(document.activeElement);
+  c.mo = false; chat.classList.remove("mo"); nutEch.hidden = !TK;
+  setTimeout(() => { if (!S.chat.mo) chat.hidden = true; }, itChuyenDong ? 0 : 260);
+  if (coFocus) nutEch.focus({ preventScroll: true });
+}
+// đóng bằng nút, Esc hoặc khi bấm mở một mã; `roi` chạy sau khi đã đóng (mở tờ của mã vừa bấm)
+function dongChat(roi) {
+  const b = laBuoc(history.state);
+  if (S.chat.mo && !rong.matches && b && b.chat && b.sau) {
+    if (choDong) return;
+    const cho = (choDong = { truot: false, roi }); history.back();
+    setTimeout(() => { if (choDong !== cho) return; choDong = null; anChat(); ghiDiaChi(false); if (roi) roi(); }, 1200);
+    return;
+  }
+  anChat(); ghiDiaChi(false); if (roi) roi();
+}
+async function hoiEch(cau) {
+  const c = S.chat, s = String(cau || "").replace(/\s+/g, " ").trim();
+  if (!s || c.dang || !c.tt || c.tt.con_lai <= 0) return;
+  c.dang = true; c.tin.push({ ai: false, chu: s }, { ai: true, cho: true }); oHoi.value = ""; coO(); veChat(); cuonTinCuoi();
+  let d = null, loi = null;
+  try { d = await api("/api/hoi-ai", { cau_hoi: s }); } catch (e) { loi = e; }
+  c.dang = false; c.tin.pop();
+  if (d) { c.tt = { ...c.tt, con_lai: d.con_lai, gioi_han: d.gioi_han }; c.tin.push({ ai: true, d }); }
+  else { if (loi.ma === 429) c.tt = { ...c.tt, con_lai: 0 }; c.tin.push({ ai: true, loi: loi.message }); }
+  if (c.tin.length > TIN_TOI_DA) c.tin.splice(0, c.tin.length - TIN_TOI_DA);
+  veChat(); cuonTinCuoi();
+  if (rong.matches && c.mo && !oHoi.disabled) oHoi.focus({ preventScroll: true });
+}
+// ô hỏi cao theo nội dung, tối đa 4 dòng
+function coO() { oHoi.style.height = "auto"; oHoi.style.height = `${Math.min(oHoi.scrollHeight, 112)}px`; }
+oHoi.addEventListener("input", coO);
+// Enter gửi, Shift+Enter xuống dòng; đang gõ dấu tiếng Việt (bộ gõ đang ghép chữ) thì Enter không gửi
+oHoi.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); hoiEch(oHoi.value); } });
+chat.addEventListener("submit", (e) => { e.preventDefault(); hoiEch(oHoi.value); });
+
 /* ---------- Tờ chi tiết: nở ra từ dòng được bấm, vuốt xuống để đóng ---------- */
 let dongGoc = null;
 function khungDong(el) { const a = app.getBoundingClientRect(), r = el.getBoundingClientRect(); return `inset(${Math.max(r.top - a.top, 0)}px ${Math.max(a.right - r.right, 0)}px ${Math.max(a.bottom - r.bottom, 0)}px ${Math.max(r.left - a.left, 0)}px round 8px)`; }
@@ -1145,6 +1264,10 @@ to.addEventListener("pointerup", thaKeo); to.addEventListener("pointercancel", t
 
 /* ---------- Bấm ---------- */
 app.addEventListener("click", (e) => {
+  if (e.target.closest("#nut-ech")) { moChat(); return; }
+  if (e.target.closest("#chat-dong")) { dongChat(); return; }
+  const hoi = e.target.closest("[data-hoi]"); if (hoi) { hoiEch(hoi.dataset.hoi); return; }
+  const cm = e.target.closest("[data-chat-ma]"); if (cm) { const ma = cm.dataset.chatMa; dongChat(() => moMa(ma, null)); return; }
   const nTK = e.target.closest("#nut-tk"); if (nTK) { moThucDonTK(nTK); return; }
   const nLH = e.target.closest("#nut-lh"); if (nLH) { moThucDonLH(nLH); return; }
   const mTK = e.target.closest("[data-tk]"); if (mTK) { dongNoi(); if (mTK.dataset.tk === "ds") moTaiKhoan(""); else if (mTK.dataset.tk === "lh") moThucDonLH($("#nut-tk")); else location.href = TK.dang_xuat; return; }
@@ -1188,7 +1311,7 @@ app.addEventListener("click", (e) => {
   const tg = e.target.closest("[data-tang]"); if (tg) { const i = +tg.dataset.tang; if (S.bd.tang.has(i)) S.bd.tang.delete(i); else S.bd.tang.add(i); tg.setAttribute("aria-pressed", S.bd.tang.has(i)); veBieuDo(); return; }
   const hs = e.target.closest("[data-hoso]"); if (hs) { S.bd.hoSo = !S.bd.hoSo; hs.setAttribute("aria-pressed", S.bd.hoSo); veBieuDo(); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!goiY.hidden) dongGoiY(); else if (!to.hidden) dongTo(false); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!goiY.hidden) dongGoiY(); else if (S.chat.mo) dongChat(); else if (!to.hidden) dongTo(false); } });
 $("#nut-nen").addEventListener("click", (e) => { const toi = !dangToi(); document.documentElement.dataset.theme = toi ? "dark" : "light"; e.currentTarget.setAttribute("aria-pressed", toi); if (S.ma) { if (S.loai === "cp") veBieuDo(); else veTrangCu(); } });
 
 /* ---------- Ô tìm mã ---------- */

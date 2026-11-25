@@ -657,7 +657,7 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 | 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | **Xong tại máy** (D116): mọi tài khoản đã duyệt, 5 lượt mỗi ngày, khoảng 500 từ |
 | 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | **Xong tại máy** (D118): bốn ô đầu trang |
 | 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | **Xong tại máy** (D119) |
-| 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | Chờ chốt "học theo TCBS" là học điểm nào |
+| 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | **Xong tại máy** (D120): "Hỏi Ếch", 20 câu mỗi ngày |
 
 ### Việc 1 và 2: tờ chi tiết mã (đã làm, chỉ đổi bố trí, không đổi số)
 
@@ -717,6 +717,21 @@ vào trang (dịch vụ chứng quyền nhớ giá 5 phút nên tối đa mỗi 
   cao tối đa 560px (máy tính) hoặc 460px (điện thoại): bản đồ ngành, danh sách 100 mã, bảng xếp hạng VN100 và ứng
   viên tích sản (dòng tiêu đề đứng yên khi cuộn), danh sách chứng quyền (bỏ nút "Hiện thêm", cả 461 mã trong
   khung), danh sách và hai bảng ETF, danh sách hợp đồng tương lai. Đổi bộ lọc thì khung cuộn về đầu.
+
+### Việc 6: góc chat "Hỏi Ếch" (đã làm)
+
+Người dùng "Đồng ý" đề xuất: con ếch ở góc dưới bên phải, bấm vào mở khung chat; câu hỏi gợi ý; Ếch chỉ trả lời từ số
+liệu của web (trợ lý của bot Discord: AI chọn công cụ, Python lấy số, AI viết lời); câu trả lời ngắn, kèm nút mở đúng
+mã; mỗi tài khoản 20 câu mỗi ngày; học từ TCBS cách chia công cụ và tự tính từ dữ liệu của web các phần còn thiếu.
+
+- Năm công cụ mới chỉ web dùng: thị trường hôm nay (đúng số của tab Hôm nay), độ rộng (số mã VN100 tăng, giảm, đứng
+  từng phiên), mã kéo rổ VN100 lên, xuống (ước tính theo vốn hóa, không phải điểm VN-Index), tín hiệu kỹ thuật tổng
+  hợp (6 đường trung bình, RSI14, MACD, đỉnh đáy một năm), so với cùng ngành (ROE, tăng trưởng, điểm phòng thủ và tích
+  sản, hạng). Cùng bảy công cụ cũ (định giá, xếp hạng, biến động giá, vĩ mô, công ty chứng khoán, tin, báo cáo sáng).
+- Câu ngoài phạm vi và lỗi AI không mất lượt; câu hỏi không lưu lại. Mỗi câu trả lời riêng, Ếch không nhớ câu trước.
+- Trên điện thoại khung chiếm cả màn hình và Back đóng khung; trên máy tính là khung nổi ở góc. Chi tiết: D120.
+- **Chưa làm:** Ếch chưa có công cụ cho chứng quyền, ETF, hợp đồng tương lai (số của các tab đó do dịch vụ chứng quyền
+  tính); chưa nhớ câu trước để hỏi tiếp kiểu "còn MBB thì sao". Muốn thêm thì hỏi lại người dùng.
 
 ### Dữ kiện đã tìm cho các việc còn lại
 

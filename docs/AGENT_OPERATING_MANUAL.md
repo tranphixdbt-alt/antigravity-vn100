@@ -325,4 +325,9 @@ Mô tả đầy đủ ở `valuation/engine/flag_descriptions.py`; level dưới
 - **Báo cáo AI bản ngắn (D116):** `services/web_ai_report.py`, nút trên tờ mã; mỗi tài khoản 5 lượt sinh mới mỗi
   ngày (`web.ai_report` trong `config/defaults.yaml`), đếm trên `web_audit`; bản lưu ở
   `.deepseek_report_cache/ban_ngan/`. Đổi câu lệnh cho AI thì tăng `PROMPT_VERSION` để bản cũ không bị dùng lại.
+- **Góc chat "Hỏi Ếch" (D120):** `services/web_chat.py` (lượt, lời dặn trả lời) và `services/web_chat_tools.py`
+  (bộ công cụ `WEB_TOOLS` = bảy công cụ của bot + năm công cụ của web), đường `/api/hoi-ai`; mỗi tài khoản 20 câu
+  mỗi ngày (`web.chat`), đếm trên `web_audit` việc `hoi_ai`. Sửa `assistant.py` thì chạy cả `tests/test_assistant.py`
+  (bot Discord) lẫn `tests/test_web_chat.py`; thêm công cụ cho web thì thêm vào `WEB_TOOLS`, nhánh kiểm tham số ở
+  `assistant.validate` và dòng số gốc ở `assistant.render_sources`.
 - **Dự án chứng quyền** nhận mã bằng `git push vps main` từ máy Mac (chỉ ở mạng nhà); VPS tự deploy trong 3 phút.

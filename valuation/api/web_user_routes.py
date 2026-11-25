@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from valuation.api.web_deps import (
@@ -28,6 +28,7 @@ from valuation.db.web_user import VAI_QUAN_TRI, WebUser
 from valuation.services import (
     web_ai_report,
     web_alerts,
+    web_chat,
     web_flow,
     web_portfolio,
     web_users,
@@ -241,4 +242,26 @@ def sinh_bao_cao_ai(
     try:
         return web_ai_report.generate(db, udb, user, _stock(ma, db))
     except web_ai_report.AiReportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+# ---------- Góc chat AI "Hỏi Ếch" (lát 7, D120) ----------
+class ChatBody(BaseModel):
+    cau_hoi: str = Field(
+        max_length=2000
+    )  # độ dài thật kiểm ở web_chat theo cấu hình; đây chỉ chặn thân quá lớn
+
+
+@router.get("/api/hoi-ai")
+def hoi_ai_trang_thai(user: ApprovedUser, udb: UserDb) -> dict:
+    """Số câu còn hỏi được hôm nay và các câu hỏi gợi ý."""
+    return web_chat.status(udb, user)
+
+
+@router.post("/api/hoi-ai", dependencies=[Depends(same_origin)])
+def hoi_ai(body: ChatBody, user: ApprovedUser, udb: UserDb) -> dict:
+    """Trả lời một câu hỏi bằng số liệu của web (một câu tính một lượt; lỗi và câu ngoài phạm vi không tính)."""
+    try:
+        return web_chat.ask(udb, user, body.cau_hoi)
+    except web_chat.ChatError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc

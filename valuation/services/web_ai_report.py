@@ -86,15 +86,20 @@ def day_start_utc(now: dt.datetime) -> dt.datetime:
     return start.astimezone(dt.timezone.utc).replace(tzinfo=None)
 
 
-def used_today(udb: Session, user_id: int, now: dt.datetime | None = None) -> int:
-    """Số lần người này đã sinh mới báo cáo trong ngày (giờ Việt Nam) chứa thời điểm `now`."""
+def used_today(
+    udb: Session, user_id: int, now: dt.datetime | None = None, viec: str = VIEC
+) -> int:
+    """Số dòng việc `viec` của người này trong ngày (giờ Việt Nam) chứa thời điểm `now`.
+
+    Mặc định đếm lần sinh báo cáo AI; góc chat (web_chat) đếm việc `hoi_ai` bằng cùng hàm.
+    """
     since = day_start_utc(now or now_utc())
     until = since + dt.timedelta(days=1)
     return int(
         udb.query(func.count(WebAudit.id))
         .filter(
             WebAudit.user_id == user_id,
-            WebAudit.viec == VIEC,
+            WebAudit.viec == viec,
             WebAudit.luc >= since,
             WebAudit.luc < until,
         )

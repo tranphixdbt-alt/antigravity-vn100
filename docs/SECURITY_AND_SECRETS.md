@@ -117,3 +117,7 @@ git diff --cached --name-only
   báo mã lỗi ra giao diện, không chép thông điệp gốc (có thể chứa đuôi khóa). Gửi cho DeepSeek đúng gói số liệu của
   mã như bản dài, không có email hay thông tin tài khoản; người bấm chỉ ghi `user_id` vào `web_audit`. Mỗi tài khoản
   5 lượt mỗi ngày để chặn tốn tiền API. Tệp `.deepseek_report_cache/` đã nằm trong `.gitignore`.
+- Góc chat "Hỏi Ếch" (D120): cùng khóa DeepSeek; câu hỏi của người dùng gửi cho DeepSeek nhưng không lưu ở web (nhật
+  ký chỉ ghi `user_id`, tên công cụ đã chạy và độ dài câu). Câu hỏi lọc ký tự điều khiển, tối đa 300 ký tự; mã chứng
+  khoán trong tham số công cụ phải thuộc VN100; lời dặn bảo AI bỏ qua mọi chỉ dẫn nằm trong câu hỏi hay dữ liệu. Lỗi
+  AI chỉ báo câu chung, không chép thông điệp gốc. 20 câu mỗi tài khoản mỗi ngày.

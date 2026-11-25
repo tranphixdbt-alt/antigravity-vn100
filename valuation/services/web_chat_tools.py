@@ -1,0 +1,376 @@
+"""Công cụ chỉ đọc thêm cho góc chat AI của web hợp nhất (lát 7, D120).
+
+Học cách TCBS MCP chia công cụ theo nhóm (thị trường, mã, kỹ thuật, cùng ngành; mục 15 của
+docs/PLAN_WEB_HOP_NHAT.md) nhưng tính hoàn toàn từ dữ liệu của dự án, không gọi TCBS. Các công cụ này chỉ nằm
+trong bộ công cụ của web (`WEB_TOOLS`); bot Discord vẫn dùng đúng `assistant.TOOLS` như cũ.
+
+Phạm vi là rổ VN100 (dữ liệu giá của dự án chỉ có VN100 và VN-Index), không phải toàn sàn:
+- độ rộng: số mã VN100 tăng, giảm, đứng giá mỗi phiên so với phiên trước;
+- mã dẫn dắt: đóng góp của từng mã vào biến động của rổ VN100 tính theo vốn hóa, ước tính
+  đóng góp_i = w_i × r_i × 100 (điểm phần trăm), w_i = vốn hóa đầu kỳ của mã ÷ tổng vốn hóa đầu kỳ của rổ,
+  r_i = giá cuối kỳ ÷ giá đầu kỳ − 1; tổng các đóng góp bằng mức thay đổi của rổ theo vốn hóa. Không phải điểm VN-Index
+  (VN-Index gồm cả các mã ngoài VN100);
+- kỹ thuật: giá so với các đường trung bình giản đơn, RSI14 và MACD(12, 26, 9) đúng công thức của
+  `technical_chart.add_technical_indicators`; chỉ mô tả, không gắn nhãn mua bán;
+- cùng ngành: các chỉ số của đợt xếp hạng VN100 gần nhất cho các mã cùng ngành.
+"""
+
+from __future__ import annotations
+
+from math import isfinite
+from typing import Any
+
+import pandas as pd
+
+from valuation.services import assistant
+
+SMA_WINDOWS = (
+    5,
+    10,
+    20,
+    50,
+    100,
+    200,
+)  # các đường trung bình giản đơn hay dùng (TCBS cũng dùng bộ này)
+WEEKS_52 = 250  # số phiên giao dịch trong khoảng một năm
+
+
+def _num(v: Any, digits: int = 2) -> float | None:
+    return assistant._clean(v, digits)
+
+
+# ---------- thị trường hôm nay ----------
+
+
+def tool_market_today() -> dict:
+    """Bản tóm tắt tab Hôm nay của web (cùng hàm web_market.market), rút gọn cho AI."""
+    from valuation.db.session import SessionLocalRead
+    from valuation.services import web_market
+
+    db = SessionLocalRead()
+    try:
+        m = web_market.market(db)
+    finally:
+        db.close()
+    cs = m.get("chi_so") or {}
+    return {
+        "nhan_thi_truong": m.get("nhan"),
+        "tieu_de": m.get("tieu_de"),
+        "gia_den": m.get("gia_den"),
+        "du_lieu_cu": m.get("cu"),
+        "vn_index": {
+            "diem": cs.get("diem"),
+            "thay_doi": cs.get("thay_doi"),
+            "xu_huong": cs.get("xu_huong"),
+            "rsi14": cs.get("rsi"),
+            "khang_cu": cs.get("khang_cu"),
+            "ho_tro": cs.get("ho_tro"),
+        },
+        "bon_tru_cot": [
+            {"ten": p["ten"], "diem": p["diem"], "tom_tat": p["tom_tat"]}
+            for p in m.get("tru_cot") or []
+        ],
+        "so_phien": m.get("so_phien"),
+        "nganh_manh": m.get("nganh_manh"),
+        "nganh_yeu": m.get("nganh_yeu"),
+        "ma_co_luc": m.get("ma_co_luc"),
+        "ghi_chu": "diem trụ cột: 1 thuận, 0 trung tính, -1 bất lợi. Ngành và mã tính trên rổ VN100.",
+    }
+
+
+# ---------- độ rộng ----------
+
+
+def breadth_counts(closes: pd.DataFrame, sessions: int) -> list[dict]:
+    """Số mã tăng, giảm, đứng giá ở mỗi phiên trong `sessions` phiên cuối (so với phiên liền trước).
+
+    `closes`: bảng giá đóng cửa, chỉ mục là ngày (tăng dần), mỗi cột một mã. Mã thiếu giá một trong hai phiên thì
+    không tính ở phiên đó.
+    """
+    if closes.shape[0] < 2:
+        return []
+    diff = closes.diff().iloc[1:]
+    out = []
+    for day, row in diff.tail(sessions).iterrows():
+        row = row.dropna()
+        out.append(
+            {
+                "ngay": pd.Timestamp(day).date().isoformat(),
+                "tang": int((row > 0).sum()),
+                "giam": int((row < 0).sum()),
+                "dung": int((row == 0).sum()),
+            }
+        )
+    return out
+
+
+def _vn100_closes() -> pd.DataFrame:
+    from valuation.config import load_defaults
+    from valuation.db.session import SessionLocalRead
+    from valuation.views import market_overview as mo
+
+    db = SessionLocalRead()
+    try:
+        _, closes, _, _ = mo.load_market_data(db, load_defaults()["market_overview"])
+    finally:
+        db.close()
+    return closes
+
+
+def tool_breadth(sessions: int) -> dict:
+    days = breadth_counts(_vn100_closes(), sessions)
+    tang = sum(d["tang"] for d in days)
+    tong = sum(d["tang"] + d["giam"] + d["dung"] for d in days)
+    return {
+        "pham_vi": "rổ VN100, không phải toàn sàn",
+        "so_phien": len(days),
+        "phien": days,
+        "phien_tang_nhieu_hon_giam": sum(1 for d in days if d["tang"] > d["giam"]),
+        "ty_le_luot_tang_pct": _num(tang / tong * 100, 1) if tong else None,
+    }
+
+
+# ---------- mã dẫn dắt ----------
+
+
+def contributions(
+    first: pd.Series, last: pd.Series, shares: dict[str, float]
+) -> pd.DataFrame:
+    """Đóng góp của từng mã vào biến động của rổ theo vốn hóa (điểm phần trăm), xem docstring của mô-đun.
+
+    `first`, `last`: giá đầu và cuối kỳ theo mã; `shares`: số cổ phiếu lưu hành (cùng gốc với giá đã điều chỉnh).
+    Mã thiếu giá hay thiếu số cổ phiếu bị bỏ, và không tính vào tổng vốn hóa.
+    """
+    rows = []
+    for t in first.index:
+        p0, p1, n = first.get(t), last.get(t), shares.get(t)
+        if p0 is None or p1 is None or not n or not (p0 > 0) or not isfinite(float(p1)):
+            continue
+        rows.append(
+            {
+                "ma": t,
+                "von_hoa_dau": float(p0) * float(n),
+                "ty_suat": float(p1) / float(p0) - 1.0,
+            }
+        )
+    df = pd.DataFrame(rows, columns=["ma", "von_hoa_dau", "ty_suat"])
+    if df.empty:
+        return df.assign(ty_trong=[], dong_gop=[])
+    df["ty_trong"] = df["von_hoa_dau"] / df["von_hoa_dau"].sum()
+    df["dong_gop"] = df["ty_trong"] * df["ty_suat"] * 100.0
+    return df.sort_values("dong_gop", ascending=False).reset_index(drop=True)
+
+
+def _shares(tickers: list[str]) -> dict[str, float]:
+    from valuation.data_access.repo import get_shares_outstanding_repo
+    from valuation.db.session import SessionLocalRead
+
+    db = SessionLocalRead()
+    out: dict[str, float] = {}
+    try:
+        for t in tickers:
+            try:
+                out[t] = get_shares_outstanding_repo(db, t)
+            except ValueError:
+                continue  # mã không có số cổ phiếu hợp lệ: bỏ khỏi phép tính, ghi số mã đã dùng ở kết quả
+    finally:
+        db.close()
+    return out
+
+
+def tool_index_movers(sessions: int, top: int) -> dict:
+    closes = _vn100_closes()
+    if closes.shape[0] <= sessions:
+        return {"error": f"Chưa đủ {sessions + 1} phiên giá để tính"}
+    window = closes.iloc[-1 - sessions :]
+    first, last = window.iloc[0], window.iloc[-1]
+    df = contributions(first, last, _shares(list(closes.columns)))
+    rows = lambda d: [
+        {
+            "ma": r.ma,
+            "dong_gop_diem_pct": _num(r.dong_gop, 2),
+            "ty_suat_pct": _num(r.ty_suat * 100, 1),
+        }
+        for r in d.itertuples()
+    ]
+    return {
+        "pham_vi": "rổ VN100 tính theo vốn hóa (số cổ phiếu lưu hành × giá), ước tính; không phải điểm VN-Index",
+        "tu_ngay": pd.Timestamp(window.index[0]).date().isoformat(),
+        "den_ngay": pd.Timestamp(window.index[-1]).date().isoformat(),
+        "so_ma_tinh": len(df),
+        "ro_thay_doi_pct": _num(df["dong_gop"].sum(), 2) if len(df) else None,
+        "keo_len": rows(df.head(top)),
+        "keo_xuong": rows(df.sort_values("dong_gop").head(top)),
+    }
+
+
+# ---------- kỹ thuật ----------
+
+
+def tech_summary(close: pd.Series) -> dict:
+    """Giá so với các đường trung bình, RSI14, MACD; chỉ mô tả trạng thái, không phải tín hiệu mua bán."""
+    from valuation.analysis.technical_chart import add_technical_indicators
+
+    close = close.dropna().astype(float)
+    if close.empty:
+        return {"error": "Không có giá"}
+    last = float(close.iloc[-1])
+    above, values = {}, {}
+    for w in SMA_WINDOWS:
+        if len(close) >= w:
+            sma = float(close.tail(w).mean())
+            values[str(w)] = _num(sma, 0)
+            above[str(w)] = last > sma
+    ind = add_technical_indicators(
+        pd.DataFrame({"close": close, "high": close, "low": close})
+    ).iloc[-1]
+    year = close.tail(WEEKS_52)
+    hi, lo = float(year.max()), float(year.min())
+    return {
+        "gia": _num(last, 0),
+        "duong_trung_binh": values,
+        "gia_tren_duong": above,
+        "so_duong_gia_dang_tren": sum(above.values()),
+        "so_duong_tinh_duoc": len(above),
+        "rsi14": _num(ind.get("RSI14"), 1),
+        "macd": _num(ind.get("MACD"), 2),
+        "macd_tin_hieu": _num(ind.get("MACD_SIGNAL"), 2),
+        "macd_tren_tin_hieu": (
+            None
+            if pd.isna(ind.get("MACD")) or pd.isna(ind.get("MACD_SIGNAL"))
+            else bool(ind["MACD"] > ind["MACD_SIGNAL"])
+        ),
+        "dinh_1_nam": _num(hi, 0),
+        "day_1_nam": _num(lo, 0),
+        "cach_dinh_pct": _num((last / hi - 1) * 100, 1) if hi else None,
+        "cach_day_pct": _num((last / lo - 1) * 100, 1) if lo else None,
+        "so_phien_du_lieu": len(close),
+    }
+
+
+def tool_technical(ticker: str) -> dict:
+    from valuation.db.models import PricesDaily
+    from valuation.db.session import SessionLocalRead
+
+    db = SessionLocalRead()
+    try:
+        rows = (
+            db.query(PricesDaily.trade_date, PricesDaily.close)
+            .filter(PricesDaily.ticker == ticker, PricesDaily.close.isnot(None))
+            .order_by(PricesDaily.trade_date.desc())
+            .limit(WEEKS_52 + 50)
+            .all()
+        )
+    finally:
+        db.close()
+    if not rows:
+        return {"ticker": ticker, "error": "Không có giá"}
+    s = pd.Series({d: float(c) for d, c in rows}).sort_index()
+    return {
+        "ticker": ticker,
+        "ngay": pd.Timestamp(s.index[-1]).date().isoformat(),
+        **tech_summary(s),
+        "ghi_chu": "Mô tả trạng thái kỹ thuật, không phải tín hiệu mua bán.",
+    }
+
+
+# ---------- cùng ngành ----------
+
+
+def peer_table(rows: list[dict], ticker: str) -> dict:
+    """Các mã cùng ngành với `ticker` trong đợt xếp hạng, và hạng của mã đó theo ROE, tăng trưởng doanh thu (1 = cao nhất).
+
+    Mã có `blockers` (chưa qua cổng công bố) thì không đưa giá trị hợp lý và upside.
+    """
+    own = next((r for r in rows if r.get("ticker") == ticker), None)
+    if own is None:
+        return {"error": f"{ticker} không có trong đợt xếp hạng"}
+    peers = [
+        r for r in rows if r.get("sector") == own.get("sector") and not r.get("error")
+    ]
+
+    def row(r: dict) -> dict:
+        m, prof = r.get("metrics") or {}, r.get("profiles") or {}
+        mo = not r.get("blockers")
+        return {
+            "ma": r.get("ticker"),
+            "ten": r.get("name"),
+            "roe_pct": (
+                _num((m.get("roe") or 0) * 100, 1) if m.get("roe") is not None else None
+            ),
+            "tang_truong_doanh_thu_pct": (
+                _num(m["revenue_cagr"] * 100, 1)
+                if m.get("revenue_cagr") is not None
+                else None
+            ),
+            "no_xau_pct": _num(m["npl"] * 100, 2) if m.get("npl") is not None else None,
+            "diem_phong_thu": _num((prof.get("defensive") or {}).get("score"), 1),
+            "diem_tich_san": _num((prof.get("accumulation") or {}).get("score"), 1),
+            "upside_pct": _num(r.get("upside_pct"), 1) if mo else None,
+        }
+
+    table = [row(r) for r in peers]
+    # cột trống ở mọi mã trong ngành (vd nợ xấu ngoài ngân hàng) thì bỏ, để AI không nhắc tới chỉ số không áp dụng;
+    # upside giữ lại vì trống ở đây nghĩa là chưa công bố
+    empty = {
+        k
+        for k in table[0]
+        if k not in ("ma", "ten", "upside_pct") and all(x[k] is None for x in table)
+    }
+    table = [{k: v for k, v in x.items() if k not in empty} for x in table]
+
+    def rank(key: str) -> int | None:
+        vals = [x.get(key) for x in table if x.get(key) is not None]
+        mine = next(x.get(key) for x in table if x["ma"] == ticker)
+        return None if mine is None else 1 + sum(1 for v in vals if v > mine)
+
+    return {
+        "ma": ticker,
+        "nganh": own.get("sector"),
+        "so_ma_cung_nganh": len(table),
+        "hang_roe": rank("roe_pct"),
+        "hang_tang_truong_doanh_thu": rank("tang_truong_doanh_thu_pct"),
+        "cac_ma": table,
+        "ghi_chu": "Hạng 1 = cao nhất trong ngành. upside trống khi mã chưa qua cổng công bố.",
+    }
+
+
+def tool_peers(ticker: str) -> dict:
+    from valuation.services.ranking_store import latest_snapshot
+
+    snap = latest_snapshot() or {}
+    if not snap.get("rows"):
+        return {"error": "Chưa có đợt xếp hạng VN100 nào"}
+    out = peer_table(list(snap["rows"]), ticker)
+    out["dot_xep_hang"] = snap.get("run_id")
+    return out
+
+
+WEB_TOOLS: dict = {
+    **assistant.TOOLS,
+    "market_today": (
+        tool_market_today,
+        "Thị trường hôm nay: nhãn thị trường, bốn trụ cột, VN-Index (xu hướng, kháng cự, hỗ trợ), ngành mạnh yếu, mã có lực.",
+        "{}",
+    ),
+    "breadth": (
+        tool_breadth,
+        "Độ rộng thị trường: số mã VN100 tăng, giảm, đứng giá mỗi phiên trong N phiên gần nhất.",
+        '{"sessions": 10}',
+    ),
+    "index_movers": (
+        tool_index_movers,
+        "Mã kéo rổ VN100 lên và xuống nhiều nhất trong N phiên (ước tính theo vốn hóa).",
+        '{"sessions": 20, "top": 5}',
+    ),
+    "technical": (
+        tool_technical,
+        "Trạng thái kỹ thuật của 1 mã: giá so với đường trung bình 5-200 phiên, RSI14, MACD, đỉnh đáy 1 năm.",
+        '{"ticker": "HPG"}',
+    ),
+    "peers": (
+        tool_peers,
+        "So 1 mã với các mã cùng ngành: ROE, tăng trưởng doanh thu, điểm phòng thủ và tích sản, upside.",
+        '{"ticker": "VCB"}',
+    ),
+}

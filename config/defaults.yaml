@@ -648,6 +648,7 @@ assistant:
   data_chars: 12000              # cắt JSON dữ liệu gửi DeepSeek lượt 2 (chặn chi phí token)
   plan_max_tokens: 400
   answer_max_tokens: 1000
+  breadth_max_sessions: 60       # trần số phiên của công cụ độ rộng (chỉ góc chat web dùng, valuation/services/web_chat_tools.py)
 
 # Mô hình tổng hợp CTCK (valuation/engine/models/broker_synth.py, docs/BROKER_SYNTH.md).
 broker_synth:
@@ -777,6 +778,17 @@ web:
     error_cache_seconds: 10       # dịch vụ đó lỗi thì nhớ lỗi ngần này giây, không để mọi người cùng chờ hết hạn
     poll_seconds: 60              # trình duyệt hỏi tin mới mỗi phút, như GIAY_HOI_CANH_BAO của web chứng quyền
     max_levels: 50                # số mức giá mỗi người được đặt, như SO_MUC_TOI_DA của web chứng quyền
+  chat:                           # góc chat AI con ếch "Hỏi Ếch" (lát 7, D120, valuation/services/web_chat.py)
+    daily_limit: 20               # câu hỏi được trả lời mỗi tài khoản mỗi ngày (giờ VN), như bot Discord; lỗi và câu không hỗ trợ không tính
+    max_chars: 300                # độ dài câu hỏi tối đa (ký tự)
+    max_links: 6                  # số mã tối đa gắn nút mở dưới câu trả lời
+    goi_y:                        # câu hỏi gợi ý sẵn ở đầu khung chat
+      - "Thị trường hôm nay thế nào?"
+      - "Mã nào kéo rổ VN100 lên, xuống trong 20 phiên qua?"
+      - "Độ rộng thị trường 10 phiên gần đây ra sao?"
+      - "Ngành ngân hàng mã nào upside cao nhất?"
+      - "So sánh FPT với các mã cùng ngành"
+      - "Tín hiệu kỹ thuật của HPG thế nào?"
   ai_report:                      # nút "Sinh báo cáo AI" bản ngắn trên tờ mã (lát 7, D116, valuation/services/web_ai_report.py)
     daily_limit: 5                # lượt sinh mới mỗi tài khoản mỗi ngày (giờ VN), người dùng chốt 25/11/2026; dùng lại bản cũ không tính lượt
     target_words: 500             # độ dài người dùng chốt 25/11/2026: tổng quan công ty + nhận định về mã

@@ -1409,3 +1409,42 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   người dùng muốn cả bốn ô ở trang chủ cuộn ngang thì là việc khác: hỏi lại.
 - **Kiểm:** trình duyệt tại máy ở 1440×900 và 375×812: thực đơn và hàng liên hệ đúng đường dẫn, khung cuộn ở cả năm tab
   (cao 558px, nội dung 1.247–39.976px), console không lỗi. 90 test web qua.
+
+### D120 — Web hợp nhất: góc chat AI "Hỏi Ếch" dùng số liệu của chính web (2026-11-26, người dùng « Đồng ý »)
+
+- **Người dùng đồng ý đề xuất:** con ếch ở góc dưới bên phải, bấm vào mở khung chat; có câu hỏi gợi ý; Ếch chỉ trả lời
+  từ số liệu của web qua trợ lý sẵn có của bot Discord (DeepSeek chọn công cụ, Python lấy số, DeepSeek viết lời); câu
+  trả lời ngắn, kèm nút mở đúng mã; mỗi tài khoản 20 câu mỗi ngày; thêm vài phần học từ cách TCBS chia công cụ, tự tính
+  từ dữ liệu của web. Không gọi TCBS từ web (lý do ở mục 15 của `docs/PLAN_WEB_HOP_NHAT.md`).
+- **Năm công cụ mới** (`valuation/services/web_chat_tools.py`, chỉ đọc, chỉ web dùng; bot Discord giữ nguyên bảy công
+  cụ cũ): `market_today` (đúng số của tab Hôm nay: nhãn thị trường, VN-Index, bốn trụ cột, kháng cự và hỗ trợ, ngành
+  mạnh yếu, mã có lực); `breadth` (số mã VN100 tăng, giảm, đứng giá từng phiên, tối đa 60 phiên); `index_movers` (mã kéo
+  rổ VN100 lên, xuống: đóng góp = tỷ trọng vốn hóa đầu kỳ × tỷ suất giá, vốn hóa = giá điều chỉnh × số cổ phiếu lưu
+  hành hiện tại, nên là **ước tính trên rổ VN100**, không phải điểm VN-Index); `technical` (giá so với 6 đường trung
+  bình 5–200 phiên, RSI14, MACD, cách đỉnh và đáy 250 phiên, chỉ là mô tả); `peers` (các mã cùng ngành trong đợt xếp
+  hạng: ROE, tăng trưởng doanh thu, điểm phòng thủ và tích sản, hạng của mã; mã chưa qua cổng công bố thì không đưa
+  upside; cột trống ở cả ngành như nợ xấu ngoài ngân hàng thì bỏ để AI không nhắc).
+- **Trợ lý dùng chung (`assistant.py`):** `ask`, `plan_request`, `validate`, `write_answer` nhận thêm bộ công cụ và lời
+  dặn trả lời riêng; bỏ trống thì đúng như bot Discord (test cũ của bot vẫn qua). Số gốc của các công cụ mới viết
+  kiểu Việt Nam.
+- **Dịch vụ và đường API:** `valuation/services/web_chat.py`; `GET /api/hoi-ai` (lượt còn, câu gợi ý) và `POST
+  /api/hoi-ai` (tài khoản đã duyệt, gửi từ chính trang, câu hỏi tối đa 300 ký tự). Mỗi người một câu đang chạy một lúc.
+  Lượt đếm trên `web_audit` (việc `hoi_ai`, ngày theo giờ Việt Nam), chỉ ghi tên công cụ đã chạy và độ dài câu, **không
+  lưu câu hỏi**. Không tính lượt khi AI lỗi (báo 502, không chép thông điệp gốc) hoặc câu ngoài phạm vi (không chạy
+  công cụ nào). Không đổi schema. Cấu hình ở `web.chat` của `config/defaults.yaml`.
+- **Lời dặn trả lời của web:** một câu kết luận rồi 2–5 gạch, dưới 180 từ; chỉ dùng số trong dữ liệu; ngày kiểu
+  16/11/2026; nói rõ "ước tính trên rổ VN100" cho mã kéo rổ; kỹ thuật chỉ là mô tả; không tự khuyên mua bán.
+- **Giao diện (`web/app.js`, `web/app.css`):** hình đầu con Ếch tay mơ lấy từ `~/video/luat_ck/video/src/Ech.tsx`. Điện
+  thoại: khung chiếm cả màn hình, mở khung là một bước lịch sử nên Back đóng khung; máy tính: khung nổi 400px ở góc,
+  không vào lịch sử. Đang mở tờ một cổ phiếu thì thêm hai câu gợi ý về đúng mã đó. Nút "Mở mã" đóng khung rồi mở tờ;
+  bấm ếch lại thấy cuộc trò chuyện cũ (chỉ trong trang đang mở, tối đa 40 tin). Phần "Số liệu gốc" gập lại dưới mỗi
+  câu trả lời. Enter gửi, trừ khi bộ gõ tiếng Việt đang ghép chữ. Mỗi câu được trả lời riêng, Ếch không nhớ câu trước
+  (lời chào nói rõ điều này).
+- **Thử thật tại máy với DeepSeek** (4 câu): thị trường hôm nay, mã kéo rổ 20 phiên, so sánh HPG với cùng ngành (2 lần).
+  Mọi con số trong câu trả lời khớp số gốc của công cụ. Sửa sau lần thử: ngày đang viết kiểu 2026-11-16; AI kể ra
+  những thứ không ai hỏi ("không có tin tức"); gọi thay đổi của cả rổ là "điểm phần trăm"; nhắc nợ xấu cho ngành thép;
+  số gốc viết kiểu Anh. Mỗi câu mất khoảng 15–20 giây (hai lượt DeepSeek).
+- **Kiểm:** 12 test mới (`tests/test_web_chat.py`: độ rộng, đóng góp vào rổ, kỹ thuật, cùng ngành đều có ca tính tay;
+  bộ công cụ của bot không đổi; hạn mức 20 câu, lỗi và câu ngoài phạm vi không mất lượt; chặn quyền; công cụ chạy trên
+  DB thật với mạng bị chặn). Trình duyệt tại máy ở 1440×900 (sáng, tối) và 375×812: Back và Forward, nút mở mã, gợi ý
+  theo mã đang mở, console không lỗi. 109 test web và trợ lý qua.
