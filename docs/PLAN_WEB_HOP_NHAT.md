@@ -654,7 +654,7 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 |---|---|---|
 | 1 | Bấm vào mã chứng khoán thì bảng hiện ra nhỏ quá: cho to ra 3/5 màn hình | **Xong tại máy** (D115) |
 | 2 | Định giá và giá mục tiêu lên đầu, khoảng 4–5 dòng, rồi mới tới dòng tiền; làm nổi bật phần so sánh với công ty chứng khoán | **Xong tại máy** (D115) |
-| 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | Chờ chốt: ai bấm, hạn mức, độ dài |
+| 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | **Xong tại máy** (D116): mọi tài khoản đã duyệt, 5 lượt mỗi ngày, khoảng 500 từ |
 | 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | Chờ chốt kiểu tách |
 | 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | Đã có đủ liên kết, chờ làm cùng việc 4 |
 | 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | Chờ chốt "học theo TCBS" là học điểm nào |
@@ -672,9 +672,25 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 - Không có số nào tính thêm: khối đầu dùng đúng hai đường `/dinh-gia` và `/ctck` đã có, gọi lần lượt để máy chủ không
   định giá hai lần. Câu phương pháp đầy đủ (liệt kê từng báo cáo) chuyển xuống phần định giá chi tiết.
 
+### Việc 3: nút sinh báo cáo AI bản ngắn (đã làm)
+
+Người dùng chốt: "mọi người được duyệt đều được bấm, giới hạn 5 lần/tk, báo cáo đó giúp phân tích tổng quan cả
+cty, nhận định về mã đó sâu sắc. Khoảng 500 từ".
+
+- Khối "Báo cáo AI" trên tờ mã cổ phiếu, ngay sau mục so với công ty chứng khoán: bản mới nhất của mã (dùng chung
+  cho mọi người), giờ sinh, mô hình, số từ, và nút "Sinh báo cáo AI" / "Viết lại báo cáo" kèm số lượt còn trong ngày.
+- Hai đường mới: `GET` và `POST /api/co-phieu/{ma}/bao-cao-ai` (`valuation/services/web_ai_report.py`). POST đòi
+  tài khoản đã duyệt và gửi từ chính trang; mỗi người chỉ một báo cáo đang viết một lúc.
+- Gói số liệu đưa cho AI giống bản dài của web cũ (kiểm số học BCTC, công ty chứng khoán, thị trường, cổ tức, cổng
+  công bố), thêm dòng tiền của tờ mã và vài phần trăm Python tính sẵn. Kết quả chưa được công bố thì AI không thấy
+  giá trị hợp lý của mô hình. Dữ liệu không đổi kể từ bản đã lưu thì dùng lại, không gọi AI, không mất lượt.
+- Hạn mức đếm trên nhật ký `web_audit` (việc `bao_cao_ai`, ngày theo giờ Việt Nam); lỗi không mất lượt. Bản báo
+  cáo lưu ở `.deepseek_report_cache/ban_ngan/{MÃ}.json` (trên VPS là volume, còn qua deploy). Không đổi schema.
+- Bản dài của web cũ vẫn đọc được ở cuối phần định giá chi tiết (đổi tên mục thành "Báo cáo AI bản dài").
+
 ### Dữ kiện đã tìm cho các việc còn lại
 
-- **Báo cáo AI (việc 3):** bản đầy đủ do `valuation/report/verified_summary.py` sinh bằng DeepSeek (trần 8.000 token
+- **Báo cáo AI (việc 3, đã làm ở trên):** bản đầy đủ do `valuation/report/verified_summary.py` sinh bằng DeepSeek (trần 8.000 token
   đầu ra), lưu ở `.deepseek_report_cache` (phiên bản `v8`); web mới chỉ đọc bản đã lưu (`web_valuation.ai_report`), nút
   sinh hiện chỉ có ở web cũ. Mỗi lần sinh tốn tiền API, nên cần hạn mức.
 - **Liên hệ (việc 5):** trang ôn thi của người dùng chạy ở `luyenthicchn-dist.vercel.app` (địa chỉ

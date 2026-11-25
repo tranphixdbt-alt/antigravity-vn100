@@ -410,6 +410,22 @@ def test_consensus_context_excludes_stale_and_future_reports():
     assert context["brokers"] == ["SSI"]
 
 
+def test_consensus_context_survives_unreachable_broker_site():
+    """Trang tóm tắt CTCK không vào được (httpx báo ConnectError, không phải OSError) thì chỉ ghi cảnh báo, như
+    docstring hứa; trước 25/11/2026 lỗi này làm sập cả lượt sinh báo cáo AI (D116)."""
+    import httpx
+
+    def unreachable(ticker, timeout):
+        raise httpx.ConnectError("không vào được trang")
+
+    context = collect_consensus_context(
+        ticker="AAA", blended_fv=25_000, current_price=20_000, fetcher=unreachable
+    )
+
+    assert context["available"] is False
+    assert "Không tải được tóm tắt CTCK mới" in (context.get("collection_warning") or "")
+
+
 def test_persist_consensus_synthesis_is_idempotent():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

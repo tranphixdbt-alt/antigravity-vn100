@@ -19,6 +19,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import httpx
 from sqlalchemy.exc import SQLAlchemyError
 
 from valuation.config import load_defaults, settings
@@ -44,6 +45,9 @@ _CONTEXT_EXCEPTIONS = (
     KeyError,
     AttributeError,
 )
+# Tải tóm tắt CTCK qua mạng: httpx báo lỗi kết nối / mã HTTP bằng lớp riêng (không phải OSError), trước 25/11/2026
+# lọt qua và làm sập cả lượt sinh báo cáo thay vì chỉ ghi cảnh báo (D116).
+_FETCH_EXCEPTIONS = (*_CONTEXT_EXCEPTIONS, httpx.HTTPError)
 _AI_RESPONSE_EXCEPTIONS = (
     OSError,
     RuntimeError,
@@ -630,7 +634,7 @@ def collect_consensus_context(
             fetcher = fetch_report_summaries
         try:
             summaries = list(fetcher(ticker, timeout=timeout) or [])
-        except _CONTEXT_EXCEPTIONS as exc:
+        except _FETCH_EXCEPTIONS as exc:
             warnings.append(f"Không tải được tóm tắt CTCK mới: {exc}")
 
     comparison = None

@@ -322,4 +322,7 @@ Mô tả đầy đủ ở `valuation/engine/flag_descriptions.py`; level dưới
   `.env` trên VPS (chủ máy tự điền, đã có từ 25/11/2026). Sao lưu: `scripts/backup_web_user_db.py` chạy 23:00 mỗi
   ngày trong `vn100-worker` (job `web-user-backup` của `scheduler.py`, D112), giữ 14 bản ở `/data/web_user/sao_luu/`,
   cùng ổ với tệp gốc nên không chống được mất cả ổ; job lỗi chỉ để lại dòng `exit=1` trong nhật ký worker.
+- **Báo cáo AI bản ngắn (D116):** `services/web_ai_report.py`, nút trên tờ mã; mỗi tài khoản 5 lượt sinh mới mỗi
+  ngày (`web.ai_report` trong `config/defaults.yaml`), đếm trên `web_audit`; bản lưu ở
+  `.deepseek_report_cache/ban_ngan/`. Đổi câu lệnh cho AI thì tăng `PROMPT_VERSION` để bản cũ không bị dùng lại.
 - **Dự án chứng quyền** nhận mã bằng `git push vps main` từ máy Mac (chỉ ở mạng nhà); VPS tự deploy trong 3 phút.

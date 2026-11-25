@@ -474,3 +474,13 @@ td .nut-nho { min-height: 34px; }
   .dgd-hai { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 32px; }
   .dgd-ck { padding-top: 0; border-top: 0; padding-left: 32px; border-left: 1px solid var(--ke); }
 }
+
+/* ---------- Báo cáo AI bản ngắn trên tờ mã (D116) ---------- */
+.ai-than { display: grid; gap: 12px; padding-bottom: 16px; }
+.ai-chua { font-size: 14px; color: var(--muc-2); }
+.ai-tin { font-size: 13px; color: var(--muc); }
+.ai-nut { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.ai-nut .nut-chinh { height: 44px; padding-inline: 20px; font-size: 15px; }
+.ai-nut .nut-chinh[disabled] { opacity: .55; cursor: default; transform: none; }
+.ai-nut p { flex: 1 1 220px; font-size: 13px; color: var(--muc-2); }
+

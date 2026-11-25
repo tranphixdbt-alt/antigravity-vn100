@@ -113,3 +113,7 @@ git diff --cached --name-only
   `WEB_USER_DB_URL`, `WEB_CW_BASE_URL` là địa chỉ trong mạng Docker, không phải bí mật, đặt được trong compose.
 - Bản sao lưu `web_user-YYYYMMDD.db` chứa đúng dữ liệu của `web_user.db`: không commit, không gửi đi; job sao lưu
   chỉ in số dòng từng bảng ra nhật ký.
+- Báo cáo AI bản ngắn (D116): container `btinvest-web` dùng `DEEPSEEK_API_KEY` của `.env` chung. Lỗi của DeepSeek chỉ
+  báo mã lỗi ra giao diện, không chép thông điệp gốc (có thể chứa đuôi khóa). Gửi cho DeepSeek đúng gói số liệu của
+  mã như bản dài, không có email hay thông tin tài khoản; người bấm chỉ ghi `user_id` vào `web_audit`. Mỗi tài khoản
+  5 lượt mỗi ngày để chặn tốn tiền API. Tệp `.deepseek_report_cache/` đã nằm trong `.gitignore`.

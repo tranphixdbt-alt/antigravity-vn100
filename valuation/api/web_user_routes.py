@@ -1,5 +1,5 @@
-"""Route tài khoản (lát 5a), danh mục (lát 5b) và cảnh báo (lát 5c) của web hợp nhất, mục 13 của
-docs/PLAN_WEB_HOP_NHAT.md.
+"""Route tài khoản (lát 5a), danh mục (lát 5b), cảnh báo (lát 5c) và báo cáo AI bản ngắn (lát 7, D116) của web
+hợp nhất, mục 13 và 15 của docs/PLAN_WEB_HOP_NHAT.md.
 
 Đây là các route GHI của web mới. Chúng chỉ ghi vào tệp dữ liệu người dùng (`web_user.db`), không đụng DB
 định giá, và chỉ nhận yêu cầu gửi từ chính trang web. Tài khoản: chỉ Quản trị ghi. Danh mục: mỗi người
@@ -25,7 +25,14 @@ from valuation.api.web_deps import (
 from valuation.config import load_defaults, settings
 from valuation.db.session import get_read_db
 from valuation.db.web_user import VAI_QUAN_TRI, WebUser
-from valuation.services import web_alerts, web_portfolio, web_users
+from valuation.services import (
+    web_ai_report,
+    web_alerts,
+    web_flow,
+    web_portfolio,
+    web_users,
+    web_valuation,
+)
 
 router = APIRouter()
 
@@ -201,3 +208,36 @@ def them_muc_gia(body: LevelBody, user: ApprovedUser, udb: UserDb) -> dict:
 def xoa_muc_gia(level_id: LevelId, user: ApprovedUser, udb: UserDb) -> dict:
     """Xóa (xóa mềm) một mức giá của chính mình."""
     return _alert_call(web_alerts.delete_level, udb, user, level_id)
+
+
+# ---------- Báo cáo AI bản ngắn (lát 7, D116) ----------
+TickerPath = Annotated[str, Path(pattern="^[A-Za-z0-9]{3,4}$")]
+
+
+def _stock(ma: str, db: Session) -> str:
+    """Mã hợp lệ và có trong bảng `tickers` (cùng điều kiện với các route định giá của web_main)."""
+    ticker = web_flow.normalize_ticker(ma)
+    if ticker is None:
+        raise HTTPException(status_code=422, detail="Mã không hợp lệ.")
+    if not web_valuation.known(db, ticker):
+        raise HTTPException(status_code=404, detail="Không có mã này trong dữ liệu.")
+    return ticker
+
+
+@router.get("/api/co-phieu/{ma}/bao-cao-ai")
+def bao_cao_ai_ngan(
+    ma: TickerPath, user: ApprovedUser, udb: UserDb, db: ReadDb
+) -> dict:
+    """Bản báo cáo AI ngắn đã lưu của mã (nếu có) và số lượt sinh mới người này còn trong ngày."""
+    return web_ai_report.status(udb, user, _stock(ma, db))
+
+
+@router.post("/api/co-phieu/{ma}/bao-cao-ai", dependencies=[Depends(same_origin)])
+def sinh_bao_cao_ai(
+    ma: TickerPath, user: ApprovedUser, udb: UserDb, db: ReadDb
+) -> dict:
+    """Sinh bản mới (một lần gọi DeepSeek, trừ một lượt); dữ liệu không đổi thì trả bản cũ, không trừ lượt."""
+    try:
+        return web_ai_report.generate(db, udb, user, _stock(ma, db))
+    except web_ai_report.AiReportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc

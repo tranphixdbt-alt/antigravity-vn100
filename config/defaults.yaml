@@ -777,6 +777,13 @@ web:
     error_cache_seconds: 10       # dịch vụ đó lỗi thì nhớ lỗi ngần này giây, không để mọi người cùng chờ hết hạn
     poll_seconds: 60              # trình duyệt hỏi tin mới mỗi phút, như GIAY_HOI_CANH_BAO của web chứng quyền
     max_levels: 50                # số mức giá mỗi người được đặt, như SO_MUC_TOI_DA của web chứng quyền
+  ai_report:                      # nút "Sinh báo cáo AI" bản ngắn trên tờ mã (lát 7, D116, valuation/services/web_ai_report.py)
+    daily_limit: 5                # lượt sinh mới mỗi tài khoản mỗi ngày (giờ VN), người dùng chốt 25/11/2026; dùng lại bản cũ không tính lượt
+    target_words: 500             # độ dài người dùng chốt 25/11/2026: tổng quan công ty + nhận định về mã
+    max_output_tokens: 2500       # ~500 từ tiếng Việt cần khoảng 1.000–1.500 token; dư để không bị cắt (bị cắt thì báo lỗi, không tính lượt)
+    temperature: 0.3
+    timeout_seconds: 120          # chờ DeepSeek tối đa; quá thì báo lỗi, không tính lượt
+    dir_name: ban_ngan            # thư mục con trong .deepseek_report_cache, tách khỏi tệp v8_*.json của bản dài
   backup:                         # sao lưu tệp dữ liệu người dùng mỗi ngày (lát 6, scripts/backup_web_user_db.py)
     dir_name: sao_luu             # thư mục con nằm cạnh web_user.db
     keep: 14                      # số bản hằng ngày giữ lại; bản cũ hơn bị xóa

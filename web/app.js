@@ -56,7 +56,7 @@ const docPhieu = (v) => (v === 1 ? "gom" : v === -1 ? "xả" : v === 0 ? "trung 
 // Trạng thái của trang: chế độ loại/gồm thỏa thuận, tổng quan, danh sách mã, bộ lọc, mã đang mở, lựa chọn biểu đồ
 const S = { cheDo: "loai", tq: null, ds: [], loc: { nhan: "tat", nganh: null }, ma: null, bd: null, xem: "dt", xh: null, tt: null, vm: null,
   loai: null, cq: null, cqLoc: "NÊN XEM XÉT", cqTim: "", cqHien: 0, etf: null, etfXem: "ck", ps: null, trangCu: null,
-  dm: null, cb: null, tin: null, tinLoi: null };
+  dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null };
 const tenMa = (ma) => { const r = S.ds.find((x) => x.ma === ma); return r ? [r.ten, r.nganh].filter(Boolean).join(" · ") : ""; };
 const dangToi = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
 
@@ -269,6 +269,7 @@ function veMa(d) {
       <div class="ghi le"><p>${esc(d.phieu.rvol.chip || "")}</p>${d.huy_hieu.length ? `<ul class="huy">${d.huy_hieu.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</div></section>
     ${khoiBieuDo()}
     <section class="khoi" id="khoi-ctck"><h3 class="le">So với công ty chứng khoán</h3><div class="dang-ve le">Đang nạp…</div></section>
+    <section class="khoi" id="khoi-ai"><h3 class="le">Báo cáo AI</h3><div class="dang-ve le">Đang nạp…</div></section>
     <section class="khoi sau"><h3 class="le">Số liệu chi tiết về dòng tiền</h3>
       ${mr("Bảng phiếu", bang(d.bang_phieu) || "<p>Chưa có số.</p>", false)}
       ${mr("Dòng tiền theo cửa sổ 5, 20, 60 phiên", bang(d.bang_cua_so) || "<p>Chưa có số.</p>", false)}
@@ -326,7 +327,7 @@ function veDinhGia(d) {
   const wacc = Array.isArray(d.wacc) && d.wacc.length ? dl(d.wacc) : khongApDung(d.wacc);
   return `<h3 class="le">Định giá chi tiết</h3><p class="kl-gio le">Phương pháp: ${esc(d.phuong_phap_chu || "chưa có")}${d.phuong_phap_chu ? "." : ""} Chế độ ${esc(d.che_do)}.</p>${khoiCo}
     ${mr("Kịch bản", rieng + kb, false)}${mr("Độ nhạy", rieng + bangNhiet(d.do_nhay), false)}${mr("Dự phóng 5 năm", dp, false)}${mr("Giả định dự phóng", gd, false)}${mr("Chi phí vốn", wacc, false)}
-    ${mrNap("Báo cáo tài chính", "tai-chinh")}${mrNap("Cổ tức và quyền mua", "co-tuc")}${mrNap("Phân tích AI", "ai")}`;
+    ${mrNap("Báo cáo tài chính", "tai-chinh")}${mrNap("Cổ tức và quyền mua", "co-tuc")}${mrNap("Báo cáo AI bản dài (sinh ở web cũ)", "ai")}`;
 }
 // Khối đầu tờ mã: định giá và giá mục tiêu trong vài dòng. d = /dinh-gia; c = /ctck (undefined: đang nạp, null: lỗi).
 // Cùng số và cùng câu chữ với phần chi tiết bên dưới, chỉ đưa lên đầu; không có số nào tính thêm ở đây.
@@ -405,13 +406,42 @@ async function napMuc(hop, loai) {
   try { const d = await api(chung ? loai : `/api/co-phieu/${encodeURIComponent(ma)}/${loai}`); if ((!chung && S.ma !== ma) || !cho.isConnected) return; cho.innerHTML = VE_MUC[loai](d); }
   catch (e) { delete hop.dataset.xong; if (cho.isConnected) cho.innerHTML = `<p class="loi">Không nạp được. ${esc(e.message)}</p>`; }
 }
+/* ---------- Báo cáo AI bản ngắn (lát 7, D116): mọi tài khoản đã duyệt bấm được, mỗi người 5 lượt sinh mới mỗi ngày ---------- */
+// giờ Việt Nam của mốc UTC có "Z" do máy chủ trả, kiểu "21:40 25/11/2026"
+const gioVN = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }); };
+// ghi = { loi } hoặc { tin }: câu báo đặt trên đầu khối
+function veBaoCaoAI(d, ghi) {
+  const bc = d.bao_cao, dangViet = S.aiDangViet === d.ma, het = d.con_lai <= 0;
+  const than = bc
+    ? `<p class="kl-gio">Bản lúc ${esc(gioVN(bc.tao_luc))}${bc.mo_hinh ? `, ${esc(bc.mo_hinh)}` : ""}, khoảng ${so(bc.so_tu)} từ. Viết từ số liệu của web lúc đó${bc.nguon && bc.nguon.gia_den ? ` (giá đến ${ngay(bc.nguon.gia_den)})` : ""}, có thể cũ hơn số đang hiện ở trên.</p><div class="vb">${mdNho(bc.van_ban)}</div>`
+    : `<p class="ai-chua">Chưa có báo cáo AI cho ${esc(d.ma)}. Báo cáo khoảng ${so(d.so_tu)} từ: tổng quan công ty và nhận định về mã, viết từ đúng số liệu của web.</p>`;
+  const nut = `<div class="ai-nut"><button class="nut-chinh" type="button" id="ai-sinh"${het || dangViet ? " disabled" : ""}>${dangViet ? "Đang viết…" : bc ? "Viết lại báo cáo" : "Sinh báo cáo AI"}</button>
+    <p>${dangViet ? "Thường mất 20 đến 60 giây; có thể đóng tờ, báo cáo vẫn được viết xong." : het ? `Bạn đã dùng hết ${so(d.gioi_han)} lượt hôm nay; lượt mới có lại sau 0 giờ.` : `Còn ${so(d.con_lai)}/${so(d.gioi_han)} lượt hôm nay.`} Dữ liệu chưa đổi thì dùng lại bản cũ, không mất lượt.</p></div>`;
+  const bao = ghi && ghi.loi ? `<p class="loi">${esc(ghi.loi)}</p>` : ghi && ghi.tin ? `<p class="ai-tin">${esc(ghi.tin)}</p>` : "";
+  return `<h3 class="le">Báo cáo AI</h3><div class="ai-than le">${bao}${than}${nut}<p class="kl-gio">AI chỉ viết lời từ số liệu của web, không phải khuyến nghị đầu tư.</p></div>`;
+}
+async function napBaoCaoAI(ma) {
+  const k = $("#khoi-ai", to); if (!k) return;
+  try { const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/bao-cao-ai`); if (S.ma !== ma || !k.isConnected) return; S.ai = d; k.innerHTML = veBaoCaoAI(d); }
+  catch (e) { if (S.ma === ma && k.isConnected) k.innerHTML = `<h3 class="le">Báo cáo AI</h3><p class="loi le">Không nạp được. ${esc(e.message)}</p>`; }
+}
+async function sinhBaoCaoAI() {
+  const ma = S.ma, k = $("#khoi-ai", to); if (!ma || !k || !S.ai || S.ai.ma !== ma || S.aiDangViet === ma) return;
+  S.aiDangViet = ma; k.innerHTML = veBaoCaoAI(S.ai);
+  let d = null, loi = null;
+  try { d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/bao-cao-ai`, {}); } catch (e) { loi = e; }
+  if (S.aiDangViet === ma) S.aiDangViet = null;
+  if (d) S.ai = d; else if (loi && loi.ma === 429 && S.ai && S.ai.ma === ma) S.ai = { ...S.ai, con_lai: 0 };
+  const con = $("#khoi-ai", to); if (S.ma !== ma || !con || !S.ai || S.ai.ma !== ma) return;
+  con.innerHTML = veBaoCaoAI(S.ai, d ? (d.dung_lai ? { tin: "Dữ liệu chưa đổi kể từ bản này nên dùng lại, không mất lượt." } : null) : { loi: loi.message });
+}
 async function moMa(ma, tu) {
   S.ma = ma; S.loai = "cp";
   moTo(`${dauTo(ma, tenMa(ma), "")}<div class="to-than"><div class="dang-ve">Đang nạp ${esc(ma)}…</div></div>`, tu);
   try {
     const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/dong-tien?che_do=${S.cheDo}`);
     if (S.ma !== ma) return;
-    $(".to-trong", to).innerHTML = veMa(d); veBieuDo(); napDinhGia(ma);
+    $(".to-trong", to).innerHTML = veMa(d); veBieuDo(); napDinhGia(ma); napBaoCaoAI(ma);
   } catch (e) { if (S.ma === ma) $(".to-than", to).innerHTML = `<p class="loi le">Không nạp được ${esc(ma)}. ${esc(e.message)}</p>`; }
 }
 
@@ -1073,6 +1103,7 @@ app.addEventListener("click", (e) => {
   if (e.target.closest("#nut-dm")) { dongNoi(); moDanhMuc(); return; }
   if (e.target.closest("#nut-cb")) { dongNoi(); moCanhBao(); return; }
   if (e.target.closest("#cb-tai")) { napCanhBao(); return; }
+  if (e.target.closest("#ai-sinh")) { sinhBaoCaoAI(); return; }
   const cbT = e.target.closest("[data-cb-tin]"); if (cbT) { moTin(cbT.dataset.cbTin); return; }
   if (e.target.closest("#cb-da-xem")) { ghiKho("chua_xem", "[]"); veChuong(); veTinCB(); return; }
   // bật âm thanh: kêu thử (cú bấm này cũng là lần bấm để trình duyệt cho phát tiếng) và xin quyền thông báo

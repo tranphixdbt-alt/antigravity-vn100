@@ -1319,3 +1319,33 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   64–65px, console không lỗi; các luồng Back của D114 chạy lại vẫn đúng. Test Python của web vẫn qua (không đổi máy
   chủ). Số trên máy Mac là số cũ (nhãn "Chưa xếp hạng" do DB cũ), chưa xem với số thật trên VPS.
 - **Chưa làm:** bốn việc còn lại; chưa đẩy lên VPS (cả D114 lẫn D115 mới ở máy).
+
+### D116 — Web hợp nhất: nút sinh báo cáo AI bản ngắn trên tờ mã (2026-11-25, người dùng « mọi người được duyệt đều được bấm, giới hạn 5 lần/tk … khoảng 500 từ »)
+
+- **Người dùng chốt** (trả lời câu hỏi có đề xuất của tôi): mọi tài khoản đã duyệt bấm được, mỗi tài khoản 5 lượt mỗi
+  ngày, báo cáo khoảng 500 từ, "phân tích tổng quan cả công ty, nhận định về mã đó sâu sắc".
+- **Đã làm:** `valuation/services/web_ai_report.py`, hai đường `GET`/`POST /api/co-phieu/{ma}/bao-cao-ai` trong
+  `web_user_routes.py`, khối "Báo cáo AI" trên tờ mã, cấu hình `web.ai_report`. Chi tiết ở mục 15 của kế hoạch.
+- **Không bịa số:** gói số liệu lấy đúng hàm của bản dài (`run_deterministic_checks`, `collect_consensus_context`,
+  `collect_market_context`, `corporate_actions_context`, `_compact_payload`), thêm dòng tiền của tờ mã. Câu lệnh cấm
+  số ngoài gói, cấm tự tính phần trăm (Python tính sẵn `tinh_san`: giá tham chiếu ÷ thị giá − 1, cùng định nghĩa upside
+  của web), cấm nêu giá trị hợp lý của mô hình khi chưa được công bố. Không có bước Python đối chiếu từng con số trong
+  bài với gói dữ liệu (bản dài cũng không có): còn phụ thuộc vào việc AI tuân lệnh.
+- **Tôi tự quyết:** bản báo cáo dùng chung theo mã (người sau thấy bản người trước sinh); dữ liệu không đổi thì dùng lại,
+  không mất lượt; lỗi không mất lượt; mô hình chọn như bản dài (thường `deepseek-v4-flash`, dữ liệu có lỗi hoặc từ hai
+  cảnh báo trở lên thì `deepseek-v4-pro`); lưu bằng tệp và đếm lượt trên `web_audit` để KHÔNG phải đổi schema; giữ mục
+  bản dài của web cũ, đổi tên thành "Báo cáo AI bản dài (sinh ở web cũ)".
+- **Thử thật tại máy (DB máy Mac cũ, giá đến 16/11):** lần 1 ra 618 từ, AI tự chia ra "upside khoảng 37%", gọi trung vị
+  là "trung bình", viết "lớn nhất Việt Nam" và mã cờ STALE_PRICE. Siết câu lệnh (`ngan-v2`), thêm `tinh_san`, bỏ giá trị
+  hợp lý của mô hình khỏi gói công ty chứng khoán khi chưa công bố; lần 2 ra 455 từ, dùng đúng 36,9% Python tính và
+  gọi đúng trung vị. Mỗi lần khoảng 13.000 token vào, 1.000–1.250 token ra.
+- **Lỗi có sẵn lộ ra và đã sửa tận gốc:** `collect_consensus_context` hứa "nguồn web tạm lỗi thì dùng DB và cảnh báo"
+  nhưng không bắt lỗi của httpx (không phải OSError), nên trang 24hmoney không vào được làm sập cả lượt sinh báo cáo AI
+  (cả bản dài của web cũ). Viết test tái hiện trước (`test_consensus_context_survives_unreachable_broker_site`), rồi bắt
+  thêm `httpx.HTTPError` đúng ở chỗ tải trang.
+- **Kiểm:** 15 test mới (hạn mức tính tay 4, 3, 2, 1, 0 rồi chặn; mốc 0 giờ Việt Nam; dùng lại không mất lượt; lỗi không
+  mất lượt; chặn chưa đăng nhập, chưa duyệt, thiếu Origin, mã lạ, bấm hai lần; lời gọi DeepSeek đúng một lần, không thử
+  lại; gói dữ liệu thật áp cổng công bố); hai phép tính tay của tôi trong test ban đầu sai và đã được test bắt. 110 test
+  web và báo cáo AI qua; ruff, black, mypy sạch trên tệp mới.
+- **Chưa kiểm:** chưa chạy trên VPS (số thật, thư viện và quyền ghi thư mục đệm trong container `btinvest-web`); chưa
+  có test tự động cho JavaScript của khối mới.
