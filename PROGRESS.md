@@ -5,6 +5,7 @@
 
 ## Đang chờ
 
+- [ ] Web hợp nhất lát 7 (yêu cầu 25/11/2026, mục 15 của `docs/PLAN_WEB_HOP_NHAT.md`): còn bốn việc CHỜ CHỐT rồi mới làm, hỏi từng câu: nút sinh báo cáo AI bản ngắn (ai bấm, hạn mức), trang chủ tách từng phần, biểu tượng Zalo / Facebook / liên hệ, góc chat AI con ếch ("học theo TCBS" là học điểm nào). D114 (nút Back) và D115 (tờ mã) mới ở máy, CHƯA đẩy lên VPS
 - [ ] Web hợp nhất btinvest.vn: lát 6: web mới ĐANG CHẠY tại `https://btinvest.vn` từ tối 25/11/2026, đã có Quản trị đầu tiên và sao lưu `web_user.db` 23:00 mỗi ngày (D111, D112). Còn: B6 người dùng thử thật (so số từng mã với web cũ, điện thoại, âm thanh, thông báo); B8 đo trong giờ khớp lệnh và chạy lại 9 test trượt; xem lần sao lưu theo lịch đầu tiên (23:00 ngày 25/11) có `exit=0`; `Dockerfile` trên VPS khác bản sao 4 dòng; nút Back mới chỉ thử trên trình duyệt máy tính và cỡ điện thoại giả lập, chưa thử vuốt lùi trên điện thoại thật
 - [ ] Web hợp nhất, cảnh báo: chỉ báo khi web đang mở (người dùng chốt); chưa nghe thử âm thanh và chưa thử thông báo của trình duyệt trên điện thoại thật; mức giá tự đặt đang riêng từng người, Quản trị không xem (mặc định của kế hoạch, chưa hỏi lại) (D108)
 - [ ] Web hợp nhất, danh mục: thước và lãi lỗ chưa cùng thời điểm giá (thước theo đợt định giá hoặc lần quét, lãi lỗ theo giá trực tiếp; đã ghi ở chân trang); cổ tức bằng cổ phiếu và chia tách chưa tự điều chỉnh; hợp đồng hết hạn phải tự ghi lệnh đóng (D107)
@@ -52,6 +53,7 @@
 - [x] Web hợp nhất lát 1: API chỉ đọc + giao diện thật cho tìm mã và dòng tiền 100 mã, chạy tại máy cổng 8600; 8 test mới, 95 test qua (D102)
 - [x] Web hợp nhất lát 2: định giá, kịch bản, độ nhạy, dự phóng, giả định, WACC, báo cáo tài chính, công ty chứng khoán, cổ tức, báo cáo AI đã lưu của từng mã; 5 test mới, thử VRE, VCB, SSI, BVH, FPT (D103)
 - [x] Web hợp nhất lát 3: tab Hôm nay (thị trường, vĩ mô, bản tin, lịch quyền 90 ngày) và xếp hạng VN100 + tích sản trong tab Cổ phiếu; 5 test mới, 18 test web qua (D104)
+- [x] Web hợp nhất lát 7, tờ mã (25/11/2026): tờ chi tiết rộng 3/5 màn hình; định giá và giá mục tiêu (trung vị công ty chứng khoán) lên đầu, rồi dòng tiền; "So với công ty chứng khoán" thành mục riêng mở sẵn; chỉ đổi bố trí, không đổi số; thử trên trình duyệt tại máy (D115)
 - [x] Web hợp nhất, nút Back (25/11/2026): chuyển tab, vuốt sang tab khác và mở tờ chi tiết nay là bước lịch sử, Back đóng tờ rồi về tab trước thay vì rời web; đóng tờ bằng nút thì lùi đúng một bước; địa chỉ có sẵn `?ma=` vẫn đóng tại chỗ; thử trên trình duyệt ở cỡ máy tính và điện thoại, chưa có test tự động cho phần JavaScript (D114)
 - [x] Web hợp nhất, hai lỗi nhỏ thấy sau khi lên VPS (25/11/2026): đổi `#tab` trên địa chỉ khi trang đang mở nay chuyển tab (tên lạ thì giữ nguyên); có biểu tượng trang vẽ từ dấu hiệu BT của web (`favicon.ico`, `apple-touch-icon.png`); 1 test mới, 71 test web qua (D113)
 - [x] Web hợp nhất lát 6, sao lưu và Quản trị đầu tiên (25/11/2026): người dùng tự đặt `WEB_ADMIN_EMAILS`; job `web-user-backup` 23:00 mỗi ngày trong `vn100-worker`, chạy tay hai lần ra một bản đọc lại đủ dòng; cả năm tab của web mới ra số thật trên VPS (D112)

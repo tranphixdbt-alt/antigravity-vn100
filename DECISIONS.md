@@ -1297,3 +1297,25 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   thái tờ sau từng bước; console không có lỗi. 71 test web qua (phần Python không đổi).
 - **Hạn chế:** chưa có test tự động cho JavaScript của giao diện, nên phần này chỉ được kiểm bằng tay; chưa thử vuốt
   lùi trên điện thoại thật (Safari iOS, Chrome Android).
+
+### D115 — Web hợp nhất: tờ mã rộng 3/5 màn hình, định giá và giá mục tiêu lên đầu (2026-11-25, người dùng nhắn sáu yêu cầu mới)
+
+- **Người dùng yêu cầu** (sau khi xem bản trên máy tính): bảng hiện ra khi bấm mã "nhỏ quá, cho to ra 3/5 màn hình";
+  "đưa định giá và giá mục tiêu lên đầu, khoảng 4–5 dòng, sau đó mới tới dòng tiền, làm nổi bật phần so sánh với công
+  ty chứng khoán". Kèm bốn việc khác (nút sinh báo cáo AI bản ngắn, trang chủ tách từng phần, biểu tượng Zalo và
+  Facebook và liên hệ, góc chat AI con ếch học theo TCBS): ghi ở mục 15 của `docs/PLAN_WEB_HOP_NHAT.md`, hỏi từng câu
+  rồi mới làm.
+- **Đã làm (`web/app.js`, `web/app.css`; không đụng máy chủ, không đổi số nào):** chi tiết ở mục 15 của kế hoạch. Tờ
+  rộng `max(560px, 60vw)`; khối đầu gồm câu giá trị hợp lý so với thị giá, thước, nhãn, và bên cạnh là trung vị công
+  ty chứng khoán với dải giá mục tiêu; "So với công ty chứng khoán" thành mục riêng mở sẵn sau biểu đồ.
+- **Tôi tự quyết:** "giá mục tiêu" hiểu là giá mục tiêu của công ty chứng khoán (trung vị và khoảng), đặt cạnh giá
+  trị hợp lý của mô hình; áp bề rộng mới cho mọi loại tờ vì chung một khung; câu phương pháp dài chuyển xuống phần
+  chi tiết để khối đầu gọn.
+- **Lỗi lộ ra khi thử và đã sửa:** (1) tên lớp CSS của khối mới (`tt`) trùng với lớp đang dùng cho ký hiệu "trung
+  tính", làm ba dòng phiếu giãn cao 155px: đổi thành `dgd`; (2) gõ lại đúng địa chỉ đang mở (có `?ma=`) làm tờ bị
+  đóng, do bản sửa nút Back (D114) coi bước không có trạng thái là "đóng tờ": nay giữ tờ khi `?ma=` trên địa chỉ vẫn
+  là mã của tờ.
+- **Kiểm:** trình duyệt tại máy ở 1440×900 (tờ rộng 864px, đúng 60%) và 375×812; thứ tự các khối, ba dòng phiếu cao
+  64–65px, console không lỗi; các luồng Back của D114 chạy lại vẫn đúng. Test Python của web vẫn qua (không đổi máy
+  chủ). Số trên máy Mac là số cũ (nhãn "Chưa xếp hạng" do DB cũ), chưa xem với số thật trên VPS.
+- **Chưa làm:** bốn việc còn lại; chưa đẩy lên VPS (cả D114 lẫn D115 mới ở máy).

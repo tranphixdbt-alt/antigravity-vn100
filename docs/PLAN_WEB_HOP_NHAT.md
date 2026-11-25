@@ -644,3 +644,52 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 - **Nút Back (người dùng chốt « Có. Sửa back », D114):** trước đó chuyển tab và mở tờ chi tiết chỉ thay địa chỉ tại
   chỗ nên Back rời khỏi web. Nay mỗi lần chủ động chuyển tab, mỗi lần vuốt sang tab khác và mỗi lần mở tờ là một
   bước lịch sử: Back đóng tờ, rồi về tab trước; hết các bước của web mới rời web. Forward mở lại được.
+
+## 15. Lát 7: yêu cầu của người dùng sau khi web lên VPS (25/11/2026)
+
+> Người dùng nhắn tối 25/11/2026, sau khi xem bản đang chạy trên máy tính. Sáu việc; việc nào cần người dùng chốt thì
+> hỏi **từng câu một** rồi mới làm. Chưa việc nào trong mục này lên VPS.
+
+| # | Yêu cầu (lời người dùng, rút gọn) | Trạng thái |
+|---|---|---|
+| 1 | Bấm vào mã chứng khoán thì bảng hiện ra nhỏ quá: cho to ra 3/5 màn hình | **Xong tại máy** (D115) |
+| 2 | Định giá và giá mục tiêu lên đầu, khoảng 4–5 dòng, rồi mới tới dòng tiền; làm nổi bật phần so sánh với công ty chứng khoán | **Xong tại máy** (D115) |
+| 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | Chờ chốt: ai bấm, hạn mức, độ dài |
+| 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | Chờ chốt kiểu tách |
+| 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | Đã có đủ liên kết, chờ làm cùng việc 4 |
+| 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | Chờ chốt "học theo TCBS" là học điểm nào |
+
+### Việc 1 và 2: tờ chi tiết mã (đã làm, chỉ đổi bố trí, không đổi số)
+
+- Tờ chi tiết ở màn hình rộng từ 960px: rộng `max(560px, 60vw)` thay cho 560px; cột nội dung tối đa 980px. Áp dụng cho
+  mọi loại tờ (mã, chứng quyền, quỹ, hợp đồng, Danh mục, Cảnh báo, Tài khoản) vì dùng chung một khung.
+- Thứ tự mới của tờ mã cổ phiếu: (1) **định giá và giá mục tiêu**: câu "Giá trị hợp lý … đ, cao hơn/thấp hơn thị giá
+  …%", thước thị giá so với giá trị hợp lý, nhãn của hệ thống và tên phương pháp; ngay cạnh (màn hình hẹp thì ngay
+  dưới) là "Công ty chứng khoán: trung vị … đ", dải các giá mục tiêu, số báo cáo, khoảng giá và mô hình lệch trung vị
+  bao nhiêu; (2) kết luận dòng tiền và tia khối ngoại; (3) ba phiếu; (4) biểu đồ; (5) **So với công ty chứng khoán**,
+  thành mục riêng mở sẵn (trước đây nằm trong nút mở rộng của phần định giá); (6) số liệu chi tiết về dòng tiền;
+  (7) định giá chi tiết (cờ, kịch bản, độ nhạy, dự phóng, giả định, chi phí vốn, báo cáo tài chính, cổ tức, phân tích AI).
+- Không có số nào tính thêm: khối đầu dùng đúng hai đường `/dinh-gia` và `/ctck` đã có, gọi lần lượt để máy chủ không
+  định giá hai lần. Câu phương pháp đầy đủ (liệt kê từng báo cáo) chuyển xuống phần định giá chi tiết.
+
+### Dữ kiện đã tìm cho các việc còn lại
+
+- **Báo cáo AI (việc 3):** bản đầy đủ do `valuation/report/verified_summary.py` sinh bằng DeepSeek (trần 8.000 token
+  đầu ra), lưu ở `.deepseek_report_cache` (phiên bản `v8`); web mới chỉ đọc bản đã lưu (`web_valuation.ai_report`), nút
+  sinh hiện chỉ có ở web cũ. Mỗi lần sinh tốn tiền API, nên cần hạn mức.
+- **Liên hệ (việc 5):** trang ôn thi của người dùng chạy ở `luyenthicchn-dist.vercel.app` (địa chỉ
+  `onthicchg.btinvest.vn` không mở được từ máy này). Trang đó ghi: Zalo `https://zalo.me/0942037820`, điện thoại
+  0942 037 820, Facebook "BT Tài Chính" (`facebook.com/profile.php?id=61590345622201`), YouTube và TikTok `@bt.invest`,
+  X `@btinvest24`, kèm sẵn hình vẽ từng biểu tượng.
+- **Con ếch (việc 6):** `~/video/luat_ck/video/src/Ech.tsx` (nhân vật Ếch tay mơ, vẽ SVG phẳng kiểu sticker).
+- **Trợ lý có sẵn (việc 6):** `valuation/services/assistant.py` đang chạy cho bot Discord: DeepSeek chỉ chọn công cụ
+  trong danh sách cho phép, Python kiểm tham số rồi chạy công cụ chỉ đọc, DeepSeek viết lời từ đúng dữ liệu đó; tối
+  đa hai lượt DeepSeek mỗi câu, 20 lượt mỗi người mỗi ngày. Bảy công cụ: định giá, xếp hạng, biến động giá, vĩ mô,
+  công ty chứng khoán, tin, báo cáo sáng. Chưa có công cụ "thị trường hôm nay" (nhãn thị trường, bốn trụ cột, ngành
+  mạnh yếu, dòng tiền) và chưa có công cụ cho chứng quyền, ETF, hợp đồng tương lai.
+- **"Học theo TCBS" (việc 6):** tìm trên mạng chưa thấy tài liệu công khai mô tả góc chat AI của TCBS; thứ tìm thấy là
+  TCBS MCP, bộ công cụ dữ liệu chỉ đọc để AI gọi (độ rộng thị trường, mã dẫn dắt, khối ngoại, ngành, tổng quan mã, kỹ
+  thuật, khuyến nghị, tin). Cách chia đó trùng với cách trợ lý của dự án đang làm. Chưa rõ người dùng muốn học điểm
+  nào (cách trả lời, câu hỏi gợi ý sẵn, hay nguồn số liệu): phải hỏi. Số liệu của góc chat lấy từ chính web này, không
+  lấy từ TCBS khi chưa được người dùng cho phép thêm nguồn ngoài.
+

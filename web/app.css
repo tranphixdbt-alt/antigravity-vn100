@@ -303,9 +303,11 @@ td { color: var(--muc); } tr.giua td { font-weight: 700; }
   .ng { grid-template-columns: 170px minmax(120px, 1fr) 110px; column-gap: 20px; }
   .tom { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: end; }
   .dong { grid-template-columns: 150px minmax(110px, 1fr) 120px; column-gap: 20px; }
-  #to { left: auto; width: min(560px, 100%); border-left: 1px solid var(--ke); clip-path: none !important; transform: translateX(100%); transition: transform .36s var(--em); }
+  /* tờ chi tiết chiếm 3/5 chiều ngang màn hình (người dùng yêu cầu 25/11/2026: 560px là nhỏ quá) */
+  #to { left: auto; width: min(100%, max(560px, 60vw)); border-left: 1px solid var(--ke); clip-path: none !important; transform: translateX(100%); transition: transform .36s var(--em); }
   #to.mo { transform: none; } .to-nam { display: none; } .to-dau { touch-action: auto; }
 }
+@media (min-width: 960px) { .to-than { max-width: 980px; } }
 @media (max-width: 959.98px) { #man { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001s !important; animation-delay: 0s !important; transition-duration: .001s !important; transition-delay: 0s !important; } }
 
@@ -456,3 +458,19 @@ td .nut-nho { min-height: 34px; }
 .tk-dong b.trong-dong { display: inline; font-size: inherit; font-weight: 700; }
 .cham { color: var(--vang-chu); }
 .tk-dong.muc-dong { grid-template-columns: minmax(0, 1fr) auto; }
+
+/* ---------- Tờ mã cổ phiếu: khối định giá và giá mục tiêu đứng đầu (D115) ---------- */
+.dgd { padding-block: 20px 18px; border-bottom: 1px solid var(--ke); min-height: 132px; }
+.dgd-hai { display: grid; gap: 18px; }
+.dgd-mh, .dgd-ck { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.dgd h2 { font-size: 25px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+.dgd h3 { font-size: 17px; font-weight: 800; line-height: 1.25; text-wrap: balance; }
+.dgd-ck { padding-top: 16px; border-top: 1px solid var(--ke); }
+.dgd-ck .bieu { display: block; width: 100%; height: auto; }
+.ck-than { display: grid; gap: 10px; padding-bottom: 12px; }
+.ck-than > p { font-size: 13px; color: var(--muc-2); }
+.ck-than .bieu { display: block; width: 100%; max-width: 520px; height: auto; } /* tờ rộng: không phóng dải so sánh quá cỡ chữ */
+@media (min-width: 1200px) {
+  .dgd-hai { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 32px; }
+  .dgd-ck { padding-top: 0; border-top: 0; padding-left: 32px; border-left: 1px solid var(--ke); }
+}

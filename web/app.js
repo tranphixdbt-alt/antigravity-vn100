@@ -100,14 +100,16 @@ const MO_LAI = {
   etf: (ma) => moETF(ma, null), ps: (ma) => moPS(ma, null),
   tk: () => moTaiKhoan(""), dm: () => moDanhMuc(), cb: () => moCanhBao(),
 };
-// Đưa giao diện về đúng bước vừa tới. b = null: bước không do web ghi (người dùng tự đổi #tab trên địa chỉ), khi đó
-// lấy tab theo địa chỉ và đóng tờ đang mở; tên tab lạ thì giữ tab đang xem.
+// Đưa giao diện về đúng bước vừa tới. b = null: bước không do web ghi (người dùng tự sửa địa chỉ, hoặc gõ lại đúng
+// địa chỉ đang mở), khi đó lấy tab theo #tab và giữ tờ đang mở nếu ?ma= trên địa chỉ vẫn là mã của tờ; tên tab lạ thì
+// giữ tab đang xem.
 function theoBuoc(b, truot) {
   giuBuoc = true;
   try {
     const i = b ? b.tab : TAB.findIndex((t) => `#${t[0]}` === location.hash);
     const coTo = !to.hidden && !!S.loai;
-    if (coTo && !(b && b.loai)) dongTaiCho(truot);
+    const giuTo = b ? !!b.loai : !!S.ma && (new URLSearchParams(location.search).get("ma") || "").toUpperCase() === S.ma;
+    if (coTo && !giuTo) dongTaiCho(truot);
     if (Number.isInteger(i) && i >= 0 && i < TAB.length && i !== dangXem) datDangXem(i, true);
     if (b && b.loai && MO_LAI[b.loai] && !(coTo && S.loai === b.loai && S.ma === b.ma)) MO_LAI[b.loai](b.ma);
     ghiDiaChi(false);
@@ -259,17 +261,19 @@ function veMa(d) {
   if (d.che_do === "gom") them.push(`Gồm thỏa thuận ${d.cua_so} phiên: khối ngoại ${ty(d.gom_thoa_thuan.f, 1)}, tự doanh ${ty(d.gom_thoa_thuan.p, 1)}`);
   const up = d.upside && !thieu(d.upside.upside) ? `Upside mô hình (phụ): ${dau(d.upside.upside * 100, 1)}%, ${esc(d.upside_nguon || "")}${d.upside.note ? `. ${esc(d.upside.note)}` : ""}.` : "Upside mô hình (phụ): chưa có từ đợt định giá VN100.";
   return dauTo(d.ma, tenMa(d.ma) || d.nganh, `<span class="muc ${lop}">${esc(d.nhan.text)}</span>`) + `<div class="to-than">
+    <section class="dgd le" id="khoi-tt" aria-label="Định giá và giá mục tiêu"><div class="dang-ve">Đang định giá ${esc(d.ma)}… Mã ngân hàng có thể mất hơn 10 giây ở lần đầu.</div></section>
     <div class="dt-kl le"><h2>${esc(d.nhan.text)}, ${esc(d.boi_canh)}</h2><p class="ly-do">${esc(d.nhan.reason)}</p>
       <div>${tia(d.tia)}<p>Khối ngoại mua ròng (xanh) và bán ròng (đỏ) từng phiên, ${d.tia.length} phiên gần nhất, cũ đến mới.</p></div>
       <p>Cửa sổ ${esc(d.cua_so)} phiên. Giá đến ${ngay(d.gia_den)}, dòng tiền đến ${ngay(d.dong_tien_den)}.${them.length ? ` ${esc(them.join(". "))}.` : ""}</p></div>
     <section class="khoi"><h3 class="le">Ba phiếu làm bằng chứng</h3><ul class="phieu le">${phieu}</ul>
       <div class="ghi le"><p>${esc(d.phieu.rvol.chip || "")}</p>${d.huy_hieu.length ? `<ul class="huy">${d.huy_hieu.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</div></section>
     ${khoiBieuDo()}
-    <section class="khoi sau"><h3 class="le">Số liệu chi tiết</h3>
+    <section class="khoi" id="khoi-ctck"><h3 class="le">So với công ty chứng khoán</h3><div class="dang-ve le">Đang nạp…</div></section>
+    <section class="khoi sau"><h3 class="le">Số liệu chi tiết về dòng tiền</h3>
       ${mr("Bảng phiếu", bang(d.bang_phieu) || "<p>Chưa có số.</p>", false)}
       ${mr("Dòng tiền theo cửa sổ 5, 20, 60 phiên", bang(d.bang_cua_so) || "<p>Chưa có số.</p>", false)}
       ${mr("Phiên thỏa thuận", bang(d.thoa_thuan) || "<p>Không có phiên thỏa thuận nào trong dữ liệu đã nạp.</p>", false)}</section>
-    <section class="khoi sau" id="khoi-dg"><h3 class="le">Định giá</h3><div class="dang-ve">Đang định giá ${esc(d.ma)}… Mã ngân hàng có thể mất hơn 10 giây ở lần đầu.</div></section>
+    <section class="khoi sau" id="khoi-dg"><h3 class="le">Định giá chi tiết</h3><div class="dang-ve le">Đang nạp…</div></section>
     <div class="ghi le"><p>${up}</p></div></div>`;
 }
 
@@ -309,10 +313,6 @@ const NHAN_HT = { NOT_RATED: "Chưa xếp hạng" };
 const DP_DOANH_NGHIEP = [["Doanh thu", "revenue"], ["EBIT", "ebit"], ["NOPAT", "nopat"], ["FCFF", "fcff"], ["Lợi nhuận sau thuế", "net_income"]];
 const DP_NGAN_HANG = [["Thu nhập lãi thuần", "net_interest_income"], ["Thu nhập ngoài lãi", "non_interest_income"], ["Tổng thu nhập hoạt động", "total_operating_income"], ["Chi phí hoạt động", "operating_expenses"], ["Lợi nhuận trước dự phòng", "pre_provision_profit"], ["Chi phí dự phòng", "provision_expense"], ["Lợi nhuận trước thuế", "pretax_income"], ["Lợi nhuận sau thuế", "net_income"], ["Vốn chủ sở hữu", "total_equity"]];
 function veDinhGia(d) {
-  const coFV = !thieu(d.fv) && d.fv > 0 && !thieu(d.gia) && d.gia > 0, nhan = NHAN_HT[d.khuyen_nghi] || d.khuyen_nghi || "Chưa có";
-  const dau1 = coFV
-    ? `<div class="kl le"><h2>Giá trị hợp lý ${so(d.fv)} đ, ${d.upside >= 0 ? "cao hơn" : "thấp hơn"} thị giá ${so(Math.abs(d.upside), 1)}%</h2><div class="kl-thuoc">${thuoc((d.gia / d.fv - 1) * 100, 50)}<div class="kl-hai"><div><b>${so(d.gia)} đ</b>Thị giá</div><div><b>${so(d.fv)} đ</b>Giá trị hợp lý</div></div></div><p class="kl-gio">Nhãn của hệ thống: <b>${esc(nhan)}</b>${d.duoc_cong_bo ? "" : " (chưa được công bố, xem các cờ bên dưới)"}. ${esc(d.phuong_phap_chu || "")}${d.phuong_phap_chu ? "." : ""} Chế độ ${esc(d.che_do)}.</p></div>`
-    : `<p class="trong le">Bộ máy chưa ra giá trị hợp lý cho mã này. Nhãn của hệ thống: ${esc(nhan)}.</p>`;
   const THU = { error: 0, warning: 1, info: 2 }, co = [...(d.co || [])].sort((a, b) => (THU[a.level] ?? 3) - (THU[b.level] ?? 3));
   const dongCo = (c) => `<li class="${c.level === "error" ? "muc-loi" : c.level === "warning" ? "muc-canh" : "muc-tin"}">${hinh(c.level === "info" ? "tin" : "canh")}<div><b>${c.level === "error" ? "Chặn" : c.level === "warning" ? "Cảnh báo" : "Ghi chú"} · ${esc(c.code)}</b>${esc(c.message)}</div></li>`;
   const khoiCo = co.length ? `<ul class="co le">${co.slice(0, 3).map(dongCo).join("")}</ul>${co.length > 3 ? mr(`Xem cả ${co.length} cờ`, `<ul class="co">${co.slice(3).map(dongCo).join("")}</ul>`, false) : ""}` : "";
@@ -324,14 +324,50 @@ function veDinhGia(d) {
     : bang(d.du_phong);
   const g = d.gia_dinh, gd = !g || g.ap_dung === false ? khongApDung(g) : `${g.schedule_rows && g.schedule_rows.length ? bangNhan(g.schedule_rows[0].values.map((_, i) => `Năm ${i + 1}`), g.schedule_rows) : ""}${g.single_rows ? dl(g.single_rows) : ""}`;
   const wacc = Array.isArray(d.wacc) && d.wacc.length ? dl(d.wacc) : khongApDung(d.wacc);
-  return `<h3 class="le">Định giá</h3>${dau1}${khoiCo}
+  return `<h3 class="le">Định giá chi tiết</h3><p class="kl-gio le">Phương pháp: ${esc(d.phuong_phap_chu || "chưa có")}${d.phuong_phap_chu ? "." : ""} Chế độ ${esc(d.che_do)}.</p>${khoiCo}
     ${mr("Kịch bản", rieng + kb, false)}${mr("Độ nhạy", rieng + bangNhiet(d.do_nhay), false)}${mr("Dự phóng 5 năm", dp, false)}${mr("Giả định dự phóng", gd, false)}${mr("Chi phí vốn", wacc, false)}
-    ${mrNap("Báo cáo tài chính", "tai-chinh")}${mrNap("Công ty chứng khoán", "ctck")}${mrNap("Cổ tức và quyền mua", "co-tuc")}${mrNap("Phân tích AI", "ai")}`;
+    ${mrNap("Báo cáo tài chính", "tai-chinh")}${mrNap("Cổ tức và quyền mua", "co-tuc")}${mrNap("Phân tích AI", "ai")}`;
+}
+// Khối đầu tờ mã: định giá và giá mục tiêu trong vài dòng. d = /dinh-gia; c = /ctck (undefined: đang nạp, null: lỗi).
+// Cùng số và cùng câu chữ với phần chi tiết bên dưới, chỉ đưa lên đầu; không có số nào tính thêm ở đây.
+function veTomTat(d, c) {
+  const coFV = !thieu(d.fv) && d.fv > 0 && !thieu(d.gia) && d.gia > 0, nhan = NHAN_HT[d.khuyen_nghi] || d.khuyen_nghi || "Chưa có";
+  const ppNgan = String(d.phuong_phap_chu || "").split(" (")[0]; // tên phương pháp; câu đầy đủ nằm ở phần Định giá chi tiết
+  const nhanDong = `<p class="kl-gio">Nhãn của hệ thống: <b>${esc(nhan)}</b>${d.duoc_cong_bo ? "" : " (chưa được công bố, xem các cờ ở phần Định giá chi tiết)"}.${ppNgan ? ` ${esc(ppNgan)}.` : ""}</p>`;
+  const moHinh = coFV
+    ? `<h2>Giá trị hợp lý ${so(d.fv)} đ, ${d.upside >= 0 ? "cao hơn" : "thấp hơn"} thị giá ${so(Math.abs(d.upside), 1)}%</h2><div class="kl-thuoc">${thuoc((d.gia / d.fv - 1) * 100, 50)}<div class="kl-hai"><div><b>${so(d.gia)} đ</b>Thị giá</div><div><b>${so(d.fv)} đ</b>Giá trị hợp lý</div></div></div>${nhanDong}`
+    : `<h2>Chưa có giá trị hợp lý</h2><p class="kl-gio">Bộ máy chưa ra giá trị hợp lý cho mã này. Nhãn của hệ thống: <b>${esc(nhan)}</b>.</p>`;
+  const s = c && c.so_sanh, coCK = s && s.ap_dung !== false && Array.isArray(s.broker_rows) && s.broker_rows.length > 0;
+  let ck;
+  if (c === undefined) ck = `<p class="kl-gio">Đang nạp giá mục tiêu của công ty chứng khoán…</p>`;
+  else if (!coCK) ck = `<h3>Công ty chứng khoán</h3><p class="kl-gio">${c === null ? "Không nạp được phần so sánh với công ty chứng khoán." : "Chưa có báo cáo công ty chứng khoán cho mã này, hoặc mã chưa có giá trị hợp lý để so sánh."}</p>`;
+  else {
+    const gt = s.broker_rows.map((r) => r.target_price).filter((v) => !thieu(v));
+    ck = `<h3>Công ty chứng khoán: trung vị ${so(s.consensus_median)} đ</h3>${daiCTCK(s)}
+      <p class="kl-gio">${so(s.n_reports)} báo cáo${gt.length > 1 ? `, giá mục tiêu từ ${so(Math.min(...gt))} đến ${so(Math.max(...gt))} đ` : ""}. Mô hình <b>${(s.deviation || 0) >= 0 ? "cao hơn" : "thấp hơn"} trung vị ${so(Math.abs(s.deviation || 0) * 100, 1)}%</b>.${s.consensus_thin ? " Ít báo cáo, độ tin cậy thấp." : ""}${s.consensus_stale ? " Phần lớn báo cáo đã cũ." : ""}</p>`;
+  }
+  return `<div class="dgd-hai"><div class="dgd-mh">${moHinh}</div><div class="dgd-ck">${ck}</div></div>`;
 }
 async function napDinhGia(ma) {
-  const khoi = $("#khoi-dg", to); if (!khoi) return;
-  try { const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/dinh-gia`); if (S.ma !== ma || !khoi.isConnected) return; khoi.innerHTML = veDinhGia(d); }
-  catch (e) { if (S.ma === ma && khoi.isConnected) khoi.innerHTML = `<h3 class="le">Định giá</h3><p class="loi le">Không định giá được ${esc(ma)}. ${esc(e.message)}</p>`; }
+  const tt = $("#khoi-tt", to), khoi = $("#khoi-dg", to), ck = $("#khoi-ctck", to); if (!tt || !khoi || !ck) return;
+  const con = () => S.ma === ma && khoi.isConnected, dd = `/api/co-phieu/${encodeURIComponent(ma)}`;
+  let d;
+  try { d = await api(`${dd}/dinh-gia`); }
+  catch (e) {
+    if (!con()) return;
+    tt.innerHTML = `<h2>Không định giá được ${esc(ma)}</h2><p class="loi">${esc(e.message)}</p>`;
+    khoi.innerHTML = `<h3 class="le">Định giá chi tiết</h3><p class="loi le">Không định giá được ${esc(ma)}. ${esc(e.message)}</p>`;
+    ck.innerHTML = `<h3 class="le">So với công ty chứng khoán</h3><p class="loi le">Chưa có định giá để so sánh.</p>`;
+    return;
+  }
+  if (!con()) return;
+  tt.innerHTML = veTomTat(d, undefined); khoi.innerHTML = veDinhGia(d);
+  // gọi sau /dinh-gia: máy chủ đã nhớ kết quả định giá của mã này nên phần so sánh trả ngay, không định giá lần hai
+  let c = null, loi = "";
+  try { c = await api(`${dd}/ctck`); } catch (e) { loi = e.message; }
+  if (!con()) return;
+  tt.innerHTML = veTomTat(d, c);
+  ck.innerHTML = `<h3 class="le">So với công ty chứng khoán</h3><div class="ck-than le">${c ? veCTCK(c) : `<p class="loi">Không nạp được. ${esc(loi)}</p>`}</div>`;
 }
 const TEN_BANG = { income_statement: "Kết quả kinh doanh", balance_sheet: "Bảng cân đối kế toán", cash_flow: "Lưu chuyển tiền tệ" };
 function veTaiChinh(d) {
@@ -362,7 +398,7 @@ function veAI(d) {
   return d.co ? `<p>Bản lưu lúc ${esc(String(d.tao_luc || "").slice(0, 16).replace("T", " "))}${d.mo_hinh ? `, mô hình ${esc(d.mo_hinh)}` : ""}. Có thể cũ hơn số liệu đang hiện ở trên.</p><div class="vb">${mdNho(d.van_ban)}</div>`
     : "<p>Chưa có báo cáo AI nào được lưu cho mã này. Báo cáo AI hiện sinh ở web cũ; web này chỉ đọc bản đã lưu vì mỗi lần sinh mới tốn tiền API.</p>";
 }
-const VE_MUC = { "tai-chinh": veTaiChinh, ctck: veCTCK, "co-tuc": veCoTuc, ai: veAI, "/api/lich-quyen": veLich };
+const VE_MUC = { "tai-chinh": veTaiChinh, "co-tuc": veCoTuc, ai: veAI, "/api/lich-quyen": veLich };
 async function napMuc(hop, loai) {
   // `loai` bắt đầu bằng "/" là đường dẫn chung (không theo mã); còn lại là phần đuôi của /api/co-phieu/{mã}/
   const ma = S.ma, chung = loai.startsWith("/"), cho = $(".mr-trong > div", hop);
