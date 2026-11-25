@@ -200,9 +200,9 @@ function veHomNay() {
   const viMo = v ? `<section class="khoi sau"><h3 class="le">Vĩ mô</h3><div class="vm le">${v.chi_so.map((r) => `<div><span>${esc(r.ten)}</span><b>${esc(r.gia_tri ?? "—")}</b><small>${r.thay_doi ? `${esc(r.thay_doi)} · ` : ""}${r.cu ? "cũ · " : ""}${r.ngay ? ngay(r.ngay) : "chưa có dữ liệu"}</small></div>`).join("")}</div>${v.nhan_dinh.length ? `<div class="le">${lietKe(v.nhan_dinh)}</div>` : ""}<p class="ghi le">Nhận định suy ra từ số liệu trên theo quy tắc cố định; không phải khuyến nghị đầu tư.</p>
     ${mr(`Bản tin vĩ mô do AI tóm tắt${thieu(v.ban_tin_tuoi_gio) ? "" : `, lưu ${so(v.ban_tin_tuoi_gio)} giờ trước`}`, `<div class="vb">${mdNho(boBieuTuong(v.ban_tin))}</div>`, false)}
     ${mrNap("Lịch cổ tức và quyền mua VN100 sắp tới", "/api/lich-quyen")}</section>` : "";
-  $("#pane-hom-nay").innerHTML = `${dai}<div class="pane-trong"><section class="khoi"><h3 class="le">Bốn trụ cột</h3>${tru}</section>${sapToi}${noiBat}<section class="khoi sau" id="hn-khac" hidden></section>${viMo}
+  $("#pane-hom-nay").innerHTML = `${dai}<div class="pane-trong"><section class="bo4 le" id="bon-o" aria-label="Bốn loại tài sản"></section><section class="khoi"><h3 class="le">Bốn trụ cột</h3>${tru}</section>${sapToi}${noiBat}${viMo}
     <p class="chan le">Chấm điều kiện hiện tại theo quy tắc cố định; không dự báo giá, không phải khuyến nghị đầu tư. Hợp đồng tương lai xem ở tab Phái sinh.</p></div>`;
-  veHnKhac();
+  veBonO();
 }
 function veLich(d) {
   return d.su_kien.length ? `<p>Các mốc trong ${so(d.so_ngay)} ngày tới.</p>${bang(d.su_kien.map((r) => ({ "Mã": r.ma, "Ngày": ngayHoac(r.ngay), "Mốc": r.moc, "Nội dung": r.noi_dung, "Tiền mặt (đ)": r.tien_mat })))}` : `<p>Không có mốc cổ tức hay quyền mua nào trong ${so(d.so_ngay)} ngày tới.</p>`;
@@ -212,7 +212,7 @@ async function napHomNay() {
   catch (e) { $("#pane-hom-nay").innerHTML = `<div class="pane-trong"><p class="loi le">Không nạp được tổng quan thị trường. ${esc(e.message)}</p></div>`; }
 }
 async function napTongQuan() {
-  try { S.tq = await api(`/api/dong-tien?che_do=${S.cheDo}`); if (!S.bd) { const b = S.tq.bieu_do; S.bd = { khung: b.khung_mac_dinh, tang: new Set(rong.matches ? b.tang_mac_dinh : b.tang_dien_thoai), hoSo: false }; } veCoPhieu(); }
+  try { S.tq = await api(`/api/dong-tien?che_do=${S.cheDo}`); veBonO(); if (!S.bd) { const b = S.tq.bieu_do; S.bd = { khung: b.khung_mac_dinh, tang: new Set(rong.matches ? b.tang_mac_dinh : b.tang_dien_thoai), hoSo: false }; } veCoPhieu(); }
   catch (e) { $("#pane-co-phieu").innerHTML = `<div class="pane-trong"><p class="loi le">Không nạp được dữ liệu dòng tiền. ${esc(e.message)}</p></div>`; }
 }
 
@@ -450,6 +450,7 @@ async function moMa(ma, tu) {
 const BIEN_THUOC = { cw: 50, etf: 5, ps: 2 }; // độ rộng thước (± %): chứng quyền như cổ phiếu; ETF so với NAV và hợp đồng so với chỉ số lệch nhỏ hơn nhiều
 const SO_DONG = 60; // số dòng chứng quyền vẽ mỗi lượt; danh sách đủ có vài trăm dòng
 const SO_THE = 6; // số mã nêu ở tab Hôm nay cho mỗi loại
+const SO_THE_O = 3; // số mã nổi bật trong mỗi ô đầu trang chủ
 const GOI_Y_DU_PHONG = 12; // số gợi ý tìm kiếm khi API cổ phiếu lỗi nên không có giới hạn từ cấu hình
 const CW_CU = "https://chungquyen.btinvest.vn"; // trang hướng dẫn vẫn nằm ở web chứng quyền cũ
 const LOP_NHOM = { "NÊN XEM XÉT": "xx", "THEO DÕI": "td", "BỎ QUA": "bq" };
@@ -655,17 +656,48 @@ addEventListener("message", (e) => {
 });
 
 /* Nạp dữ liệu ba tab và mục "Chứng quyền và ETF" của tab Hôm nay */
-function veHnKhac() {
-  const cho = $("#hn-khac"); if (!cho) return; const o = [];
-  if (S.cq && S.cq.co) { const xx = S.cq.cw.filter((c) => c.nhom === "NÊN XEM XÉT"); o.push(`<div><b>Chứng quyền đạt cả 4 tiêu chí: ${so(xx.length)}</b>${xx.length ? `<div class="the-ma">${xx.slice(0, SO_THE).map((c) => `<button type="button" class="o-ma" data-cw="${esc(c.ma)}">${esc(c.ma)}<small>${esc(c.chu_dat_re)}</small></button>`).join("")}</div>` : ""}<p>Lần quét ${esc(S.cq.lan_quet)}; IV − HV thấp nhất trước.</p></div>`); }
-  if (S.etf && S.etf.co) { const dat = S.etf.chiet_khau.dong.filter((h) => h["Đạt"]); o.push(`<div><b>Quỹ ETF mua được dưới NAV đủ ngưỡng: ${so(dat.length)}</b>${dat.length ? `<div class="the-ma">${dat.slice(0, SO_THE).map((h) => `<button type="button" class="o-ma" data-etf="${esc(h["Mã"])}">${esc(h["Mã"])}<small>Lãi ròng ${pt(h["Lãi ròng nếu về NAV %"], 2)}</small></button>`).join("")}</div>` : ""}<p>Số liệu ${esc(S.etf.luc)}.</p></div>`); }
-  cho.hidden = !o.length; cho.innerHTML = o.length ? `<h3 class="le">Chứng quyền và ETF</h3><div class="nb le">${o.join("")}</div>` : "";
+/* Bốn ô đầu trang chủ (lát 7, D118): mỗi loại tài sản một ô, con số chính lấy đúng câu mở đầu của tab đó, kèm vài
+   mã nổi bật bấm được; bấm phần trên của ô là sang tab. Dữ liệu của từng tab về lúc nào thì ô đó hiện lúc đó. */
+function oTom(i, so1, phu, the) {
+  const [, ten, h] = TAB[i];
+  return `<article class="bo"><button class="bo-nut" type="button" data-sang="${i}" aria-label="Mở tab ${ten}">
+    <span class="bo-ten"><span class="bo-hinh" aria-hidden="true">${hinh(h)}</span>${ten}</span>
+    <span class="bo-so">${so1}</span><span class="bo-phu">${phu}</span></button>${the ? `<div class="the-ma bo-the">${the}</div>` : ""}</article>`;
 }
-async function napCQ() { try { S.cq = await api("/api/chung-quyen"); S.cqHien = SO_DONG; veCQ(); veHnKhac(); } catch (e) { loiPane("chung-quyen", "Chứng quyền", e); } }
-async function napETF() { try { S.etf = await api("/api/etf"); veETF(); veHnKhac(); } catch (e) { loiPane("etf", "ETF", e); } }
-// hợp đồng tương lai lấy giá trực tiếp từ Vietcap nên chỉ nạp khi mở tab (hoặc khi địa chỉ trỏ thẳng vào một hợp đồng)
+const oCho = (i, chu) => oTom(i, `<span class="bo-cho">${chu}</span>`, "", "");
+const boNgoac = (s) => String(s ?? "").split(" (")[0]; // ô chỉ giữ mốc giờ; phần giải thích trong ngoặc nằm ở tab
+function veBonO() {
+  const cho = $("#bon-o"); if (!cho) return; const o = [];
+  const q = S.tq;
+  if (q) {
+    const gom = q.ma.filter((r) => r.nhan === "gom").sort((a, b) => a.ma.localeCompare(b.ma));
+    o.push(oTom(1, `<b class="re">${so(q.dem_nhan.gom || 0)}</b> gom · <b class="dat">${so(q.dem_nhan.xa || 0)}</b> xả`,
+      `mã VN100 theo dòng tiền ${esc(q.meta.window)} phiên, đến ${ngay(q.meta.flow_date)}`,
+      gom.slice(0, SO_THE_O).map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}</button>`).join("")));
+  } else o.push(oCho(1, "Đang nạp dòng tiền…"));
+  const c = S.cq;
+  if (c && c.co) {
+    const xx = c.cw.filter((x) => x.nhom === "NÊN XEM XÉT");
+    o.push(oTom(2, `<b class="${xx.length ? "re" : ""}">${so(xx.length)}</b> đạt cả 4 tiêu chí`, `trong ${so(c.tong)} chứng quyền, lần quét ${esc(boNgoac(c.lan_quet))}`,
+      xx.slice(0, SO_THE_O).map((x) => `<button type="button" class="o-ma" data-cw="${esc(x.ma)}">${esc(x.ma)}</button>`).join("")));
+  } else o.push(oCho(2, c ? "Chưa có lần quét nào" : "Đang nạp chứng quyền…"));
+  const e = S.etf;
+  if (e && e.co) {
+    const dat = e.chiet_khau.dong.filter((h) => h["Đạt"]);
+    o.push(oTom(3, `<b class="${dat.length ? "re" : ""}">${so(dat.length)}</b> mua được dưới NAV`, `đủ ngưỡng, trong ${so(e.so_quy)} quỹ, số liệu ${esc(boNgoac(e.luc))}`,
+      dat.slice(0, SO_THE_O).map((h) => `<button type="button" class="o-ma" data-etf="${esc(h["Mã"])}">${esc(h["Mã"])}</button>`).join("")));
+  } else o.push(oCho(3, e ? "Chưa có kết quả ETF" : "Đang nạp ETF…"));
+  const hd = S.ps && S.ps.nhom.length ? (S.ps.nhom[0].hop_dong || []).find((x) => !x.thieu_dao_han) : null;
+  if (hd) o.push(oTom(4, `<b class="${hd.basis > 0 ? "re" : hd.basis < 0 ? "dat" : ""}">${dau(hd.basis, 2)}</b> điểm basis`, `${esc(hd.ma)}, còn ${so(hd.con_ngay)} ngày tới đáo hạn`, ""));
+  else o.push(oCho(4, S.psLoi ? "Chưa nạp được giá hợp đồng" : "Đang nạp giá hợp đồng…"));
+  cho.innerHTML = o.join("");
+}
+async function napCQ() { try { S.cq = await api("/api/chung-quyen"); S.cqHien = SO_DONG; veCQ(); veBonO(); } catch (e) { loiPane("chung-quyen", "Chứng quyền", e); } }
+async function napETF() { try { S.etf = await api("/api/etf"); veETF(); veBonO(); } catch (e) { loiPane("etf", "ETF", e); } }
+// hợp đồng tương lai lấy giá trực tiếp từ Vietcap; dịch vụ chứng quyền nhớ kết quả 5 phút nên nạp ngay lúc vào trang
+// cũng chỉ gọi Vietcap tối đa mỗi 5 phút một lần, dùng cho ô Phái sinh ở trang chủ (D118)
 let choPS = null;
-function napPS() { if (!choPS) choPS = api("/api/phai-sinh").then((d) => { S.ps = d; vePS(); }).catch((e) => { choPS = null; loiPane("phai-sinh", "Phái sinh", e); }); return choPS; }
+function napPS() { if (!choPS) choPS = api("/api/phai-sinh").then((d) => { S.ps = d; S.psLoi = null; vePS(); veBonO(); }).catch((e) => { choPS = null; S.psLoi = e.message; veBonO(); loiPane("phai-sinh", "Phái sinh", e); }); return choPS; }
 
 /* Dấu "!" giải thích: máy tính rê chuột vào thì hiện, rê ra thì mất; điện thoại bấm để hiện, bấm chỗ khác để tắt */
 const noi = document.createElement("div"); noi.id = "noi"; noi.setAttribute("role", "tooltip"); app.appendChild(noi);
@@ -1121,6 +1153,7 @@ app.addEventListener("click", (e) => {
   const nCt = e.target.closest(".ct"); if (nCt) { if (chuotThat.matches || nutNoi !== nCt) moNoi(nCt); else dongNoi(); return; }
   dongNoi();
   const lui = e.target.closest("#to-lui"); if (lui) { dongTo(false); return; }
+  const sang = e.target.closest("[data-sang]"); if (sang) { datDangXem(+sang.dataset.sang, true); return; }
   const cw = e.target.closest("[data-cw]"); if (cw) { moCW(cw.dataset.cw, cw.classList.contains("dong") ? cw : null); return; }
   const quy = e.target.closest("[data-etf]"); if (quy) { moETF(quy.dataset.etf, quy.classList.contains("dong") ? quy : null); return; }
   const hd = e.target.closest("[data-ps]"); if (hd) { moPS(hd.dataset.ps, hd); return; }
@@ -1192,7 +1225,7 @@ function batDau() {
     if (S.tq && /^[A-Z0-9]{3,4}$/.test(maMoDau) && S.tq.ma.some((r) => r.ma === maMoDau)) moDau(moMa, maMoDau);
   });
   // chứng quyền và ETF đọc file kết quả (nhanh) nên nạp ngay; địa chỉ có ?ma= trỏ vào loại nào thì mở tờ của loại đó
-  const choCQ = napCQ(), choETF = napETF();
+  const choCQ = napCQ(), choETF = napETF(); napPS();
   if (/^VN(30|100)F[12][MQ]$/.test(maMoDau)) napPS().then(() => moDau(moPS, maMoDau));
   else if (/^[A-Z0-9]{5,12}$/.test(maMoDau)) Promise.all([choCQ, choETF]).then(() => { if (S.cq && S.cq.co && S.cq.cw.some((c) => c.ma === maMoDau)) moDau(moCW, maMoDau); else moDau(moETF, maMoDau); });
 }

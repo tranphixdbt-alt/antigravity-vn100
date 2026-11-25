@@ -1371,3 +1371,22 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   Bài vẫn dài hơn 500 từ một chút và vẫn tự làm tròn phần trăm.
 - **Kiểm:** 17 test của báo cáo AI qua (thêm ca tính tay đếm con số, ca che giá trị mô hình trong bảng cùng ngành, kiểm
   câu lệnh có đủ yêu cầu mới).
+
+### D118 — Web hợp nhất: bốn ô đầu trang chủ; tệp giao diện luôn hỏi lại máy chủ (2026-11-26, người dùng « Đồng ý bốn ô »)
+
+- **Người dùng chọn** đề xuất bốn ô (việc 4 của mục 15): trang chủ "quá đồng nhất", muốn tách nổi bật từng phần.
+- **Đã làm (`web/app.js`, `web/app.css`):** `veBonO()` vẽ bốn ô ngay dưới dải VN-Index; mỗi ô dùng đúng con số mở đầu của
+  tab tương ứng (không tính số mới), dữ liệu tab nào về thì ô đó hiện. Bấm phần trên của ô thì sang tab (một bước lịch
+  sử, Back về trang chủ); bấm mã trong ô thì mở tờ của mã. Bỏ `veHnKhac` và khối "Chứng quyền và ETF" vì trùng số với
+  ô (AGENTS.md mục 9: mỗi chỉ số hiện một lần). Phái sinh nạp ngay lúc vào trang thay vì chỉ khi mở tab.
+- **Tôi tự quyết:** không thêm màu riêng cho từng loại tài sản (AGENTS.md mục 9: màu chỉ mang nghĩa); tách bằng khung,
+  biểu tượng, cỡ chữ của con số. Trên điện thoại ẩn hàng mã trong ô (bốn ô cao 163px thay vì 294px) để còn thấy phần
+  bên dưới ngay màn hình đầu.
+- **Lỗi lộ ra khi thử và đã sửa tận gốc:** tệp tĩnh (`/`, `app.js`, `app.css`) chỉ có ETag và Last-Modified, không có
+  `Cache-Control`, nên trình duyệt tự giữ bản cũ một thời gian (thấy thật: sửa xong vẫn chạy app.js cũ). Sau mỗi lần deploy
+  người dùng có thể chạy giao diện cũ với API mới. Viết test trước (`test_khung_web_luon_hoi_lai_may_chu_sau_deploy`),
+  rồi cho `StaticFiles` của `web_main.py` gắn `Cache-Control: no-cache` (vẫn có ETag nên hỏi lại chỉ là yêu cầu nhỏ trả
+  304). Riêng lần đẩy đầu tiên có tiêu đề này: trình duyệt đã lưu bản cũ (không có tiêu đề) có thể vẫn giữ nó vài giờ,
+  tải lại trang là hết.
+- **Kiểm:** trình duyệt tại máy ở 1440×900 (bốn ô cùng cao, mỗi ô 262px rộng) và 375×812 (2×2); bấm ô sang tab, Back về
+  trang chủ, bấm mã trong ô mở tờ, console không lỗi. 89 test web qua.

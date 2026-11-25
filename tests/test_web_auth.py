@@ -416,6 +416,23 @@ def test_khung_web_va_bieu_tuong_mo_duoc_khi_chua_dang_nhap(env):
     assert users(env) == []
 
 
+def test_khung_web_luon_hoi_lai_may_chu_sau_deploy(env):
+    """Tệp giao diện phải kèm `Cache-Control: no-cache`: không có thì trình duyệt tự giữ app.js cũ một thời gian sau
+    mỗi lần deploy (thấy thật khi thử bốn ô trang chủ 26/11/2026), giao diện cũ gọi API mới. Có ETag nên hỏi lại chỉ
+    tốn một yêu cầu nhỏ trả 304."""
+    c = client()
+    for duong in ("/", "/app.js", "/app.css", "/favicon.ico"):
+        r = c.get(duong)
+        assert (
+            r.status_code == 200 and r.headers.get("cache-control") == "no-cache"
+        ), duong
+        assert r.headers.get("etag"), duong
+    tag = c.get("/app.js").headers["etag"]
+    assert c.get("/app.js", headers={"If-None-Match": tag}).status_code == 304
+    # số liệu không bị gắn kiểu lưu đệm này (đường /api/ tự quyết)
+    assert c.get("/api/suc-khoe").headers.get("cache-control") != "no-cache"
+
+
 def test_tu_tao_thu_muc_cha_cua_tep_du_lieu(tmp_path, monkeypatch):
     """Lát 6: trên VPS tệp nằm ở /data/web_user/, thư mục đó chưa có ở lần chạy đầu."""
     path = tmp_path / "web_user" / "web_user.db"

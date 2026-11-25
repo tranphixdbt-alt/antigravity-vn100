@@ -484,3 +484,23 @@ td .nut-nho { min-height: 34px; }
 .ai-nut .nut-chinh[disabled] { opacity: .55; cursor: default; transform: none; }
 .ai-nut p { flex: 1 1 220px; font-size: 13px; color: var(--muc-2); }
 
+/* ---------- Trang chủ: bốn ô, mỗi loại tài sản một ô (D118) ---------- */
+.bo4 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-block: 16px; border-bottom: 1px solid var(--ke); }
+.bo { display: grid; align-content: start; border: 1px solid var(--ke); border-radius: 8px; background: var(--mat); min-width: 0; }
+.bo-nut { display: grid; gap: 6px; width: 100%; padding: 12px 12px 10px; text-align: left; border-radius: 8px; color: var(--muc); }
+.bo-nut:hover { background: var(--giay); }
+.bo-ten { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.bo-hinh { width: 28px; height: 28px; border-radius: 6px; background: var(--navy-dam); display: grid; place-items: center; flex: none; }
+.bo-hinh svg { width: 16px; height: 16px; stroke: #fff; }
+.bo-so { font-size: 15px; font-weight: 600; color: var(--muc-2); line-height: 1.25; }
+.bo-so b { font-size: 26px; font-weight: 800; color: var(--muc); letter-spacing: -.01em; }
+.bo-so b.re { color: var(--tang); } .bo-so b.dat { color: var(--giam); }
+.bo-phu { font-size: 12.5px; color: var(--muc-3); line-height: 1.4; }
+.bo-cho { font-size: 13px; font-weight: 500; color: var(--muc-3); }
+.bo-the { padding: 0 12px 12px; gap: 6px; }
+.bo-the .o-ma { min-height: 34px; padding: 0 10px; font-size: 13px; }
+/* điện thoại: bốn ô chỉ giữ tên, con số chính và một dòng, để vẫn thấy phần bên dưới ngay màn hình đầu; các mã nổi
+   bật xem trong từng tab */
+@media (max-width: 599.98px) { .bo-the { display: none; } .bo-so b { font-size: 24px; } .bo-nut { gap: 5px; padding: 10px 10px 12px; } }
+@media (min-width: 960px) { .bo4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding-block: 20px; } .bo-nut { padding: 14px 14px 12px; } .bo-the { padding: 0 14px 14px; } }
+

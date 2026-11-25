@@ -655,7 +655,7 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
 | 1 | Bấm vào mã chứng khoán thì bảng hiện ra nhỏ quá: cho to ra 3/5 màn hình | **Xong tại máy** (D115) |
 | 2 | Định giá và giá mục tiêu lên đầu, khoảng 4–5 dòng, rồi mới tới dòng tiền; làm nổi bật phần so sánh với công ty chứng khoán | **Xong tại máy** (D115) |
 | 3 | Thêm nút sinh báo cáo bằng AI, người dùng bấm được, báo cáo ngắn gọn hơn | **Xong tại máy** (D116): mọi tài khoản đã duyệt, 5 lượt mỗi ngày, khoảng 500 từ |
-| 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | Chờ chốt kiểu tách |
+| 4 | Trang chủ quá đồng nhất: làm nổi bật, tách biệt từng phần (chứng khoán, chứng quyền, ETF…) để nhìn nhanh là thấy | **Xong tại máy** (D118): bốn ô đầu trang |
 | 5 | Thêm biểu tượng Zalo, Facebook và liên hệ, lấy ở trang ôn thi | Đã có đủ liên kết, chờ làm cùng việc 4 |
 | 6 | Góc chat với AI để hỏi thị trường hôm nay, dùng biểu tượng con ếch, học theo logic của trang chứng khoán TCBS | Chờ chốt "học theo TCBS" là học điểm nào |
 
@@ -694,6 +694,17 @@ cty, nhận định về mã đó sâu sắc. Khoảng 500 từ".
   kinh doanh so với lợi nhuận, nợ vay, công ty chứng khoán nhìn khác nhau, dòng tiền ngược chiều giá…); **So với cùng
   ngành** (gọi tên đối thủ, mạnh hơn và yếu hơn ở ROE, tăng trưởng, nợ, chuyển đổi tiền, điểm phòng thủ và tích sản);
   nhận định nghiêng về đâu và vì sao; 3 rủi ro. Cả bài tối đa 5 con số.
+
+### Việc 4: bốn ô đầu trang chủ (đã làm)
+
+Người dùng chọn "Đồng ý bốn ô" (đề xuất: bốn ô tách riêng ngay dưới dải VN-Index, mỗi ô một con số chính, bấm vào là
+sang tab). Mỗi ô: biểu tượng của tab, tên, con số chính lấy đúng câu mở đầu của tab đó, một dòng giải thích ngắn
+(mốc giờ, bỏ phần ngoặc), và trên màn hình rộng thêm tối đa 3 mã nổi bật bấm được (mã có dấu hiệu gom, chứng quyền
+đạt cả bốn tiêu chí, quỹ đạt ngưỡng). Cổ phiếu: số mã gom và xả; Chứng quyền: số đạt cả 4 tiêu chí; ETF: số quỹ mua
+được dưới NAV đủ ngưỡng; Phái sinh: basis của hợp đồng gần nhất. Màu chỉ để mang nghĩa (gom, có cơ hội: xanh;
+xả, basis âm: đỏ). Trên điện thoại xếp 2×2, ẩn hàng mã để vẫn thấy phần dưới ngay màn hình đầu. Khối "Chứng quyền
+và ETF" cũ của trang chủ bỏ đi vì số của nó nay nằm trong ô (mỗi chỉ số hiện một lần). Phái sinh nay nạp ngay lúc
+vào trang (dịch vụ chứng quyền nhớ giá 5 phút nên tối đa mỗi 5 phút gọi Vietcap một lần).
 
 ### Dữ kiện đã tìm cho các việc còn lại
 

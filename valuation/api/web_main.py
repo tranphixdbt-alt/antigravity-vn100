@@ -9,11 +9,12 @@ Chạy tại máy: `uvicorn valuation.api.web_main:app --host 127.0.0.1 --port 8
 from __future__ import annotations
 
 from pathlib import Path as FsPath
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from starlette.responses import Response
 
 from valuation.api import web_user_routes
 from valuation.api.web_deps import require_approved
@@ -214,6 +215,20 @@ def phai_sinh_trang_cu(ma: FutureCode) -> dict:
 app.include_router(data)
 app.include_router(web_user_routes.router)
 
+
+class WebAssets(StaticFiles):
+    """Khung web tĩnh, luôn kèm `Cache-Control: no-cache`.
+
+    Không có tiêu đề này thì trình duyệt tự giữ app.js cũ một thời gian sau mỗi lần deploy, giao diện cũ gọi API
+    mới (thấy thật 26/11/2026, D118). Tệp có ETag nên mỗi lần hỏi lại chỉ là một yêu cầu nhỏ trả 304.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # tệp tĩnh của khung web (không có số liệu) thì ai cũng tải được, như các đường dẫn công khai ở Caddy
 if WEB_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    app.mount("/", WebAssets(directory=WEB_DIR, html=True), name="web")
