@@ -1272,3 +1272,28 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Thấy thêm, CHƯA sửa vì là đổi cách dùng chứ không phải lỗi:** chuyển tab và mở tờ chi tiết mã chỉ thay địa chỉ tại
   chỗ (`replaceState`), không tạo bước lịch sử, nên nút Back hay vuốt lùi trên điện thoại rời khỏi web thay vì về tab
   trước hoặc đóng tờ. Chờ người dùng chốt muốn Back làm gì.
+
+### D114 — Web hợp nhất: nút Back về tab trước và đóng tờ thay vì rời web (2026-11-25, người dùng « Có. Sửa back »)
+
+- **Trước đó:** chuyển tab và mở tờ chi tiết chỉ sửa địa chỉ của bước hiện tại (`replaceState`). Đo trên btinvest.vn: ba
+  lần bấm tab và một lần mở tờ không thêm bước lịch sử nào, nên Back hay vuốt lùi trên điện thoại rời khỏi web.
+- **Cách làm (`web/app.js`, chỉ giao diện, không đụng máy chủ):** mỗi bước lịch sử giữ `{tab, loai, ma, sau}`.
+  Thêm bước khi chủ động chuyển tab (menu, ô tìm, đổi `#tab`), khi vuốt ngang trên điện thoại đã dừng ở tab khác, và
+  khi mở tờ trên một bước tab. Đổi nội dung tờ đang mở chỉ sửa bước của tờ (một tầng tờ: Back đóng hẳn tờ, không
+  quay về tờ trước). `popstate` và `hashchange` cùng gọi `theoBuoc` để đưa giao diện về đúng bước vừa tới, kể cả mở
+  lại tờ khi Forward. Đóng tờ bằng nút lùi, Esc, bấm ra ngoài hay vuốt xuống thì `history.back()` đúng một bước; bấm
+  thêm lần nữa khi đang lùi không lùi tiếp.
+- **Ba chỗ tôi tự quyết trong phạm vi được giao:** (1) địa chỉ có sẵn `?ma=` (liên kết chia sẻ) mở tờ mà không thêm
+  bước, đóng tờ thì đóng tại chỗ, Back vẫn về nơi người dùng đến từ đó; (2) đang mở tờ mà chọn ở ô tìm một mã thuộc tab
+  khác thì tab mới là một bước riêng, để đóng tờ mới vẫn ở lại tab mới; (3) hết phiên đăng nhập thì chuyển sang trang
+  đăng nhập bằng `location.replace`, để Back không phải đi qua một bản thừa của web.
+- **Lỗi của chính bản sửa, lộ ra khi thử ở cỡ điện thoại và đã sửa trước khi commit:** lúc web tự trượt về tab cũ sau
+  Back, bộ đếm "cuộn đã dừng" có lúc tưởng người dùng vừa vuốt và ghi thêm hai bước thừa. Nay web đánh dấu tab đích
+  khi tự trượt (`dichCuon`) và chỉ coi là vuốt tay sau khi người dùng chạm vào vùng nội dung. Sửa kèm hai chỗ liên
+  quan: tờ đang khép mà mở tờ Danh mục, Cảnh báo, Tài khoản thì tờ mới không bị ẩn theo; khi web tự trượt, tên tab
+  không còn nhảy qua các tab ở giữa.
+- **Kiểm:** trình duyệt tại máy, 40 bước thao tác ở cỡ máy tính và điện thoại (chuyển tab, vuốt, mở và đóng tờ bằng
+  bốn cách, Back, Forward, ô tìm, địa chỉ có `?ma=`, tên tab lạ), đối chiếu số bước lịch sử, địa chỉ, tab và trạng
+  thái tờ sau từng bước; console không có lỗi. 71 test web qua (phần Python không đổi).
+- **Hạn chế:** chưa có test tự động cho JavaScript của giao diện, nên phần này chỉ được kiểm bằng tay; chưa thử vuốt
+  lùi trên điện thoại thật (Safari iOS, Chrome Android).

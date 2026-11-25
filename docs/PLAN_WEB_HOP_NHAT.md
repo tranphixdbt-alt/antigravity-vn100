@@ -641,5 +641,6 @@ Thứ tự chạy sau khi được duyệt: B3 (người dùng) → B1 → B2 �
   exit=0` trong nhật ký worker); số chưa so từng mã với web cũ; điện thoại thật, âm thanh, thông báo (B6); tải trong
   giờ khớp lệnh (B8). Thấy thêm: đổi phần `#tab` trên địa chỉ khi trang đang mở không chuyển tab (phải bấm menu);
   `/favicon.ico` trả 404. Hai chỗ này sửa cùng tối (D113) và đẩy lên cùng các commit ghi tài liệu.
-- **Chưa sửa, cần người dùng chốt cách muốn:** chuyển tab và mở tờ chi tiết mã chỉ thay địa chỉ tại chỗ, không tạo
-  bước lịch sử, nên nút Back (hay vuốt lùi trên điện thoại) rời khỏi web thay vì quay về tab trước hoặc đóng tờ.
+- **Nút Back (người dùng chốt « Có. Sửa back », D114):** trước đó chuyển tab và mở tờ chi tiết chỉ thay địa chỉ tại
+  chỗ nên Back rời khỏi web. Nay mỗi lần chủ động chuyển tab, mỗi lần vuốt sang tab khác và mỗi lần mở tờ là một
+  bước lịch sử: Back đóng tờ, rồi về tab trước; hết các bước của web mới rời web. Forward mở lại được.

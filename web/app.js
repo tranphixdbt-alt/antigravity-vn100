@@ -26,8 +26,9 @@ async function api(duong, than) {
   if (!r.ok) {
     let t = `Máy chủ trả lỗi ${r.status}.`; try { const j = await r.json(); if (typeof j.detail === "string") t = j.detail; } catch (e) { /* giữ câu mặc định */ }
     const loi = new Error(t); loi.ma = r.status;
-    // hết phiên đăng nhập: về trang đăng nhập rồi quay lại đúng chỗ đang xem
-    if (r.status === 401) { loi.daChuyen = true; location.href = `${DANG_NHAP}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`; }
+    // hết phiên đăng nhập: về trang đăng nhập rồi quay lại đúng chỗ đang xem. Dùng replace để bước này không nằm lại
+    // trong lịch sử: trang đăng nhập cũng replace khi quay về, nên nút Back không phải đi qua một bản thừa của web
+    if (r.status === 401) { loi.daChuyen = true; location.replace(`${DANG_NHAP}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`); }
     // đang dùng thì bị khóa hoặc bị rút duyệt: hỏi lại trạng thái để hiện màn hình chắn
     else if (r.status === 403 && daBatDau && duong !== "/api/toi" && !duong.startsWith("/api/tai-khoan")) vaoCong();
     throw loi;
@@ -61,24 +62,75 @@ const dangToi = () => { const t = document.documentElement.dataset.theme; return
 
 /* ---------- Các tab ---------- */
 let dangXem = 1;
+// web đang tự trượt ngang tới tab này (bấm menu, Back, ô tìm): các vị trí đi qua không phải là người dùng vuốt.
+// Người dùng chạm vào vùng nội dung thì từ đó là vuốt tay.
+let dichCuon = null;
 const nut = TAB.map(([, ten, h], i) => { const b = document.createElement("button"); b.className = "tab-nut"; b.type = "button"; b.dataset.tab = i; b.innerHTML = hinh(h) + `<span>${ten}</span>`; tab.appendChild(b); return b; });
 const pane = TAB.map(([id, ten]) => { const s = document.createElement("section"); s.className = "pane"; s.id = `pane-${id}`; s.setAttribute("aria-label", ten); s.innerHTML = `<div class="pane-trong"><div class="dang-ve le">Đang nạp dữ liệu…</div></div>`; trang.appendChild(s); return s; });
 const vach = $("#tab-vach");
 const datVach = (x) => { vach.style.transform = rong.matches ? `translateY(${Math.round(x) * 48}px)` : `translateX(${x * 100}%)`; };
 function datDangXem(i, cuon) {
+  const doi = i !== dangXem;
   dangXem = i; nut.forEach((b, k) => (k === i ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
   pane.forEach((p, k) => p.classList.toggle("dang-xem", k === i)); $("#dau-ten").textContent = TAB[i][1];
-  if (rong.matches) datVach(i); else if (cuon) trang.scrollTo({ left: i * trang.clientWidth, behavior: itChuyenDong ? "auto" : "smooth" });
+  if (rong.matches) datVach(i);
+  else if (cuon) { const dich = i * trang.clientWidth; if (Math.abs(trang.scrollLeft - dich) > 1) dichCuon = i; trang.scrollTo({ left: dich, behavior: itChuyenDong ? "auto" : "smooth" }); }
   if (TAB[i][0] === "phai-sinh") napPS();
-  ghiDiaChi();
+  // chủ động chuyển tab (menu, ô tìm, địa chỉ): thêm một bước lịch sử; đang mở tờ thì chỉ sửa bước của tờ.
+  // Vuốt ngang trên điện thoại (cuon = false) đi qua nhiều vị trí, nên chỉ ghi bước khi cuộn đã dừng (cuonYen).
+  if (cuon) ghiDiaChi(doi && !S.loai);
 }
-function ghiDiaChi() { try { history.replaceState(null, "", `${location.pathname}${S.ma ? `?ma=${S.ma}` : ""}#${TAB[dangXem][0]}`); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ } }
+
+/* ---------- Lịch sử trình duyệt: nút Back về tab trước và đóng tờ, không rời web ---------- */
+// Mỗi bước giữ { bt, tab, loai, ma, sau }: tab đang xem, tờ đang mở (loai, ma), và `sau` = bước này do web thêm ngay
+// trên một bước khác của web, nên đóng tờ bằng nút thì lùi được đúng một bước. Khi đang đưa giao diện về một bước
+// có sẵn (Back, Forward, địa chỉ có ?ma= lúc mở trang) thì giuBuoc = true: chỉ sửa bước hiện tại, không thêm bước.
+let giuBuoc = false, choDong = null;
+const laBuoc = (b) => (b && b.bt ? b : null);
+function ghiDiaChi(them) {
+  const cu = laBuoc(history.state), moi = !!them && !giuBuoc;
+  const buoc = { bt: 1, tab: dangXem, loai: S.loai || null, ma: S.ma || null, sau: moi ? 1 : (cu && cu.sau) || 0 };
+  const dc = `${location.pathname}${S.ma ? `?ma=${S.ma}` : ""}#${TAB[dangXem][0]}`;
+  try { if (moi) history.pushState(buoc, "", dc); else history.replaceState(buoc, "", dc); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ }
+}
+// mở lại tờ của một bước; mã không còn trong dữ liệu đang có thì thôi, bước đó được ghi lại thành bước không có tờ
+const MO_LAI = {
+  cp: (ma) => { if (S.tq && S.tq.ma.some((r) => r.ma === ma)) moMa(ma, null); },
+  cw: (ma) => { if (S.cq && S.cq.co && S.cq.cw.some((c) => c.ma === ma)) moCW(ma, null); },
+  etf: (ma) => moETF(ma, null), ps: (ma) => moPS(ma, null),
+  tk: () => moTaiKhoan(""), dm: () => moDanhMuc(), cb: () => moCanhBao(),
+};
+// Đưa giao diện về đúng bước vừa tới. b = null: bước không do web ghi (người dùng tự đổi #tab trên địa chỉ), khi đó
+// lấy tab theo địa chỉ và đóng tờ đang mở; tên tab lạ thì giữ tab đang xem.
+function theoBuoc(b, truot) {
+  giuBuoc = true;
+  try {
+    const i = b ? b.tab : TAB.findIndex((t) => `#${t[0]}` === location.hash);
+    const coTo = !to.hidden && !!S.loai;
+    if (coTo && !(b && b.loai)) dongTaiCho(truot);
+    if (Number.isInteger(i) && i >= 0 && i < TAB.length && i !== dangXem) datDangXem(i, true);
+    if (b && b.loai && MO_LAI[b.loai] && !(coTo && S.loai === b.loai && S.ma === b.ma)) MO_LAI[b.loai](b.ma);
+    ghiDiaChi(false);
+  } finally { giuBuoc = false; }
+}
+addEventListener("popstate", (e) => { const cho = choDong; choDong = null; theoBuoc(laBuoc(e.state), cho ? cho.truot : false); if (cho && cho.roi) cho.roi(); });
+// đổi #tab trên địa chỉ (gõ tay, liên kết, dấu trang): trình duyệt tự thêm bước; có trình duyệt báo cả popstate, có trình
+// duyệt chỉ báo hashchange, nên cả hai cùng gọi theoBuoc (lần sau thấy giao diện đã khớp thì không đổi gì)
+addEventListener("hashchange", () => theoBuoc(laBuoc(history.state), false));
 tab.addEventListener("click", (e) => { const b = e.target.closest(".tab-nut"); if (b) datDangXem(+b.dataset.tab, true); });
-// địa chỉ đổi phần #tab khi trang đang mở (gõ tay, bấm liên kết, dấu trang): chuyển sang tab đó; tên lạ thì giữ nguyên.
-// ghiDiaChi dùng replaceState nên không tự gọi lại sự kiện này.
-addEventListener("hashchange", () => { const i = TAB.findIndex((t) => `#${t[0]}` === location.hash); if (i >= 0 && i !== dangXem) datDangXem(i, true); });
-let choCuon = 0;
-trang.addEventListener("scroll", () => { if (rong.matches) return; cancelAnimationFrame(choCuon); choCuon = requestAnimationFrame(() => { const x = trang.scrollLeft / Math.max(trang.clientWidth, 1); datVach(x); const i = Math.round(x); if (i !== dangXem) datDangXem(i, false); }); }, { passive: true });
+let choCuon = 0, choYen = 0;
+// cuộn ngang đã dừng ở tab khác với tab của bước hiện tại: người dùng vừa vuốt sang, thêm một bước
+function cuonYen() { const b = laBuoc(history.state); if (dichCuon === null && !rong.matches && !S.loai && !(b && b.tab === dangXem)) ghiDiaChi(true); }
+trang.addEventListener("scroll", () => {
+  if (rong.matches) return;
+  clearTimeout(choYen); choYen = setTimeout(cuonYen, 180); cancelAnimationFrame(choCuon);
+  choCuon = requestAnimationFrame(() => {
+    const x = trang.scrollLeft / Math.max(trang.clientWidth, 1); datVach(x);
+    if (dichCuon !== null) { if (Math.abs(x - dichCuon) < 0.02) dichCuon = null; return; } // đang tự trượt: tab đang xem đã đặt lúc gọi
+    const i = Math.round(x); if (i !== dangXem) datDangXem(i, false);
+  });
+}, { passive: true });
+["pointerdown", "wheel"].forEach((ten) => trang.addEventListener(ten, () => { dichCuon = null; }, { passive: true }));
 rong.addEventListener("change", () => { datVach(dangXem); if (!rong.matches) trang.scrollTo({ left: dangXem * trang.clientWidth }); });
 
 /* ---------- Tab cổ phiếu: tóm tắt, bản đồ ngành, danh sách mã ---------- */
@@ -318,7 +370,7 @@ async function napMuc(hop, loai) {
   catch (e) { delete hop.dataset.xong; if (cho.isConnected) cho.innerHTML = `<p class="loi">Không nạp được. ${esc(e.message)}</p>`; }
 }
 async function moMa(ma, tu) {
-  S.ma = ma; S.loai = "cp"; ghiDiaChi();
+  S.ma = ma; S.loai = "cp";
   moTo(`${dauTo(ma, tenMa(ma), "")}<div class="to-than"><div class="dang-ve">Đang nạp ${esc(ma)}…</div></div>`, tu);
   try {
     const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/dong-tien?che_do=${S.cheDo}`);
@@ -402,7 +454,7 @@ function veCW(d) {
     <p class="chan le">Sàng lọc theo mô hình Black-Scholes, không phải khuyến nghị đầu tư. Bốn tiêu chí chưa tính phí giao dịch và thuế.</p></div>`;
 }
 async function moCW(ma, tu) {
-  S.ma = ma; S.loai = "cw"; S.trangCu = null; ghiDiaChi();
+  S.ma = ma; S.loai = "cw"; S.trangCu = null;
   moTo(`${dauTo(ma, "Chứng quyền", "")}<div class="to-than"><div class="dang-ve">Đang nạp ${esc(ma)}…</div></div>`, tu);
   try {
     const d = await api(`/api/chung-quyen/${encodeURIComponent(ma)}`);
@@ -463,7 +515,7 @@ function veQuy(ma) {
 }
 function moETF(ma, tu) {
   if (!S.etf || !S.etf.co || !S.etf.chiet_khau.dong.some((x) => x["Mã"] === ma)) return;
-  S.ma = ma; S.loai = "etf"; S.trangCu = null; ghiDiaChi(); moTo(veQuy(ma), tu); to.scrollTop = 0; napTrangCu();
+  S.ma = ma; S.loai = "etf"; S.trangCu = null; moTo(veQuy(ma), tu); to.scrollTop = 0; napTrangCu();
 }
 
 /* Phái sinh */
@@ -498,7 +550,7 @@ function veHD(h, n) {
 }
 function moPS(ma, tu) {
   const kq = timHD(ma); if (!kq) return;
-  S.ma = ma; S.loai = "ps"; S.trangCu = null; ghiDiaChi(); moTo(veHD(kq[0], kq[1]), tu); to.scrollTop = 0; napTrangCu();
+  S.ma = ma; S.loai = "ps"; S.trangCu = null; moTo(veHD(kq[0], kq[1]), tu); to.scrollTop = 0; napTrangCu();
 }
 
 /* Trang phân tích cũ của từng mã, đặt trong khung: số và biểu đồ do trang cũ tự tính theo giá lúc mở */
@@ -527,7 +579,7 @@ function moDuongCu(dd) {
   else if ((m = /^\/phai-sinh\/(VN(?:30|100)F[12][MQ])$/.exec(dd))) moPS(m[1], null);
   else if (/^\/huong-dan(#[\w-]*)?$/.test(dd)) window.open(CW_CU + dd, "_blank", "noopener");
   else if (/^https:\/\//.test(dd)) window.open(dd, "_blank", "noopener");
-  else { const i = { "/": 2, "/etf": 3, "/phai-sinh": 4 }[dd]; if (i) { dongTo(false); datDangXem(i, true); } }
+  else { const i = { "/": 2, "/etf": 3, "/phai-sinh": 4 }[dd]; if (i) dongTo(false, () => datDangXem(i, true)); }
 }
 // khung báo chiều cao nội dung và cú bấm vào liên kết; chỉ nghe đúng khung đang mở
 addEventListener("message", (e) => {
@@ -622,7 +674,7 @@ function veTaiKhoan(d, loi) {
 }
 async function moTaiKhoan(loi) {
   S.ma = null; S.loai = "tk";
-  if (to.hidden) moTo(`${dauTo("Tài khoản", "Duyệt người vào web và đặt vai", "")}<div class="to-than"><div class="dang-ve">Đang nạp danh sách…</div></div>`, null);
+  if (toDong()) moTo(`${dauTo("Tài khoản", "Duyệt người vào web và đặt vai", "")}<div class="to-than"><div class="dang-ve">Đang nạp danh sách…</div></div>`, null); else ghiDiaChi(false);
   try { const d = await api("/api/tai-khoan"); if (S.loai === "tk") $(".to-trong", to).innerHTML = veTaiKhoan(d, loi); }
   catch (e) { if (S.loai === "tk") $(".to-than", to).innerHTML = `<p class="loi le">Không nạp được danh sách tài khoản. ${esc(e.message)}</p>`; }
 }
@@ -723,7 +775,7 @@ async function napDanhMuc() {
 }
 function moDanhMuc() {
   S.ma = null; S.loai = "dm"; S.dm = { nguoi: null, d: null, lenh: null, ds: null, form: { loai: "cp", chieu: "MUA", yc: maYeuCau() } };
-  if (to.hidden) moTo(`<div class="to-than"></div>`, null);
+  if (toDong()) moTo(`<div class="to-than"></div>`, null); else ghiDiaChi(false);
   to.scrollTop = 0;
   napPS(); // danh sách hợp đồng cho ô chọn mã; lỗi thì ô đó báo chưa nạp được
   napDanhMuc();
@@ -912,7 +964,7 @@ async function napMucGia() {
 }
 function moCanhBao() {
   S.ma = null; S.loai = "cb"; S.cb = { d: null, form: { chieu: "duoi", ma: "", muc: "", ghiChu: "" } };
-  if (to.hidden) moTo(`<div class="to-than"></div>`, null);
+  if (toDong()) moTo(`<div class="to-than"></div>`, null); else ghiDiaChi(false);
   to.scrollTop = 0;
   napPS(); // tên các hợp đồng cho ô gợi ý mã; lỗi thì chỉ thiếu gợi ý
   napCanhBao();
@@ -943,18 +995,31 @@ function xinQuyen() { try { const p = Notification.requestPermission(veTinCB); i
 /* ---------- Tờ chi tiết: nở ra từ dòng được bấm, vuốt xuống để đóng ---------- */
 let dongGoc = null;
 function khungDong(el) { const a = app.getBoundingClientRect(), r = el.getBoundingClientRect(); return `inset(${Math.max(r.top - a.top, 0)}px ${Math.max(a.right - r.right, 0)}px ${Math.max(a.bottom - r.bottom, 0)}px ${Math.max(r.left - a.left, 0)}px round 8px)`; }
+const toDong = () => to.hidden || !to.classList.contains("mo"); // chưa mở, hoặc đang khép lại
 function moTo(html, tu) {
-  const dangMo = !to.hidden && to.classList.contains("mo");
+  const dangMo = !toDong(), b = laBuoc(history.state);
   to.innerHTML = `<div class="to-trong">${html}</div>`; to.scrollTop = 0;
+  // bước hiện tại là bước tab: thêm một bước cho tờ, để nút Back đóng tờ; đang ở bước của một tờ thì chỉ sửa bước đó
+  ghiDiaChi(!(b && b.loai));
   if (dangMo) return;
   dongGoc = tu || null; to.hidden = false; man.hidden = false; to.style.transform = "";
   if (!rong.matches && !itChuyenDong && tu) { to.style.transition = "none"; to.style.clipPath = khungDong(tu); void to.offsetHeight; to.style.transition = ""; }
   void to.offsetHeight; requestAnimationFrame(() => { to.classList.add("mo"); man.classList.add("mo"); to.style.clipPath = "inset(0 0 0 0 round 0px)"; });
 }
-function dongTo(truot) {
-  S.ma = null; S.loai = null; S.trangCu = null; S.dm = null; S.cb = null; ghiDiaChi(); to.classList.remove("mo"); man.classList.remove("mo");
+// Đóng tờ bằng nút lùi, phím Esc, bấm ra ngoài hay vuốt xuống. Tờ có bước lịch sử riêng thì lùi một bước: popstate
+// đóng tờ rồi chạy `roi` nếu có. Tờ mở thẳng từ địa chỉ có ?ma= không có bước nào của web bên dưới: đóng tại chỗ.
+function dongTo(truot, roi) {
+  if (choDong) return; // đang lùi để đóng: bấm thêm lần nữa không được lùi thêm bước
+  const b = laBuoc(history.state);
+  if (!(b && b.loai && b.sau)) { dongTaiCho(truot); if (roi) roi(); return; }
+  const cho = (choDong = { truot, roi }); history.back();
+  // phòng khi trình duyệt không báo popstate: sau 1,2 giây tờ vẫn chờ thì đóng tại chỗ
+  setTimeout(() => { if (choDong !== cho) return; choDong = null; dongTaiCho(truot); if (roi) roi(); }, 1200);
+}
+function dongTaiCho(truot) {
+  S.ma = null; S.loai = null; S.trangCu = null; S.dm = null; S.cb = null; ghiDiaChi(false); to.classList.remove("mo"); man.classList.remove("mo");
   if (!rong.matches && !itChuyenDong) { if (!truot && dongGoc && dongGoc.isConnected && dongGoc.getClientRects().length) to.style.clipPath = khungDong(dongGoc); else to.style.transform = "translateY(100%)"; }
-  setTimeout(() => { if (S.ma) return; to.hidden = true; man.hidden = true; to.style.clipPath = ""; to.style.transform = ""; to.innerHTML = ""; if (dongGoc && dongGoc.isConnected) dongGoc.focus({ preventScroll: true }); }, itChuyenDong ? 0 : 450);
+  setTimeout(() => { if (S.loai) return; to.hidden = true; man.hidden = true; to.style.clipPath = ""; to.style.transform = ""; to.innerHTML = ""; if (dongGoc && dongGoc.isConnected) dongGoc.focus({ preventScroll: true }); }, itChuyenDong ? 0 : 450);
 }
 man.addEventListener("click", () => dongTo(false));
 let keo = null;
@@ -1024,7 +1089,12 @@ function veGoiY() {
   goiY.hidden = false; oTim.setAttribute("aria-expanded", "true");
 }
 const MO_THEO_LOAI = { cp: [1, moMa], cw: [2, moCW], etf: [3, moETF], ps: [4, moPS] };
-function chonGoiY(ma, loai) { oTim.value = ""; dongGoiY(); oTim.blur(); const [viTri, mo] = MO_THEO_LOAI[loai] || MO_THEO_LOAI.cp; if (dangXem !== viTri) datDangXem(viTri, true); mo(ma, null); }
+function chonGoiY(ma, loai) { oTim.value = ""; dongGoiY(); oTim.blur(); const [viTri, mo] = MO_THEO_LOAI[loai] || MO_THEO_LOAI.cp;
+  // đang mở tờ mà mã vừa chọn thuộc tab khác: coi như rời tờ cũ, để tab mới là một bước riêng và đóng tờ mới thì ở lại tab mới
+  if (dangXem !== viTri) { S.ma = null; S.loai = null; datDangXem(viTri, true); }
+  mo(ma, null);
+  if (!S.loai && !toDong()) dongTaiCho(false); // mã không mở được tờ mới: không để tờ cũ treo lại
+}
 oTim.addEventListener("input", veGoiY); oTim.addEventListener("focus", veGoiY);
 oTim.addEventListener("keydown", (e) => { if (e.key === "Enter") { const b = $("button:not(:disabled)", goiY); if (!goiY.hidden && b) { e.preventDefault(); chonGoiY(b.dataset.goi, b.dataset.loai); } } });
 goiY.addEventListener("click", (e) => { const b = e.target.closest("[data-goi]"); if (b) chonGoiY(b.dataset.goi, b.dataset.loai); });
@@ -1041,19 +1111,23 @@ app.addEventListener("mouseleave", () => $$(".ds .dong[style]").forEach((d) => (
 // đọc mã trên địa chỉ TRƯỚC khi datDangXem ghi lại địa chỉ, nếu không tham số ?ma= bị mất
 const maMoDau = (new URLSearchParams(location.search).get("ma") || "").toUpperCase();
 const viTriHash = TAB.findIndex((t) => `#${t[0]}` === location.hash);
+// tờ mở theo ?ma= trên địa chỉ lúc vào trang: sửa bước đang đứng, không thêm bước
+const moDau = (mo, ma) => { giuBuoc = true; try { mo(ma, null); } finally { giuBuoc = false; } };
 function batDau() {
-  datDangXem(viTriHash >= 0 ? viTriHash : 0, false);
+  // trang vừa nạp: bước bên dưới (nếu có) không còn cùng trang này, nên bỏ dấu `sau` còn lại từ lần trước
+  try { history.replaceState(null, ""); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ }
+  datDangXem(viTriHash >= 0 ? viTriHash : 0, false); ghiDiaChi(false);
   hoiTin(); setInterval(hoiTin, GIAY_XET_LUOT * 1000); // tin cảnh báo: máy chủ chỉ tính trong giờ khớp lệnh
   napHomNay();
   if (!rong.matches) trang.scrollLeft = dangXem * trang.clientWidth;
   datVach(dangXem);
   Promise.all([napTongQuan(), api("/api/ma").then((ds) => { S.ds = ds; }).catch(() => { S.ds = []; })]).then(() => {
-    if (S.tq && /^[A-Z0-9]{3,4}$/.test(maMoDau) && S.tq.ma.some((r) => r.ma === maMoDau)) moMa(maMoDau, null);
+    if (S.tq && /^[A-Z0-9]{3,4}$/.test(maMoDau) && S.tq.ma.some((r) => r.ma === maMoDau)) moDau(moMa, maMoDau);
   });
   // chứng quyền và ETF đọc file kết quả (nhanh) nên nạp ngay; địa chỉ có ?ma= trỏ vào loại nào thì mở tờ của loại đó
   const choCQ = napCQ(), choETF = napETF();
-  if (/^VN(30|100)F[12][MQ]$/.test(maMoDau)) napPS().then(() => moPS(maMoDau, null));
-  else if (/^[A-Z0-9]{5,12}$/.test(maMoDau)) Promise.all([choCQ, choETF]).then(() => { if (S.cq && S.cq.co && S.cq.cw.some((c) => c.ma === maMoDau)) moCW(maMoDau, null); else moETF(maMoDau, null); });
+  if (/^VN(30|100)F[12][MQ]$/.test(maMoDau)) napPS().then(() => moDau(moPS, maMoDau));
+  else if (/^[A-Z0-9]{5,12}$/.test(maMoDau)) Promise.all([choCQ, choETF]).then(() => { if (S.cq && S.cq.co && S.cq.cw.some((c) => c.ma === maMoDau)) moDau(moCW, maMoDau); else moDau(moETF, maMoDau); });
 }
 vaoCong();
 })();
