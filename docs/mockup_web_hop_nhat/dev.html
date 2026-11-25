@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Xem thử bản mẫu</title>
+</head>
+<body>
+<script>
+// Xem thử tại máy: bọc index.html trong đúng khung mà trang Artifact dùng khi xuất bản
+// (charset, viewport-fit=cover, reset nhỏ). Chỉ sửa index.html; tệp này không cần đụng tới.
+fetch("index.html", { cache: "no-store" }).then((r) => r.text()).then((noiDung) => {
+  const khung = '<!doctype html><html lang="vi"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
+    "<style>:root{color-scheme:light;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}" +
+    "body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>" +
+    "</head><body>" + noiDung + "</body></html>";
+  document.open(); document.write(khung); document.close();
+});
+</script>
+</body>
+</html>
