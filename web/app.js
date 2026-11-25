@@ -74,6 +74,9 @@ function datDangXem(i, cuon) {
 }
 function ghiDiaChi() { try { history.replaceState(null, "", `${location.pathname}${S.ma ? `?ma=${S.ma}` : ""}#${TAB[dangXem][0]}`); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ } }
 tab.addEventListener("click", (e) => { const b = e.target.closest(".tab-nut"); if (b) datDangXem(+b.dataset.tab, true); });
+// địa chỉ đổi phần #tab khi trang đang mở (gõ tay, bấm liên kết, dấu trang): chuyển sang tab đó; tên lạ thì giữ nguyên.
+// ghiDiaChi dùng replaceState nên không tự gọi lại sự kiện này.
+addEventListener("hashchange", () => { const i = TAB.findIndex((t) => `#${t[0]}` === location.hash); if (i >= 0 && i !== dangXem) datDangXem(i, true); });
 let choCuon = 0;
 trang.addEventListener("scroll", () => { if (rong.matches) return; cancelAnimationFrame(choCuon); choCuon = requestAnimationFrame(() => { const x = trang.scrollLeft / Math.max(trang.clientWidth, 1); datVach(x); const i = Math.round(x); if (i !== dangXem) datDangXem(i, false); }); }, { passive: true });
 rong.addEventListener("change", () => { datVach(dangXem); if (!rong.matches) trang.scrollTo({ left: dangXem * trang.clientWidth }); });

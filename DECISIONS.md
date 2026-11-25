@@ -1254,3 +1254,21 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Chưa kiểm:** lần chạy theo lịch đầu tiên (23:00 ngày 25/11); so số từng mã với web cũ; điện thoại thật, âm thanh,
   thông báo; tải trong giờ khớp lệnh. Hai lỗi nhỏ thấy thêm, chưa sửa: đổi `#tab` trên địa chỉ khi trang đang mở không
   chuyển tab; chưa có favicon.
+
+### D113 — Web hợp nhất: đổi `#tab` trên địa chỉ thì chuyển tab; biểu tượng trang (2026-11-25, người dùng « Sửa và đẩy »)
+
+- **Lỗi 1:** giao diện chỉ đọc phần `#tab` của địa chỉ một lần lúc mở trang, nên gõ tay, bấm liên kết hay mở dấu trang
+  sang tab khác khi trang đang mở thì không có gì xảy ra. Sửa ở `web/app.js`: nghe sự kiện `hashchange`, tên trùng một
+  trong năm tab thì gọi đúng hàm `datDangXem` mà nút menu vẫn gọi; tên lạ thì giữ nguyên tab. `ghiDiaChi` dùng
+  `replaceState` nên không gọi vòng lại sự kiện này.
+- **Lỗi 2:** web chưa có biểu tượng trang (`/favicon.ico` trả 404). Thêm `web/favicon.ico` (16, 32, 48) và
+  `web/apple-touch-icon.png` (180, phủ kín vì iOS không nhận nền trong suốt), hai thẻ `<link>` trong `web/index.html`.
+  Hình vẽ bằng Pillow từ đúng dấu hiệu trên đầu trang (`.hieu-dau`): nền `--navy-dam` #113579, chữ B trắng, chữ T
+  `--vang` #e0b04a, phông Be Vietnam Pro ExtraBold của bộ nhận diện, bo góc 20%. Không dùng logo đầy đủ vì nến và chữ
+  INVEST nhòe ở cỡ 16 điểm ảnh.
+- **Kiểm:** test mới `test_khung_web_va_bieu_tuong_mo_duoc_khi_chua_dang_nhap` (trang chỉ trỏ tới tệp có thật, đúng là
+  tệp ảnh, không tạo dòng tài khoản); 71 test web qua. Trình duyệt tại máy: đổi `#etf`, `#phai-sinh`, `#chung-quyen` thì
+  tab, tiêu đề và ô nội dung đổi theo, `#khong-co` giữ nguyên; ở cỡ điện thoại ô nội dung trượt sang đúng tab.
+- **Thấy thêm, CHƯA sửa vì là đổi cách dùng chứ không phải lỗi:** chuyển tab và mở tờ chi tiết mã chỉ thay địa chỉ tại
+  chỗ (`replaceState`), không tạo bước lịch sử, nên nút Back hay vuốt lùi trên điện thoại rời khỏi web thay vì về tab
+  trước hoặc đóng tờ. Chờ người dùng chốt muốn Back làm gì.

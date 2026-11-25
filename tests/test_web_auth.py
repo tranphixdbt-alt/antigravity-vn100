@@ -398,6 +398,24 @@ def test_moi_duong_api_deu_dong_khi_chua_dang_nhap(env):
     assert users(env) == []  # không ai được tạo dòng tài khoản khi chưa đăng nhập
 
 
+def test_khung_web_va_bieu_tuong_mo_duoc_khi_chua_dang_nhap(env):
+    """Khung web tĩnh (không có số liệu) và biểu tượng trang ai cũng tải được; trang chỉ trỏ tới tệp có thật."""
+    c = client()
+    trang = c.get("/")
+    assert trang.status_code == 200 and "text/html" in trang.headers["content-type"]
+    bieu_tuong = re.findall(
+        r'<link rel="(?:icon|apple-touch-icon)"[^>]*href="([^"]+)"', trang.text
+    )
+    assert sorted(bieu_tuong) == ["apple-touch-icon.png", "favicon.ico"]
+    for ten in (*bieu_tuong, "app.js", "app.css"):
+        tep = c.get(f"/{ten}")
+        assert tep.status_code == 200 and len(tep.content) > 500, ten
+    # đúng là tệp ảnh, không phải trang lỗi trả kèm mã 200
+    assert c.get("/favicon.ico").content[:4] == b"\x00\x00\x01\x00"
+    assert c.get("/apple-touch-icon.png").content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert users(env) == []
+
+
 def test_tu_tao_thu_muc_cha_cua_tep_du_lieu(tmp_path, monkeypatch):
     """Lát 6: trên VPS tệp nằm ở /data/web_user/, thư mục đó chưa có ở lần chạy đầu."""
     path = tmp_path / "web_user" / "web_user.db"
