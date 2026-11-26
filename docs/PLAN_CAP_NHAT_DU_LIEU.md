@@ -71,4 +71,8 @@ Kiểm sau 07:50 ngày 26/11: web phải hiện "giá đến 25/11", và dòng M
 - D: thêm cờ `--no-discord` cho `chay_etf_tu_dong.sh` ở `~/cw_scanner`; lịch 15:10 nằm ở `/srv/apps/chungquyen/scheduler.py`
   trên VPS (không có trong repo).
 - E dài hạn (BCTC sang FHSC) chưa làm.
-- Còn chờ người dùng: GDP quý II/2026 trong DB là 8,39% (ước tính đầu), Cục Thống kê đã sửa thành 8,81%.
+- Người dùng duyệt « Ghi theo cục thống kê » (26/11): GDP quý II/2026 sửa 8,39% → 8,81%, thêm quý I/2026 8,15% (DB
+  thiếu kỳ này), cả hai lấy từ câu « cao hơn mức tăng 8,15% của quý I và 8,81% của quý II » trong báo cáo quý III.
+- Lên VPS 26/11 lúc 10:50, sau khi đợt xếp hạng chạy xong. Lượt kiểm dữ liệu chạy bù lúc 10:50 báo đúng một lỗi
+  có thật: đợt Quét VN100 sáng nay (08:00–10:05, còn code cũ) đã ghi 32 dòng giá giữa phiên 26/11. Đợt xếp hạng
+  không bị ảnh hưởng vì chỉ đọc giá tới phiên trước. Lượt 15:45 sẽ ghi đè các dòng của VN100 và VNINDEX.

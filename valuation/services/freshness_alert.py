@@ -1,9 +1,12 @@
 """Báo Discord khi dữ liệu trên web cũ hơn mức cho phép (D121, docs/PLAN_CAP_NHAT_DU_LIEU.md bước C).
 
 Hai loại kiểm, chạy sau mỗi lượt tải giá (job `kiem-du-lieu` 08:20 và 16:10 thứ Hai–thứ Sáu):
-- Giá: phiên mới nhất trong DB so với phiên đáng lẽ đã có (ngày làm việc gần nhất; sau 16:00 là hôm nay), cho phép
-  trễ `market_session.max_lag_weekdays` ngày (ngày nghỉ lễ giữa tuần như 24/11/2026 không bị báo nhầm). Thêm: số mã
-  VN100 có giá ở phiên mới nhất phải đủ `market_session.min_tickers_on_latest` (bắt cả dòng lạc của một mã).
+- Giá: phiên ĐÃ CHỐT mới nhất trong DB so với phiên đáng lẽ đã có (ngày làm việc gần nhất; sau 16:00 là hôm nay),
+  cho phép trễ `market_session.max_lag_weekdays` ngày (ngày nghỉ lễ giữa tuần như 24/11/2026 không bị báo nhầm).
+  Thêm: số mã VN100 có giá ở phiên đó phải đủ `market_session.min_tickers_on_latest` (bắt cả dòng lạc của một mã).
+- Giá phiên chưa chốt: trước giờ đóng phiên mà DB đã có dòng của hôm nay thì báo riêng, kể tên mã. Các dòng này không
+  được tính là "phiên mới nhất" (lỗi 26/11/2026 10:50: Quét VN100 chạy code cũ ghi giá giữa phiên cho 31 mã, tin báo
+  thành "Phiên 26/11 chỉ 25/100 mã có giá", nghe như thiếu dữ liệu).
 - Vĩ mô: tuổi kỳ số liệu mới nhất của từng chuỗi (`freshness_alert.macro_max_age_days`), chỉ báo vào các thứ trong
   `macro_alert_weekdays` để không lặp mỗi ngày.
 
@@ -20,6 +23,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from valuation.config import load_defaults
+from valuation.ingest.session_guard import unfinished_session_date
 
 Notifier = Callable[[str], bool]
 
@@ -100,6 +104,22 @@ def price_problems(
     return out
 
 
+def unfinished_problem(
+    day: dt.date | None, tickers: set[str], cfg: FreshnessConfig
+) -> list[str]:
+    """Câu báo khi DB có dòng giá của phiên chưa chốt; rỗng nếu không có."""
+    if day is None or not tickers:
+        return []
+    names = sorted(tickers)
+    shown = ", ".join(names[:12]) + ("…" if len(names) > 12 else "")
+    return [
+        (
+            f"Có giá phiên {day:%d/%m/%Y} ghi khi phiên chưa chốt (trước {cfg.close}) cho {len(names)} mã: {shown}. "
+            "Lượt giá cuối phiên ghi đè được các mã VN100 và VNINDEX; mã khác chờ lần quét sau."
+        )
+    ]
+
+
 def macro_problems(
     latest: dict[str, dt.date | None], today: dt.date, cfg: FreshnessConfig
 ) -> list[str]:
@@ -117,19 +137,28 @@ def macro_problems(
 
 
 def _db_state(
-    db: Session, macro_codes: list[str]
-) -> tuple[dt.date | None, set[str], set[str], dict]:
+    db: Session, macro_codes: list[str], unfinished: dt.date | None
+) -> tuple[dt.date | None, set[str], set[str], dict, set[str]]:
+    """Phiên đã chốt mới nhất (bỏ các ngày từ `unfinished` trở đi), mã có giá ở phiên đó, rổ VN100, kỳ vĩ mô mới
+    nhất, và mã có dòng giá từ ngày `unfinished` trở đi (mọi mã, không riêng VN100)."""
     from valuation.db.models import MacroSeries, PricesDaily, Ticker
 
     universe = {t for (t,) in db.query(Ticker.ticker).filter(Ticker.is_vn100)}
-    latest = (
-        db.query(func.max(PricesDaily.trade_date))
-        .filter(
-            PricesDaily.ticker.in_(universe | {"VNINDEX"}),
-            PricesDaily.close.isnot(None),
-        )
-        .scalar()
+    settled = db.query(func.max(PricesDaily.trade_date)).filter(
+        PricesDaily.ticker.in_(universe | {"VNINDEX"}),
+        PricesDaily.close.isnot(None),
     )
+    if unfinished is not None:
+        settled = settled.filter(PricesDaily.trade_date < unfinished)
+    latest = settled.scalar()
+    early: set[str] = set()
+    if unfinished is not None:
+        early = {
+            t
+            for (t,) in db.query(PricesDaily.ticker)
+            .filter(PricesDaily.trade_date >= unfinished)
+            .distinct()
+        }
     have: set[str] = set()
     if latest is not None:
         have = {
@@ -144,7 +173,7 @@ def _db_state(
         .scalar()
         for code in macro_codes
     }
-    return latest, have, universe, macro
+    return latest, have, universe, macro, early
 
 
 def run_check(
@@ -156,8 +185,14 @@ def run_check(
 ) -> dict:
     """Kiểm giá + vĩ mô, gửi MỘT tin Discord gộp nếu có vấn đề. Trả kết quả để in vào nhật ký job."""
     cfg = cfg or load_config()
-    latest, have, universe, macro = _db_state(db, list(cfg.macro_max_age_days))
-    prices = price_problems(latest, have, universe, now, cfg)
+    unfinished = unfinished_session_date(now, cfg.close)
+    latest, have, universe, macro, early = _db_state(
+        db, list(cfg.macro_max_age_days), unfinished
+    )
+    prices = [
+        *price_problems(latest, have, universe, now, cfg),
+        *unfinished_problem(unfinished, early, cfg),
+    ]
     macro_due = now.weekday() in cfg.macro_alert_weekdays
     macros = macro_problems(macro, now.date(), cfg) if macro_due else []
     lines = [*(f"- Giá: {p}" for p in prices), *(f"- Vĩ mô: {m}" for m in macros)]
@@ -169,6 +204,7 @@ def run_check(
         "latest_price": latest.isoformat() if latest else None,
         "tickers_on_latest": len(have & universe),
         "universe": len(universe),
+        "unfinished_rows": sorted(early),
         "price_problems": prices,
         "macro_checked": macro_due,
         "macro_problems": macros,

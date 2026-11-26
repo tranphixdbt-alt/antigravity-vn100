@@ -143,6 +143,54 @@ def test_run_check_quiet_when_fresh(mem_db):
     assert res["message"] is None and res["sent"] is False
 
 
+def test_run_check_reports_unfinished_session_rows_not_missing_tickers(mem_db):
+    """Tái hiện tin báo sai 26/11/2026 10:50: Quét VN100 (code cũ) ghi giá giữa phiên 26/11 cho một phần mã.
+
+    Tin cũ: "Phiên 26/11/2026 chỉ 25/100 mã VN100 có giá; thiếu: …" — nghe như thiếu dữ liệu. Đúng ra: phiên đã
+    chốt gần nhất (25/11) đủ mã, và có dòng của phiên 26/11 chưa chốt cần được ghi đè.
+    """
+    mem_db.add_all(
+        [Ticker(ticker=t, company_name=t, is_vn100=False) for t in ("GEL", "VNINDEX")]
+        + [
+            PricesDaily(ticker=t, trade_date=dt.date(2026, 11, 25), close=1.0)
+            for t in ("AAA", "BBB", "VNINDEX")
+        ]
+        + [
+            PricesDaily(ticker=t, trade_date=dt.date(2026, 11, 26), close=2.0)
+            for t in ("BBB", "GEL", "VNINDEX")
+        ]
+    )
+    mem_db.commit()
+    sent = []
+    res = fa.run_check(
+        mem_db,
+        dt.datetime(2026, 11, 26, 10, 50, tzinfo=VN),
+        notifier=lambda m: sent.append(m) or True,
+        cfg=CFG,
+    )
+    assert res["latest_price"] == "2026-11-25" and res["tickers_on_latest"] == 2
+    assert res["unfinished_rows"] == ["BBB", "GEL", "VNINDEX"]
+    assert res["price_problems"] == [
+        (
+            "Có giá phiên 26/11/2026 ghi khi phiên chưa chốt (trước 15:00) cho 3 mã: BBB, GEL, VNINDEX. "
+            "Lượt giá cuối phiên ghi đè được các mã VN100 và VNINDEX; mã khác chờ lần quét sau."
+        )
+    ]
+    assert len(sent) == 1
+    # 16:10 cùng ngày: phiên 26/11 đã chốt, dòng 26/11 là số hợp lệ; chỉ còn báo thiếu mã AAA nếu có
+    res = fa.run_check(
+        mem_db,
+        dt.datetime(2026, 11, 26, 16, 10, tzinfo=VN),
+        notifier=lambda m: True,
+        cfg=CFG,
+        dry_run=True,
+    )
+    assert res["latest_price"] == "2026-11-26" and res["unfinished_rows"] == []
+    assert res["price_problems"] == [
+        "Phiên 26/11/2026 chỉ 1/2 mã VN100 có giá; thiếu: AAA."
+    ]
+
+
 def test_job_failure_message_has_no_log_content_and_validates_name():
     spec = importlib.util.spec_from_file_location(
         "notify_job_failure", "scripts/notify_job_failure.py"

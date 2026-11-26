@@ -27,14 +27,19 @@ def now_vn() -> dt.datetime:
     return dt.datetime.now(ZoneInfo(_cfg()["timezone"]))
 
 
-def unfinished_session_date(now: dt.datetime | None = None) -> dt.date | None:
+def unfinished_session_date(
+    now: dt.datetime | None = None, close: str | None = None
+) -> dt.date | None:
     """Ngày của phiên CHƯA chốt tại `now` (giờ VN): hôm nay nếu chưa tới giờ đóng phiên, ngược lại None.
 
-    Thứ Bảy, Chủ nhật không có phiên nhưng trả hôm nay cũng vô hại: nguồn không có dòng của ngày đó.
+    `close` mặc định lấy `market_session.close`. Thứ Bảy, Chủ nhật không có phiên nhưng trả hôm nay cũng vô hại:
+    nguồn không có dòng của ngày đó.
     """
     cfg = _cfg()
     local = (now or now_vn()).astimezone(ZoneInfo(cfg["timezone"]))
-    return local.date() if local.strftime("%H:%M") < str(cfg["close"]) else None
+    return (
+        local.date() if local.strftime("%H:%M") < str(close or cfg["close"]) else None
+    )
 
 
 def drop_unfinished_session(

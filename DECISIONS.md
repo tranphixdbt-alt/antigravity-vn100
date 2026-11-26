@@ -1491,3 +1491,10 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   khoảng thì không ghi, chặn host lạ), `tests/test_freshness_alert.py` (ngày nghỉ giữa tuần không báo, chậm 2 ngày thì
   báo, dòng lạc một mã, vĩ mô theo tuổi kỳ, quét bù chỉ gọi phần thiếu), cập nhật `test_fhsc_bridge`,
   `test_daily_report`, `test_data_update_job`; `scheduler.py --selftest`.
+- **Lên VPS 26/11 10:50 và sửa thêm cùng ngày:** người dùng duyệt « Ghi theo cục thống kê »: GDP quý II/2026 sửa 8,39% →
+  8,81% và thêm quý I/2026 8,15% (DB thiếu), nguồn câu « cao hơn mức tăng 8,15% của quý I và 8,81% của quý II » trong
+  báo cáo quý III. Lượt kiểm chạy bù 10:50 báo "Phiên 26/11 chỉ 25/100 mã có giá" vì đợt Quét VN100 sáng (còn code cũ)
+  đã ghi giá giữa phiên cho 31 mã. Sửa theo người dùng « Sửa luôn »: lượt kiểm chỉ lấy phiên ĐÃ CHỐT làm phiên mới
+  nhất, còn dòng của phiên chưa chốt thì báo riêng, kể tên mã (`freshness_alert.unfinished_problem`,
+  `session_guard.unfinished_session_date(now, close)`). Test tái hiện:
+  `test_run_check_reports_unfinished_session_rows_not_missing_tickers`.
