@@ -208,6 +208,14 @@ def refresh_market(corporate_actions: bool = True) -> dict:
                         f"{t}: {type(exc).__name__}: {str(exc)[:100]}"
                     )
             info["price_total"] = len(tickers) + 1
+            zero = info["fhsc"].get("foreign_zero_dates") or []
+            if zero:
+                # FHSC trả khối ngoại trống cả rổ (lỗi 23/11/2026): phiên đó đã bị bỏ khỏi bộ đệm, lấy lại từ Vietcap
+                from valuation.ingest import vietcap_flow
+
+                info["foreign_fill"] = vietcap_flow.fill_sessions(
+                    tickers, [date.fromisoformat(d) for d in zero]
+                )
             fhsc_bridge.clear()
             if before[0] is not None:
                 info["recheck"] = recheck_session(before, _rows_of_day(tickers, before[0]))
@@ -459,6 +467,15 @@ def build_message(
                 f"ℹ️ Tải lại phiên {_ddmm(rc['date'])}: {len(pc)}/{rc['checked']} mã đổi giá"
                 + (f" ({names})" if pc else "")
                 + f", {len(fc)} mã đổi khối ngoại. Số ghi lúc 15:45 chưa chốt, hoặc giá điều chỉnh theo quyền."
+            )
+        ff = info.get("foreign_fill")
+        if ff:
+            gap = len(ff["missing"]) + len(ff["errors"])
+            warn.append(
+                f"ℹ️ FHSC trả khối ngoại trống cả rổ phiên {', '.join(_ddmm(d) for d in ff['days'])}: "
+                f"đã lấy Vietcap cho {ff['written']} mã"
+                + (f", {gap} mã vẫn thiếu" if gap else "")
+                + "."
             )
         for e in info["macro_errors"]:
             warn.append(f"⚠️ Vĩ mô lỗi — {e}")

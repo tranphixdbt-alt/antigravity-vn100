@@ -447,6 +447,21 @@ def validate(
                 "sessions": num(a.get("sessions"), 20, int(cfg["max_sessions"])),
                 "top": num(a.get("top"), 5, rows),
             }
+        elif name == "foreign_flow":  # hai công cụ khối ngoại: chỉ góc chat web
+            ts = tickers(a.get("ticker"))
+            if not ts:
+                continue
+            kw = {
+                "ticker": ts[0],
+                "sessions": num(
+                    a.get("sessions"), 10, int(cfg["foreign_max_sessions"])
+                ),
+            }
+        elif name == "foreign_top":
+            kw = {
+                "sessions": num(a.get("sessions"), 5, int(cfg["foreign_max_sessions"])),
+                "top": num(a.get("top"), 5, rows),
+            }
         elif name in ("consensus", "technical", "peers"):
             ts = tickers(a.get("ticker"))
             if not ts:

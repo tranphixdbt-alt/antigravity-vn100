@@ -24,6 +24,8 @@ CFG = {
     "rate_limit_retries": 2,
     "timeout_sec": 60,
     "cache_ttl_sec": 1800,
+    "foreign_zero_share": 0.9,
+    "foreign_zero_min_tickers": 20,
 }
 DAY = dt.datetime(2026, 11, 13, 7, 50, tzinfo=VN)
 
@@ -102,7 +104,7 @@ def test_prefetch_feeds_existing_clients_in_vci_shape(monkeypatch):
              "sell_val": 4.0, "net_vol": -2.0, "net_val": -2.0}]
     run = _fake_run([_item("FPT", "prices", prices), _item("FPT", "foreign", flow), _item("FPT", "prop", flow)])
     stats = fhsc_bridge.prefetch({"FPT": "2026-11-11"}, ["prices", "foreign", "prop"], now=DAY, run=run)
-    assert stats == {"ok": 3, "errors": {}, "skipped": None}
+    assert stats == {"ok": 3, "errors": {}, "skipped": None, "foreign_zero_dates": []}
 
     # vnstock_client/market_client lấy từ bộ đệm FHSC, không gọi VCI (vnstock 4 không bị import)
     df = vnstock_client.get_historical_prices("FPT", "2026-11-12")
@@ -174,3 +176,30 @@ def test_run_ingest_records_price_source(monkeypatch):
 
     res = pipeline.run_ingest("FPT", ["prices"], include_market_flows=False)
     assert res["prices"]["status"] == "UPDATED" and res["prices"]["source"] == "fhsc"
+
+
+def test_prefetch_bo_phien_khoi_ngoai_trong_ca_ro():
+    # Lỗi 23/11/2026: FHSC trả khối ngoại mua = bán = 0 cho cả 100 mã (Vietcap, TCBS: FPT mua 4.899.805 cp). Phiên như
+    # vậy bị bỏ khỏi bộ đệm (không ghi số 0 giả), phiên bên cạnh giữ nguyên. Mã lẻ có khối ngoại 0 thật thì giữ.
+    def flow(ma_so):
+        rows = [{"time": "2026-11-20T00:00:00.000+07:00", "buy_vol": 1.0, "buy_val": 0.0 if ma_so == 0 else 2.0,
+                 "sell_vol": 3.0, "sell_val": 0.0 if ma_so == 0 else 4.0, "net_vol": -2.0, "net_val": -2.0},
+                {"time": "2026-11-23T00:00:00.000+07:00", "buy_vol": 0.0, "buy_val": 0.0, "sell_vol": 0.0,
+                 "sell_val": 0.0, "net_vol": 0.0, "net_val": 0.0}]
+        return rows
+    ma = [f"M{i:02d}" for i in range(25)]
+    run = _fake_run([_item(m, "foreign", flow(i)) for i, m in enumerate(ma)])
+    stats = fhsc_bridge.prefetch({m: "2026-11-20" for m in ma}, ["foreign"], now=DAY.replace(day=24), run=run)
+    assert stats["foreign_zero_dates"] == ["2026-11-23"]
+    for m in ma:
+        assert fhsc_bridge._CACHE[(m, "foreign")][2]["time"].tolist() == [dt.date(2026, 11, 20)]
+    # 1/25 mã bằng 0 ở phiên 20/11 (4% < 90%) → vẫn giữ số 0 của mã đó
+    assert fhsc_bridge._CACHE[("M00", "foreign")][2]["buy_val"].tolist() == [0.0]
+
+
+def test_phien_trong_chi_xet_khi_du_ma():
+    f = pd.DataFrame({"time": [dt.date(2026, 11, 23)], "buy_val": [0.0], "sell_val": [0.0]})
+    assert fhsc_bridge.basket_zero_dates([f], 0.9, 20) == []      # tải 1 mã: không suy ra "cả rổ"
+    assert fhsc_bridge.basket_zero_dates([f] * 20, 0.9, 20) == [dt.date(2026, 11, 23)]
+    nan = f.assign(buy_val=[float("nan")], sell_val=[float("nan")])
+    assert fhsc_bridge.basket_zero_dates([nan] * 20, 0.9, 20) == []  # thiếu số không phải số 0

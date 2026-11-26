@@ -346,6 +346,118 @@ def tool_peers(ticker: str) -> dict:
     return out
 
 
+# ---------- khối ngoại ----------
+
+TY = 1e9  # cột khối ngoại trong prices_daily tính bằng đồng; công cụ trả tỷ đồng
+
+
+def _foreign_frame(days_back: int) -> pd.DataFrame:
+    """Khối ngoại của rổ VN100 (đồng), mỗi dòng một mã một phiên có giá. NaN = phiên đó nguồn không có khối ngoại."""
+    from datetime import timedelta
+
+    from valuation.db.models import PricesDaily, Ticker
+    from valuation.db.session import SessionLocalRead
+
+    since = assistant._today() - timedelta(days=days_back)
+    db = SessionLocalRead()
+    try:
+        q = (
+            db.query(
+                PricesDaily.ticker,
+                PricesDaily.trade_date,
+                PricesDaily.foreign_buy_val,
+                PricesDaily.foreign_sell_val,
+                PricesDaily.foreign_net_val,
+                PricesDaily.foreign_net_vol,
+            )
+            .join(Ticker, Ticker.ticker == PricesDaily.ticker)
+            .filter(
+                Ticker.is_vn100,
+                PricesDaily.trade_date >= since,
+                PricesDaily.close.isnot(None),
+            )
+        )
+        df = pd.DataFrame(
+            q.all(), columns=["ma", "ngay", "mua", "ban", "rong", "rong_kl"]
+        )
+    finally:
+        db.close()
+    for c in ("mua", "ban", "rong", "rong_kl"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def _last_days(df: pd.DataFrame, sessions: int) -> list:
+    return sorted(df["ngay"].unique())[-sessions:]
+
+
+def foreign_ticker_table(df: pd.DataFrame, ticker: str, sessions: int) -> dict:
+    """Khối ngoại từng phiên của một mã trong `sessions` phiên giao dịch gần nhất của rổ (tỷ đồng).
+
+    Phiên mã có giá mà không có số khối ngoại thì ghi `thieu`, không tính vào tổng.
+    """
+    days = _last_days(df, sessions)
+    own = df[(df["ma"] == ticker) & df["ngay"].isin(days)].set_index("ngay")
+    rows, missing = [], []
+    for d in days:
+        r = own.loc[d] if d in own.index else None
+        if r is None or pd.isna(r["rong"]):
+            missing.append(pd.Timestamp(d).date().isoformat())
+            continue
+        rows.append(
+            {
+                "ngay": pd.Timestamp(d).date().isoformat(),
+                "mua_ty": _num(r["mua"] / TY),
+                "ban_ty": _num(r["ban"] / TY),
+                "rong_ty": _num(r["rong"] / TY),
+                "rong_cp": _num(r["rong_kl"], 0),
+            }
+        )
+    net = own.loc[own.index.isin(days), "rong"].sum(min_count=1) / TY
+    return {
+        "ma": ticker,
+        "don_vi": "tỷ đồng; gồm khớp lệnh và thỏa thuận",
+        "so_phien": len(days),
+        "phien": rows,
+        "phien_thieu": missing,
+        "tong_rong_ty": _num(net),
+        "phien_mua_rong": sum(1 for x in rows if (x["rong_ty"] or 0) > 0),
+        "phien_ban_rong": sum(1 for x in rows if (x["rong_ty"] or 0) < 0),
+    }
+
+
+def foreign_rank(df: pd.DataFrame, sessions: int, top: int) -> dict:
+    """Mã VN100 khối ngoại mua ròng, bán ròng nhiều nhất cộng dồn `sessions` phiên (tỷ đồng)."""
+    days = _last_days(df, sessions)
+    w = df[df["ngay"].isin(days)]
+    have = w.groupby("ngay")["rong"].apply(lambda s: s.notna().mean())
+    missing = [
+        pd.Timestamp(d).date().isoformat() for d, share in have.items() if share < 0.5
+    ]
+    net = w.groupby("ma")["rong"].sum(min_count=1).dropna() / TY
+    row = lambda s: [{"ma": m, "rong_ty": _num(v)} for m, v in s.items()]
+    return {
+        "pham_vi": "rổ VN100, không phải toàn sàn; gồm khớp lệnh và thỏa thuận",
+        "tu_ngay": pd.Timestamp(days[0]).date().isoformat() if days else None,
+        "den_ngay": pd.Timestamp(days[-1]).date().isoformat() if days else None,
+        "so_phien": len(days),
+        "phien_thieu_khoi_ngoai": missing,
+        "ro_rong_ty": _num(net.sum()) if len(net) else None,
+        "mua_rong_nhieu_nhat": row(net[net > 0].sort_values(ascending=False).head(top)),
+        "ban_rong_nhieu_nhat": row(net[net < 0].sort_values().head(top)),
+    }
+
+
+def tool_foreign_flow(ticker: str, sessions: int) -> dict:
+    return foreign_ticker_table(
+        _foreign_frame(int(sessions * 1.6) + 15), ticker, sessions
+    )
+
+
+def tool_foreign_top(sessions: int, top: int) -> dict:
+    return foreign_rank(_foreign_frame(int(sessions * 1.6) + 15), sessions, top)
+
+
 WEB_TOOLS: dict = {
     **assistant.TOOLS,
     "market_today": (
@@ -367,6 +479,16 @@ WEB_TOOLS: dict = {
         tool_technical,
         "Trạng thái kỹ thuật của 1 mã: giá so với đường trung bình 5-200 phiên, RSI14, MACD, đỉnh đáy 1 năm.",
         '{"ticker": "HPG"}',
+    ),
+    "foreign_flow": (
+        tool_foreign_flow,
+        "Khối ngoại mua, bán, ròng từng phiên của 1 mã VN100 trong N phiên gần nhất (tỷ đồng), tổng ròng.",
+        '{"ticker": "FPT", "sessions": 10}',
+    ),
+    "foreign_top": (
+        tool_foreign_top,
+        "Mã VN100 khối ngoại mua ròng, bán ròng nhiều nhất cộng dồn N phiên, và tổng ròng cả rổ.",
+        '{"sessions": 5, "top": 5}',
     ),
     "peers": (
         tool_peers,

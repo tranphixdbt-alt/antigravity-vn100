@@ -28,6 +28,7 @@ CFG = {
     "max_rows": 30,
     "max_sessions": 250,
     "breadth_max_sessions": 60,
+    "foreign_max_sessions": 60,
 }
 
 
@@ -149,6 +150,60 @@ def test_lam_sach_cau_hoi():
         assert e.value.status == 422
 
 
+def _khoi_ngoai() -> pd.DataFrame:
+    d = [dt.date(2026, 11, x) for x in (19, 20, 23, 25)]
+    rows = [
+        # FPT 23/11 là số thật Vietcap (đồng); 20/11 thiếu số khối ngoại (NaN), không được coi là 0
+        ("FPT", d[0], 100e9, 300e9, -200e9, -4e6),
+        ("FPT", d[1], None, None, None, None),
+        ("FPT", d[2], 225151047950.0, 200121286500.0, 25029761450.0, 519010.0),
+        ("FPT", d[3], 110e9, 110e9, 0.0, 0.0),
+        ("VCB", d[2], 50e9, 20e9, 30e9, 5e5),
+        ("VCB", d[3], 10e9, 5e9, 5e9, 1e5),
+        ("HPG", d[3], 1e9, 41e9, -40e9, -1e6),
+    ]
+    return pd.DataFrame(rows, columns=["ma", "ngay", "mua", "ban", "rong", "rong_kl"]).astype(
+        {c: float for c in ("mua", "ban", "rong", "rong_kl")}
+    )
+
+
+def test_khoi_ngoai_mot_ma_tinh_tay():
+    out = t.foreign_ticker_table(_khoi_ngoai(), "FPT", 3)  # 3 phiên cuối của rổ: 20, 23, 25/11
+    assert out["so_phien"] == 3 and out["phien_thieu"] == ["2026-11-20"]
+    assert [x["ngay"] for x in out["phien"]] == ["2026-11-23", "2026-11-25"]
+    # 225.151.047.950 đ = 225,15 tỷ; ròng 25.029.761.450 đ = 25,03 tỷ
+    assert out["phien"][0] == {"ngay": "2026-11-23", "mua_ty": 225.15, "ban_ty": 200.12, "rong_ty": 25.03, "rong_cp": 519010}
+    # tổng ròng = 25,03 + 0 = 25,03 tỷ; 1 phiên mua ròng, phiên ròng 0 không tính mua hay bán
+    assert out["tong_rong_ty"] == 25.03 and (out["phien_mua_rong"], out["phien_ban_rong"]) == (1, 0)
+    assert t.foreign_ticker_table(_khoi_ngoai(), "MBB", 3)["tong_rong_ty"] is None  # không có số: không bịa 0
+
+
+def test_khoi_ngoai_xep_hang_tinh_tay():
+    out = t.foreign_rank(_khoi_ngoai(), 2, 5)  # 23/11 và 25/11
+    assert (out["tu_ngay"], out["den_ngay"], out["so_phien"]) == ("2026-11-23", "2026-11-25", 2)
+    # VCB 30 + 5 = 35 tỷ; FPT 25,03 + 0; HPG −40; cả rổ 35 + 25,03 − 40 = 20,03
+    assert out["mua_rong_nhieu_nhat"] == [{"ma": "VCB", "rong_ty": 35.0}, {"ma": "FPT", "rong_ty": 25.03}]
+    assert out["ban_rong_nhieu_nhat"] == [{"ma": "HPG", "rong_ty": -40.0}]
+    assert out["ro_rong_ty"] == 20.03 and out["phien_thieu_khoi_ngoai"] == []
+    # 3 phiên: 20/11 chỉ FPT có dòng và dòng đó thiếu số (0% < 50%) → ghi phiên thiếu
+    assert t.foreign_rank(_khoi_ngoai(), 3, 5)["phien_thieu_khoi_ngoai"] == ["2026-11-20"]
+
+
+def test_kiem_tham_so_cong_cu_khoi_ngoai():
+    plan = {
+        "calls": [
+            {"tool": "foreign_flow", "args": {"ticker": "fpt", "sessions": 999}},
+            {"tool": "foreign_top", "args": {"top": 999}},
+            {"tool": "foreign_flow", "args": {"ticker": "ZZZ"}},
+        ]
+    }
+    calls, _ = a.validate(plan, U, CFG, t.WEB_TOOLS)
+    assert calls == [
+        ("foreign_flow", {"ticker": "FPT", "sessions": 60}),
+        ("foreign_top", {"sessions": 5, "top": 30}),
+    ]
+
+
 def test_bo_cong_cu_web_khong_doi_bot_discord():
     plan = {
         "calls": [
@@ -183,6 +238,8 @@ def test_bo_cong_cu_web_khong_doi_bot_discord():
         "breadth",
         "index_movers",
         "technical",
+        "foreign_flow",
+        "foreign_top",
         "peers",
     }
 
@@ -234,7 +291,7 @@ def test_trang_thai_va_tra_loi_tru_mot_luot(env, ai):
     assert (
         s["con_lai"] == 20
         and s["gioi_han"] == 20
-        and len(s["goi_y"]) == 6
+        and len(s["goi_y"]) == 7
         and s["toi_da_ky_tu"] == 300
     )
     r = hoi(an)
@@ -340,6 +397,8 @@ def test_cong_cu_tren_db_that():
         k = t.tool_technical("VRE")
         p = t.tool_peers("VRE")
         h = t.tool_market_today()
+        f = t.tool_foreign_flow("VRE", 10)
+        r = t.tool_foreign_top(5, 3)
     assert b["so_phien"] == 5 and all(
         x["tang"] + x["giam"] + x["dung"] <= 100 for x in b["phien"]
     )
@@ -353,3 +412,5 @@ def test_cong_cu_tren_db_that():
     )
     assert p["ma"] == "VRE" and p["so_ma_cung_nganh"] >= 1
     assert h["nhan_thi_truong"] and len(h["bon_tru_cot"]) == 4
+    assert f["ma"] == "VRE" and f["so_phien"] == 10 and len(f["phien"]) + len(f["phien_thieu"]) == 10
+    assert r["so_phien"] == 5 and len(r["mua_rong_nhieu_nhat"]) <= 3

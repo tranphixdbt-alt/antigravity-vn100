@@ -1526,3 +1526,21 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Siết điều kiện** ở repo `cw_scanner` (`danh_muc.loc_chat_canh_bao`, commit 1197631, KE_HOACH.md Phần 10): giá ≥ 200 đ,
   có lệch và đắt/rẻ HV, không đắt hơn giá hợp lý theo HV, còn ≥ 30 ngày tới GD cuối, mua được 5 triệu ở giá ≤ giá báo + 5% (siết lên 20 triệu rồi
   người dùng hạ lại 5 triệu cùng ngày). Theo 57 lượt giảm mạnh đã báo 30/10–26/11 còn 12. Áp cả cho Discord của web chứng quyền.
+
+### D124 — Khối ngoại: chặn phiên FHSC trả trống cả rổ, vá phiên 23/11 từ Vietcap, Ếch đọc khối ngoại từng mã (2026-11-26, người dùng « làm cả 2 »)
+
+- **Lỗi**: phiên 23/11/2026 cả 100 mã VN100 ghi khối ngoại mua = bán = 0. Gốc ở nguồn: FHSC trả đúng 0 cho phiên đó (tải
+  lại 26/11 vẫn vậy), code nhận như số thật. Vietcap IQ và TCBS có số thật (FPT mua 4.899.805 cp gồm 722.000 cp thỏa thuận,
+  ròng +25,03 tỷ). Các tổng khối ngoại 5/20 phiên của tab Dòng tiền ngành vì vậy tính 23/11 bằng 0.
+- **Chặn**: `fhsc_bridge` bỏ khỏi bộ đệm phiên mà ≥ `fhsc.foreign_zero_share` (90%) số mã báo mua = bán = 0, chỉ xét khi
+  lượt tải có ≥ 20 mã (ngày thường 0–3 mã VN100 có khối ngoại 0 thật). `refresh_market` lấy lại phiên đó từ Vietcap
+  (`valuation/ingest/vietcap_flow.py`, cột *Total = khớp + thỏa thuận, cùng định nghĩa FHSC; FPT 18–25/11 khớp từng đồng),
+  báo cáo sáng ghi một dòng. Vietcap cũng trống thì không ghi, báo mã thiếu.
+- **Vá 23/11**: `scripts/repair_foreign_session.py 2026-11-23 --apply` sao lưu CSV rồi ghi qua `upsert_market_flows`.
+- **24/11/2026 không phải phiên thiếu**: Vietcap, TCBS đều không có phiên này.
+- **Hỏi Ếch**: thêm `foreign_flow` (khối ngoại từng phiên của 1 mã, tỷ đồng) và `foreign_top` (mua/bán ròng nhiều nhất
+  cộng dồn N phiên). Phiên thiếu số ghi `phien_thieu`, không coi là 0. Trần `assistant.foreign_max_sessions` 60. Bot
+  Discord không đổi.
+- **Margin**: không có nguồn công khai cho call margin theo ngày. DB đã có dư nợ cho vay (`loans`) theo quý của 8 CTCK
+  trong VN100 từ 2018 (quý 3/2026: 130.959 tỷ đồng); chưa làm gì thêm.
+

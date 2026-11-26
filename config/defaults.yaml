@@ -660,6 +660,7 @@ assistant:
   plan_max_tokens: 400
   answer_max_tokens: 1000
   breadth_max_sessions: 60       # trần số phiên của công cụ độ rộng (chỉ góc chat web dùng, valuation/services/web_chat_tools.py)
+  foreign_max_sessions: 60       # trần số phiên của hai công cụ khối ngoại (góc chat web)
 
 # Mô hình tổng hợp CTCK (valuation/engine/models/broker_synth.py, docs/BROKER_SYNTH.md).
 broker_synth:
@@ -757,6 +758,23 @@ fhsc:
   rate_limit_retries: 2
   timeout_sec: 1800               # cả lượt 100 mã × 3 loại ≈ 7–8 phút
   cache_ttl_sec: 1800             # dữ liệu tải trước chỉ dùng trong lượt job đó
+  # Lỗi 23/11/2026: FHSC trả khối ngoại mua = bán = 0 cho cả 100 mã (Vietcap, TCBS có số thật: FPT mua 4,9 triệu cp).
+  # Phiên mà ≥ tỷ lệ này số mã báo mua = bán = 0 là nguồn trống, không phải không ai giao dịch → không ghi số 0,
+  # lấy lại phiên đó từ Vietcap (`vietcap_flow`). Ngày thường chỉ 0–3 mã VN100 có khối ngoại bằng 0 (đo 10–26/11).
+  foreign_zero_share: 0.9
+  foreign_zero_min_tickers: 20    # lượt tải ít mã hơn (vd 1 mã) thì không suy được "cả rổ" → không xét
+# Khối ngoại từng mã từ Vietcap IQ (cùng nguồn flow_ingest dùng qua vnstock_data trước khi gói bị khóa, D97), gọi
+# thẳng API, chỉ để vá phiên FHSC trả trống. Cột *Total = khớp lệnh + thỏa thuận, cùng định nghĩa cột FHSC đang ghi
+# (đối chiếu FPT 18–25/11/2026: khớp từng đồng).
+vietcap_flow:
+  url: "https://iq.vietcap.com.vn/api/iq-insight-service/v1/company/{ticker}/price-history"
+  page_size: 30                   # số phiên gần nhất xin mỗi mã (vá được phiên trong ~6 tuần)
+  timeout_seconds: 15
+  pause_seconds: 0.4              # nghỉ giữa các mã (100 mã ≈ 1 phút)
+  headers:
+    Referer: "https://trading.vietcap.com.vn/"
+    Origin: "https://trading.vietcap.com.vn"
+    User-Agent: "Mozilla/5.0"
 # Phiên giao dịch (D121): trước giờ đóng phiên, mọi đường ghi giá/khối ngoại/tự doanh bỏ dòng của hôm nay
 # (số trong phiên còn đổi; lỗi MCH 25/11/2026 ghi đóng cửa 133.000 lúc giữa phiên, thật 130.000). Sau giờ này
 # số của phiên đã chốt (khớp lệnh và thỏa thuận kết thúc 15:00) → job `gia-cuoi-phien` 15:45 ghi ngay trong ngày.
@@ -841,6 +859,7 @@ web:
       - "Ngành ngân hàng mã nào upside cao nhất?"
       - "So sánh FPT với các mã cùng ngành"
       - "Tín hiệu kỹ thuật của HPG thế nào?"
+      - "Khối ngoại mua ròng mã nào nhiều nhất 5 phiên qua?"
   ai_report:                      # nút "Sinh báo cáo AI" bản ngắn trên tờ mã (lát 7, D116, valuation/services/web_ai_report.py)
     daily_limit: 5                # lượt sinh mới mỗi tài khoản mỗi ngày (giờ VN), người dùng chốt 25/11/2026; dùng lại bản cũ không tính lượt
     target_words: 500             # độ dài người dùng chốt 25/11/2026: tổng quan công ty + nhận định về mã

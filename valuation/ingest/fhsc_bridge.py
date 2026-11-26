@@ -74,7 +74,7 @@ def prefetch(
     elif not python.exists():
         skip = f"chưa có {python} (vnstock thế hệ 6)"
     if skip:
-        return {"ok": 0, "errors": {}, "skipped": skip}
+        return {"ok": 0, "errors": {}, "skipped": skip, "foreign_zero_dates": []}
     req = {"starts": starts, "kinds": kinds} | {
         k: cfg[k] for k in ("min_interval_sec", "rate_limit_wait_sec", "rate_limit_retries")
     }
@@ -84,7 +84,7 @@ def prefetch(
             timeout=cfg["timeout_sec"], cwd=PROJECT_ROOT,
         )
     except subprocess.TimeoutExpired:
-        return {"ok": 0, "errors": {}, "skipped": f"quá {cfg['timeout_sec']} s, dùng VCI"}
+        return {"ok": 0, "errors": {}, "skipped": f"quá {cfg['timeout_sec']} s, dùng VCI", "foreign_zero_dates": []}
     ok, errors = 0, {}
     for line in proc.stdout.splitlines():
         item = json.loads(line)
@@ -104,7 +104,39 @@ def prefetch(
         errors["_tiến_trình"] = f"mã thoát {proc.returncode}: {proc.stderr[-300:]}"
     if errors:
         logger.warning("FHSC: %d lỗi, dùng VCI cho các mã đó: %s", len(errors), list(errors)[:10])
-    return {"ok": ok, "errors": errors, "skipped": None}
+    zero = _drop_basket_zero_foreign()
+    if zero:
+        logger.warning("FHSC: khối ngoại trống cả rổ ở phiên %s, không ghi số 0", [d.isoformat() for d in zero])
+    return {"ok": ok, "errors": errors, "skipped": None, "foreign_zero_dates": [d.isoformat() for d in zero]}
+
+
+def basket_zero_dates(frames: list[pd.DataFrame], share: float, min_tickers: int) -> list[dt.date]:
+    """Phiên mà ≥ `share` số mã có dòng phiên đó báo khối ngoại mua = bán = 0 (nguồn trống, lỗi FHSC 23/11/2026).
+
+    Chỉ xét phiên có ít nhất `min_tickers` mã: một mã ít thanh khoản có thể thật sự không có giao dịch ngoại.
+    """
+    parts = [f[["time", "buy_val", "sell_val"]] for f in frames if not f.empty]
+    if not parts:
+        return []
+    df = pd.concat(parts)
+    zero = df["buy_val"].eq(0) & df["sell_val"].eq(0)  # NaN không tính là 0
+    g = zero.groupby(df["time"]).agg(["mean", "size"])
+    return sorted(g.index[(g["mean"] >= share) & (g["size"] >= min_tickers)])
+
+
+def _drop_basket_zero_foreign() -> list[dt.date]:
+    """Bỏ các phiên khối ngoại trống cả rổ khỏi bộ đệm, để không ghi số 0 giả; trả các phiên đó."""
+    cfg = _cfg()
+    keys = [k for k in _CACHE if k[1] == "foreign"]
+    days = basket_zero_dates(
+        [_CACHE[k][2] for k in keys], float(cfg["foreign_zero_share"]), int(cfg["foreign_zero_min_tickers"])
+    )
+    if days:
+        for k in keys:
+            start, at, df = _CACHE[k]
+            if not df.empty:
+                _CACHE[k] = (start, at, df[~df["time"].isin(days)].reset_index(drop=True))
+    return days
 
 
 def cached(ticker: str, kind: str, start: str) -> pd.DataFrame | None:
