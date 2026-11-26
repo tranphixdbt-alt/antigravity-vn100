@@ -1515,3 +1515,14 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Bản tin vĩ mô AI tự viết lại**: job `ban-tin-vi-mo` 07:30 T2–T6 (`scripts/refresh_macro_bulletin.py`), gọi đúng hàm
   của nút làm mới ở app cũ; chỉ gọi AI khi tin cafef đổi. Trước đó bản tin đứng ở 19/11 vì chỉ viết khi có người bấm nút.
   Web ghi giờ viết; quá `macro_dashboard.bulletin_stale_hours` (48) thì hiện nút lưu ý. Job lỗi thoát mã 1.
+
+### D123 — Số gom/xả theo ngành đang chọn, cảnh báo chứng quyền trong tab Chứng quyền, siết điều kiện cảnh báo (2026-11-26)
+
+- **Lỗi đếm gom/xả**: chọn một ngành ở Bản đồ ngành (vd Ngân hàng) thì danh sách chỉ còn mã ngành đó (1 mã gom) nhưng nút
+  lọc vẫn ghi "Dấu hiệu gom 9". Nay số trên nút tính theo ngành đang chọn; thêm nút "Bỏ lọc ngành …" cạnh các nút lọc.
+  Số trên VPS lúc kiểm là đúng: 9 gom, 19 xả trên 100 mã.
+- **Cảnh báo trong tab Chứng quyền**: khối "Cảnh báo hôm nay" (rẻ bất thường + giảm mạnh) đọc `/api/canh-bao`, cùng số với
+  chuông, hỏi lại mỗi phút.
+- **Siết điều kiện** ở repo `cw_scanner` (`danh_muc.loc_chat_canh_bao`, commit 1197631, KE_HOACH.md Phần 10): giá ≥ 200 đ,
+  có lệch và đắt/rẻ HV, không đắt hơn giá hợp lý theo HV, còn ≥ 30 ngày tới GD cuối, mua được 20 triệu ở giá ≤ giá báo + 5%.
+  Theo 57 lượt giảm mạnh đã báo 30/10–26/11 còn 12. Áp cả cho Discord của web chứng quyền.

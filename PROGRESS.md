@@ -5,6 +5,7 @@
 
 ## Đang chờ
 
+- [x] D123: số gom/xả theo ngành đang chọn, khối cảnh báo trong tab Chứng quyền, siết điều kiện cảnh báo CW (cw_scanner `1197631`).
 - [x] Rà soát trước bàn giao (D122): lưu ý dữ liệu thu vào nút tam giác, màu tăng giảm ở trang Hôm nay, VN-Index/VN30 và VN100 tăng giảm mạnh nhất trong phiên (Vietcap, `/api/truc-tiep`), sửa thẻ VN-Index hiện điểm giữa phiên, job `ban-tin-vi-mo` 07:30 viết lại bản tin vĩ mô AI.
 - [x] Dữ liệu luôn mới (D121, `docs/PLAN_CAP_NHAT_DU_LIEU.md`): đã lên VPS 26/11 10:50 (`a2f7eb9`, chứng quyền `ec6b127`). Sao lưu `/data/backup-before-d121-20261126.db`; `scheduler.py` cũ giữ ở `/srv/apps/vn100/scheduler.py.bak-20261126-truoc-d121` và `/srv/apps/chungquyen/scheduler.py.bak-20261126-truoc-etf-chieu`. Đã nạp vĩ mô Cục Thống kê (CPI 10/2026, bán lẻ 7–10/2026, GDP quý III) và, theo người dùng « Ghi theo cục thống kê », GDP quý I/2026 8,15% (DB thiếu) và quý II sửa 8,39% → 8,81%.
 - [ ] Kiểm sau 15:45 ngày 26/11: lượt `gia-cuoi-phien` phải ghi đè 32 dòng giá giữa phiên 26/11 mà đợt Quét VN100 sáng nay (còn code cũ) đã ghi (31 mã + VNINDEX). Sáu mã ngoài VN100 trong số đó (GEL, HHS, MML, MSR, TBC, VSH) chỉ được ghi đè ở lần quét sau. Còn lại: chuyển BCTC sang FHSC (kế hoạch riêng)

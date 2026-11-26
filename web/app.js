@@ -148,7 +148,12 @@ function dongDT(r) {
   return `<li><button class="dong le" type="button" data-ma="${esc(r.ma)}"><span class="dong-ma">${esc(r.ma)}</span><span class="phieu-3" role="img" aria-label="Ba phiếu: khối ngoại ${docPhieu(r.phieu[0])}, giá và khối lượng ${docPhieu(r.phieu[1])}, tự doanh ${docPhieu(r.phieu[2])}">${r.phieu.map(gp).join("")}</span><span class="dong-kl ${LOP_NHAN[r.nhan] || "tt"}">${esc(S.tq.ten_nhan[r.nhan] || r.nhan)}</span><span class="dong-phu">${esc(r.nganh)} · ${esc(r.boi_canh)}</span><span class="dong-nho">${thieu(up) ? "" : `Upside ${dau(up, 1)}%`}</span><span class="dong-so">${so3.map(([a, b]) => `<span>${esc(a)}<b>${esc(b)}</b></span>`).join("")}</span></button></li>`;
 }
 function veDs() {
-  const ds = S.tq.ma.filter((r) => (S.loc.nhan === "tat" || r.nhan === S.loc.nhan) && (!S.loc.nganh || r.nganh === S.loc.nganh))
+  // số trên nút lọc tính theo ngành đang chọn ở Bản đồ ngành (lỗi 26/11/2026: chọn Ngân hàng, nút vẫn ghi "Dấu hiệu gom 9"
+  // trong khi danh sách chỉ còn 1 mã của ngành đó)
+  const theoNganh = S.tq.ma.filter((r) => !S.loc.nganh || r.nganh === S.loc.nganh);
+  $$("[data-loc]").forEach((b) => { const k = b.dataset.loc, o = $("b", b); if (o) o.textContent = so(k === "tat" ? theoNganh.length : theoNganh.filter((r) => r.nhan === k).length); });
+  const boNganh = $("#bo-nganh"); if (boNganh) { boNganh.hidden = !S.loc.nganh; boNganh.textContent = S.loc.nganh ? `Bỏ lọc ngành ${S.loc.nganh}` : ""; }
+  const ds = theoNganh.filter((r) => S.loc.nhan === "tat" || r.nhan === S.loc.nhan)
     .sort((a, b) => (THU_TU[a.nhan] ?? 9) - (THU_TU[b.nhan] ?? 9) || a.ma.localeCompare(b.ma));
   $("#ds-cp").innerHTML = ds.map(dongDT).join(""); veDau($("#ds-cp"));
   const trong = $("#cp-trong"); trong.hidden = ds.length > 0;
@@ -168,7 +173,7 @@ function veCoPhieu() {
     <div class="phu-de le">Bản đồ ngành<small>khối ngoại ròng ${esc(W)} phiên; bấm một ngành để lọc danh sách mã</small></div>
     ${khung("Bản đồ ngành", `<ul class="ds-ng" id="ds-ng">${nganh}</ul>`)}
     <div class="phu-de le">Danh sách mã<small id="dem-ds"></small><small>ba phiếu: khối ngoại, giá và khối lượng, tự doanh</small></div>
-    <div class="loc le" role="group" aria-label="Lọc theo nhãn dòng tiền">${loc.map(([k, ten, n]) => `<button type="button" data-loc="${esc(k)}" aria-pressed="${S.loc.nhan === k}">${esc(ten)}<b>${so(n)}</b></button>`).join("")}</div>
+    <div class="loc le" role="group" aria-label="Lọc theo nhãn dòng tiền"><button type="button" id="bo-nganh" class="bo-nganh" hidden></button>${loc.map(([k, ten, n]) => `<button type="button" data-loc="${esc(k)}" aria-pressed="${S.loc.nhan === k}">${esc(ten)}<b>${so(n)}</b></button>`).join("")}</div>
     ${khung("Danh sách mã cổ phiếu", `<ul class="ds" id="ds-cp"></ul>`)}<p class="trong le" id="cp-trong" hidden>Không có mã nào khớp bộ lọc này.</p>
     <p class="chan le">${esc(q.trang_thai)}. ${esc(q.meta.disclaimer || "")}</p></div>`;
   veDs();
@@ -540,12 +545,13 @@ function veCQ() {
     <div class="tom le"><div class="tom-chinh"><b class="re">${so(n["NÊN XEM XÉT"])}</b><span>chứng quyền đạt cả 4 tiêu chí</span></div>
       <div class="tom-3"><div><b>${so(n["THEO DÕI"])}</b><span>trượt 1 tiêu chí</span></div><div><b>${so(n["BỎ QUA"])}</b><span>trượt từ 2 tiêu chí</span></div><div><b>${so(q.so_moi)}</b><span>mới so với lần quét trước</span></div></div></div>
     <div class="ghi le"><p>Bốn tiêu chí, tính theo giá mua (giá chào bán thấp nhất): còn từ ${so(g.ngay)} ngày, IV − HV không quá ${so(g.iv_hv)} điểm, cổ phiếu cơ sở tăng không quá ${so(g.hoa_von)}% là hòa vốn (chưa gồm phí, thuế), khớp từ ${so(g.kl)} chứng quyền mỗi phiên.</p></div>
+    <section class="khoi" id="cq-canh-bao"><div class="dang-ve le">Đang nạp cảnh báo chứng quyền hôm nay…</div></section>
     <div class="phu-de le">Danh sách<small id="cq-dem"></small><small>trong mỗi nhóm xếp theo IV − HV, thấp nhất trước ${ct(gt["IV − HV"])}</small></div>
     <div class="o-loc le"><label class="an-doc" for="cq-tim">Tìm chứng quyền</label><input id="cq-tim" type="search" placeholder="Tìm mã hoặc tổ chức phát hành" autocomplete="off" spellcheck="false" value="${esc(S.cqTim)}"></div>
     <div class="loc le" role="group" aria-label="Lọc theo nhóm">${loc.map(([k, ten, sl]) => `<button type="button" data-cq-loc="${esc(k)}" aria-pressed="${S.cqLoc === k}">${esc(ten)}<b>${so(sl)}</b></button>`).join("")}</div>
     ${khung("Danh sách chứng quyền", `<ul class="ds" id="ds-cq"></ul>`)}<p class="trong le" id="cq-trong" hidden>Không có chứng quyền nào khớp.</p>
     <p class="chan le">Thước: chấm là giá mua, vạch vàng là giá hợp lý theo Black-Scholes. Sàng lọc theo mô hình, không phải khuyến nghị đầu tư. Luôn kiểm tra điều khoản trên trang của tổ chức phát hành hoặc HOSE trước khi mua.</p></div>`;
-  veDsCQ();
+  veDsCQ(); veCBCQ();
 }
 const khoiTrangCu = (phu) => `<section class="khoi sau"><h3 class="le">Phân tích theo giá lúc này<small>${phu}</small></h3><div id="cho-cu" class="dang-ve le">Đang tải giá trực tiếp và biểu đồ…</div></section>`;
 function veCW(d) {
@@ -743,7 +749,30 @@ function veBonO() {
   else o.push(oCho(4, S.psLoi ? "Chưa nạp được giá hợp đồng" : "Đang nạp giá hợp đồng…"));
   cho.innerHTML = o.join("");
 }
-async function napCQ() { try { S.cq = await api("/api/chung-quyen"); veCQ(); veBonO(); } catch (e) { loiPane("chung-quyen", "Chứng quyền", e); } }
+async function napCQ() { try { S.cq = await api("/api/chung-quyen"); veCQ(); veBonO(); napCBCQ(); } catch (e) { loiPane("chung-quyen", "Chứng quyền", e); } }
+/* Cảnh báo chứng quyền ngay trong tab Chứng quyền (D123; người dùng: "phần chứng quyền, cảnh báo thêm vô cho tôi"): rẻ bất thường
+   và giảm mạnh hôm nay, đã qua bộ lọc chặt của web chứng quyền (danh_muc.loc_chat_canh_bao). Cùng số với chuông Cảnh báo. */
+let henCBCQ = null, cbcq = null;
+async function napCBCQ() {
+  clearTimeout(henCBCQ);
+  let d; try { d = await api("/api/canh-bao"); } catch (e) { if (e.daChuyen) return; d = { loi_chung: e.message }; }
+  cbcq = d; veCBCQ();
+  henCBCQ = setTimeout(() => { if (!document.hidden) napCBCQ(); }, ((d && d.hoi_moi_giay) || 60) * 1000);
+}
+function veCBCQ() {
+  const cho = $("#cq-canh-bao"), d = cbcq; if (!cho || !d) return;
+  const c = d.chung;
+  if (!c) { cho.innerHTML = `<h3 class="le">Cảnh báo hôm nay</h3><div class="le">${luuY([`Chưa lấy được cảnh báo từ web chứng quyền: ${d.loi_chung || "không rõ lỗi"}.`])}</div>`; return; }
+  const ng = c.nguong, n = c.cw.length + c.giam_manh.length;
+  const loc = ng.loc_gia_toi_thieu ? `Đã lọc chặt: giá từ ${so(ng.loc_gia_toi_thieu)} đ, không đắt hơn giá hợp lý theo HV, còn từ ${so(ng.loc_ngay_gd_cuoi)} ngày tới ngày giao dịch cuối, mua được ${so(ng.loc_mua_duoc / 1e6)} triệu ở giá không cao hơn giá báo quá ${so(ng.loc_bien_gia_pct)}%.` : "";
+  const gio = c.ngoai_gio ? "Ngoài giờ khớp lệnh: danh sách giảm mạnh là các mã đã báo trong ngày." : "";
+  cho.innerHTML = `<h3 class="le">Cảnh báo hôm nay<small>${n ? `${so(n)} chứng quyền` : "chưa có"}</small></h3>
+    <div class="ghi le"><p>Chứng quyền đang mua được ở giá thấp bất thường so với cổ phiếu cơ sở. ${esc(loc)} ${esc(gio)} Sàng lọc, không phải khuyến nghị đầu tư.</p></div>
+    ${c.cw.length ? `<div class="phu-de le">Rẻ bất thường<small>${so(c.cw.length)}</small></div><ul class="ds">${c.cw.map(dongCBcw).join("")}</ul>` : ""}
+    ${c.giam_manh.length ? `<div class="phu-de le">Giảm mạnh hôm nay<small>${so(c.giam_manh.length)}</small></div><ul class="ds">${c.giam_manh.map(dongCBgiam).join("")}</ul>` : ""}
+    ${n ? "" : `<p class="trong le">Hôm nay chưa có chứng quyền nào qua đủ điều kiện.</p>`}
+    <div class="le">${luuY(c.loi)}</div>`;
+}
 async function napETF() { try { S.etf = await api("/api/etf"); veETF(); veBonO(); } catch (e) { loiPane("etf", "ETF", e); } }
 // hợp đồng tương lai lấy giá trực tiếp từ Vietcap; dịch vụ chứng quyền nhớ kết quả 5 phút nên nạp ngay lúc vào trang
 // cũng chỉ gọi Vietcap tối đa mỗi 5 phút một lần, dùng cho ô Phái sinh ở trang chủ (D118)
@@ -1076,10 +1105,10 @@ function khoiChung(c) {
   const etf = c.etf.length ? `<ul class="ds">${c.etf.map((x) => dongCBetf(x, ng)).join("")}</ul>` : dongKhong(`Không có quỹ nào đang chào bán ở giá đủ lãi ròng từ ${so(ng.etf_lai_rong_pct)}% nếu giá về iNAV.`);
   const hd = !c.hd.length ? dongKhong("Chưa lấy được giá hợp đồng tương lai.") : (coHD.length ? `<ul class="ds">${coHD.map(dongCBhd).join("")}</ul>` : dongKhong("Không có hợp đồng nào đắt hoặc rẻ quá chi phí.")) + mr("Từng hợp đồng và lý do không báo", bangCBhd(c.hd), false);
   const giam = c.giam_manh.length ? `<ul class="ds">${c.giam_manh.map(dongCBgiam).join("")}</ul>` : dongKhong("Hôm nay chưa ghi nhận chứng quyền nào giảm mạnh.");
-  return khoiCB("Chứng quyền rẻ bất thường", c.cw.length, `Giá chào bán thấp hơn giá lẽ ra theo cổ phiếu cơ sở từ ${so(ng.cw_lech_pct)}% trở lên, và có từ ${so(ng.cw_mua_duoc / 1e6)} triệu đang bán ở các mức rẻ đó. Giá lẽ ra tính bằng Black-Scholes với mức dao động của chính giá chào bán lúc quét gần nhất và giá cổ phiếu lúc này. Chỉ báo chứng quyền thuộc ${so(ng.cw_top)} dòng đầu danh sách, hoặc không đắt hơn giá hợp lý quá ${so(ng.cw_dat_toi_da_pct)}%. Bỏ chứng quyền còn dưới ${so(ng.cw_ngay_gd_cuoi)} ngày để bán. Không phòng hộ được; mua hôm nay sớm nhất chiều T+2 mới bán.`, cw)
+  return khoiCB("Chứng quyền rẻ bất thường", c.cw.length, `Giá chào bán thấp hơn giá lẽ ra theo cổ phiếu cơ sở từ ${so(ng.cw_lech_pct)}% trở lên, và có từ ${so(ng.cw_mua_duoc / 1e6)} triệu đang bán ở các mức rẻ đó. Giá lẽ ra tính bằng Black-Scholes với mức dao động của chính giá chào bán lúc quét gần nhất và giá cổ phiếu lúc này. Chỉ báo chứng quyền thuộc ${so(ng.cw_top)} dòng đầu danh sách, hoặc không đắt hơn giá hợp lý quá ${so(ng.cw_dat_toi_da_pct)}%. Bỏ chứng quyền còn dưới ${so(ng.loc_ngay_gd_cuoi || ng.cw_ngay_gd_cuoi)} ngày để bán.${ng.loc_gia_toi_thieu ? ` Lọc chặt thêm: giá từ ${so(ng.loc_gia_toi_thieu)} đ, không đắt hơn giá hợp lý theo HV, mua được ${so(ng.loc_mua_duoc / 1e6)} triệu.` : ""} Không phòng hộ được; mua hôm nay sớm nhất chiều T+2 mới bán.`, cw)
     + khoiCB("ETF mua được dưới iNAV", c.etf.length, `Có từ ${so(ng.etf_mua_duoc / 1e6)} triệu đang chào bán ở giá đủ lãi ròng từ ${so(ng.etf_lai_rong_pct)}% nếu giá về iNAV, sau phí và thuế. Bỏ các quỹ thường xuyên rẻ hơn NAV từ ${so(ng.etf_thuong_re_pct)}%. Phòng hộ: bán hợp đồng tương lai cùng chỉ số; số hợp đồng tính cho lệnh ${so(ng.etf_lenh / 1e6)} triệu.`, etf)
     + khoiCB("Hợp đồng tương lai đắt hoặc rẻ", coHD.length, `Cận trên = chỉ số × e^(r × T) với r = ${so(ng.r_pct, 1)}% mỗi năm, chưa trừ cổ tức: là mức cao nhất hợp đồng đáng có, không phải giá hợp lý. Đắt: giá chờ mua của hợp đồng cao hơn cận trên cộng chi phí cả hai chân (bán hợp đồng, mua ETF cùng chỉ số, giữ đến đáo hạn). Rẻ: chỉ có lợi khi đang giữ ETF đó. Chỉ báo trong giờ khớp lệnh và khi hợp đồng còn từ ${so(ng.hd_phien_khoa)} phiên.`, hd)
-    + khoiCB("Chứng quyền giảm mạnh hôm nay", c.giam_manh.length, `Chứng quyền thuộc nhóm Nên xem xét hoặc Theo dõi giảm quá ${so(ng.giam_manh_pct)}% so với giá tham chiếu mà không phải do cổ phiếu cơ sở giảm. Danh sách do lịch chạy 5 phút của web chứng quyền ghi trong ngày, kể cả mã đã hồi.`, giam);
+    + khoiCB("Chứng quyền giảm mạnh hôm nay", c.giam_manh.length, `Chứng quyền thuộc nhóm Nên xem xét hoặc Theo dõi giảm quá ${so(ng.giam_manh_pct)}% so với giá tham chiếu mà không phải do cổ phiếu cơ sở giảm${ng.loc_gia_toi_thieu ? `; cùng bộ lọc chặt như trên (giá từ ${so(ng.loc_gia_toi_thieu)} đ, không đắt theo HV, mua được ${so(ng.loc_mua_duoc / 1e6)} triệu)` : ""}. Danh sách do lịch chạy 5 phút của web chứng quyền ghi trong ngày, kể cả mã đã hồi.`, giam);
 }
 // khối đầu tờ: tin chưa xem, trạng thái giờ khớp lệnh, bật tắt âm thanh, lỗi. Vẽ riêng để lượt hỏi mỗi phút không xóa chữ đang gõ ở form
 function veTinCB() {
@@ -1350,6 +1379,7 @@ app.addEventListener("click", (e) => {
   const om = e.target.closest(".o-ma[data-ma]"); if (om) { moMa(om.dataset.ma, null); return; }
   const xem = e.target.closest("[data-xem]"); if (xem) { if (xem.dataset.xem !== S.xem && (S.tq || xem.dataset.xem === "xh")) { S.xem = xem.dataset.xem; veCoPhieu(); } return; }
   const cd = e.target.closest("[data-chedo]"); if (cd) { if (cd.dataset.chedo !== S.cheDo) { S.cheDo = cd.dataset.chedo; napTongQuan(); } return; }
+  if (e.target.closest("#bo-nganh")) { S.loc.nganh = null; $$("[data-nganh]").forEach((x) => x.setAttribute("aria-pressed", "false")); veDs(); return; }
   const ng = e.target.closest("[data-nganh]"); if (ng) { const dang = ng.getAttribute("aria-pressed") === "true"; $$("[data-nganh]").forEach((x) => x.setAttribute("aria-pressed", "false")); S.loc.nganh = dang ? null : ng.dataset.nganh; if (!dang) ng.setAttribute("aria-pressed", "true"); veDs(); return; }
   const loc = e.target.closest("[data-loc]"); if (loc) { $$("[data-loc]").forEach((x) => x.setAttribute("aria-pressed", x === loc)); S.loc.nhan = loc.dataset.loc; veDs(); return; }
   const m = e.target.closest(".mr-nut"); if (m) { const hop = m.parentElement, mo = hop.classList.toggle("mo"); m.setAttribute("aria-expanded", mo); if (mo && hop.dataset.nap && !hop.dataset.xong) { hop.dataset.xong = "1"; napMuc(hop, hop.dataset.nap); } return; }

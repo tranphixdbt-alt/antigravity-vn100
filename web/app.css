@@ -600,3 +600,5 @@ td .nut-nho { min-height: 34px; }
 .dr-tang { background: var(--tang-dam); } .dr-giam { background: var(--giam-dam); } .dr-dung { background: var(--muc-3); }
 .the-ma .o-ma small.re { color: var(--tang); } .the-ma .o-ma small.dat { color: var(--giam); }
 td.re { color: var(--tang); } td.dat { color: var(--giam); }
+/* D123: nút bỏ lọc ngành cạnh các nút lọc nhãn */
+.loc .bo-nganh { border-color: var(--vang-chu); color: var(--vang-chu); }
