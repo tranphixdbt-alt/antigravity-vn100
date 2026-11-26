@@ -1524,5 +1524,5 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Cảnh báo trong tab Chứng quyền**: khối "Cảnh báo hôm nay" (rẻ bất thường + giảm mạnh) đọc `/api/canh-bao`, cùng số với
   chuông, hỏi lại mỗi phút.
 - **Siết điều kiện** ở repo `cw_scanner` (`danh_muc.loc_chat_canh_bao`, commit 1197631, KE_HOACH.md Phần 10): giá ≥ 200 đ,
-  có lệch và đắt/rẻ HV, không đắt hơn giá hợp lý theo HV, còn ≥ 30 ngày tới GD cuối, mua được 20 triệu ở giá ≤ giá báo + 5%.
-  Theo 57 lượt giảm mạnh đã báo 30/10–26/11 còn 12. Áp cả cho Discord của web chứng quyền.
+  có lệch và đắt/rẻ HV, không đắt hơn giá hợp lý theo HV, còn ≥ 30 ngày tới GD cuối, mua được 5 triệu ở giá ≤ giá báo + 5% (siết lên 20 triệu rồi
+  người dùng hạ lại 5 triệu cùng ngày). Theo 57 lượt giảm mạnh đã báo 30/10–26/11 còn 12. Áp cả cho Discord của web chứng quyền.
