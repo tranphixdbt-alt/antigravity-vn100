@@ -5,6 +5,7 @@
 
 ## Đang chờ
 
+- [x] D125: trang Hôm nay lấy giá liên tục trong giờ, ngoài giờ chỉ 4 giờ và 8 giờ sáng; bớt chữ, bỏ giờ cập nhật khi số đúng.
 - [x] D124: chặn phiên khối ngoại FHSC trả trống cả rổ, vá 23/11 từ Vietcap, Ếch có công cụ khối ngoại từng mã và mua/bán ròng nhiều nhất.
 - [x] D123: số gom/xả theo ngành đang chọn, khối cảnh báo trong tab Chứng quyền, siết điều kiện cảnh báo CW (cw_scanner `1197631`).
 - [x] Rà soát trước bàn giao (D122): lưu ý dữ liệu thu vào nút tam giác, màu tăng giảm ở trang Hôm nay, VN-Index/VN30 và VN100 tăng giảm mạnh nhất trong phiên (Vietcap, `/api/truc-tiep`), sửa thẻ VN-Index hiện điểm giữa phiên, job `ban-tin-vi-mo` 07:30 viết lại bản tin vĩ mô AI.

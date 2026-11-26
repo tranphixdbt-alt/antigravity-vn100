@@ -17,6 +17,11 @@ const so = (n, d = 0) => (thieu(n) ? "—" : Number(n).toLocaleString("vi-VN", {
 const dau = (n, d = 1) => (thieu(n) ? "—" : (n > 0 ? "+" : n < 0 ? "−" : "") + so(Math.abs(n), d));
 const ty = (v, d = 0) => (thieu(v) ? "—" : `${dau(v / 1e9, d)} tỷ`);
 const ngay = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "chưa có");
+/* Người dùng 26/11/2026: bớt chữ; số đã đúng, mới thì không cần ghi ngày giờ. Ngày chỉ hiện khi số không phải của hôm nay
+   (cuối tuần, sáng trước giờ mở cửa) hay cũ hơn phiên mới nhất trong DB; lỗi, số cũ vẫn nằm trong nút "Lưu ý". */
+const ngayVN = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
+const khacHomNay = (iso) => Boolean(iso) && String(iso).slice(0, 10) !== ngayVN();
+const cuHonDB = (iso) => Boolean(iso && S.tt && S.tt.gia_den) && String(iso).slice(0, 10) < String(S.tt.gia_den).slice(0, 10);
 const boDau = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 const DANG_NHAP = "/dang-nhap"; // trang đăng nhập chung của *.btinvest.vn (D98)
 // `than` có giá trị thì gửi POST dạng JSON (yêu cầu ghi); không có thì GET
@@ -212,7 +217,7 @@ function veHomNay() {
   const t = S.tt, v = S.vm, cs = t.chi_so, MUI = { 1: "↑", "-1": "↓" }, nt = t.nhan_tin;
   // Số trong DB chỉ tới phiên đã chốt; điểm trong phiên (Vietcap) vẽ ở veTrucTiep, đè lên con số lớn khi có (D122)
   const ghiCu = [t.cu ? `Giá trong DB đến ${ngay(t.gia_den)}, đã cũ hơn mức cho phép: lượt tải giá tự động có thể chưa chạy.` : ""];
-  const dai = `<div class="bang"><div class="bang-trong le"><div id="tt-chi-so">${cs ? `<div class="bang-nhan">VN-Index, đóng cửa ${ngay(cs.ngay)}</div><div class="bang-so"><strong>${esc(cs.diem_chu)}</strong></div>` : `<div class="bang-nhan">Chưa có dữ liệu VN-Index</div>`}</div>${cs ? `<div class="bang-so bang-lich">${cs.thay_doi.map((c) => `<span class="${c.ty_le >= 0 ? "bs-tang" : ""}">${so(c.phien)} phiên ${esc(c.chu)}</span>`).join("")}<span class="bs-ghi">tính đến phiên ${ngay(cs.ngay)}</span></div>` : ""}<p class="bang-cau">${damChu(t.tieu_de)}</p>${luuY(ghiCu, true)}<div id="tt-ly"></div></div></div>`;
+  const dai = `<div class="bang"><div class="bang-trong le"><div id="tt-chi-so">${cs ? `<div class="bang-nhan">VN-Index${khacHomNay(cs.ngay) ? ` ${ngay(cs.ngay)}` : ""}</div><div class="bang-so"><strong>${esc(cs.diem_chu)}</strong></div>` : `<div class="bang-nhan">Chưa có dữ liệu VN-Index</div>`}</div>${cs ? `<div class="bang-so bang-lich">${cs.thay_doi.map((c) => `<span class="${c.ty_le >= 0 ? "bs-tang" : ""}">${so(c.phien)} phiên ${esc(c.chu)}</span>`).join("")}${khacHomNay(cs.ngay) ? `<span class="bs-ghi">đến ${ngay(cs.ngay)}</span>` : ""}</div>` : ""}<p class="bang-cau">${damChu(t.tieu_de)}</p>${luuY(ghiCu, true)}<div id="tt-ly"></div></div></div>`;
   const LOP_TRU = { 1: "re", "-1": "dat" };
   const tru = t.tru_cot.map((p) => mr(`${DAU_TRU[p.diem] || `<i class="pg mo">·</i>`}<b class="${LOP_TRU[p.diem] || ""}">${esc(p.ten)}</b>: <span class="${LOP_TRU[p.diem] || ""}">${esc(p.tom_tat)}</span>`, p.chi_tiet.length ? lietKe(p.chi_tiet) : "<p>Thiếu dữ liệu.</p>", false)).join("");
   const sapToi = cs ? `<section class="khoi"><h3 class="le">VN-Index sắp tới<small>kịch bản, không phải dự báo</small></h3><div class="nb le"><p>Xu hướng: ${cs.xu_huong.map((x) => `${esc(x.khung)} ${MUI[x.huong] || "–"}`).join(" · ")}${thieu(cs.rsi) ? "" : ` · RSI ${so(cs.rsi)}`}.${cs.khang_cu ? ` Kháng cự ${esc(cs.khang_cu.muc)} (${esc(cs.khang_cu.nguon)}).` : ""}${cs.ho_tro ? ` Hỗ trợ ${esc(cs.ho_tro.muc)} (${esc(cs.ho_tro.nguon)}).` : ""}</p>${lietKe(cs.sap_toi)}</div></section>` : "";
@@ -232,18 +237,18 @@ function veHomNay() {
 const lopDau = (x) => (x > 0 ? "re" : x < 0 ? "dat" : "tt");
 function oChiSo(c) {
   const ten = c.ma === "VNINDEX" ? "VN-Index" : c.ma;
-  return `<div class="cs-o"><div class="bang-nhan">${ten} ${c.trong_phien ? `<span class="cs-song">trong phiên</span>` : `đóng cửa ${ngay(c.ngay)}`}</div><div class="cs-dong"><strong>${so(c.diem, 2)}</strong><span class="${c.thay_doi > 0 ? "bs-tang" : c.thay_doi < 0 ? "bs-giam" : ""}">${dau(c.thay_doi, 2)} (${dau(c.ty_le * 100, 2)}%)</span></div></div>`;
+  return `<div class="cs-o"><div class="bang-nhan">${ten}${c.trong_phien ? ` <span class="cs-song">trong phiên</span>` : khacHomNay(c.ngay) ? ` ${ngay(c.ngay)}` : ""}</div><div class="cs-dong"><strong>${so(c.diem, 2)}</strong><span class="${c.thay_doi > 0 ? "bs-tang" : c.thay_doi < 0 ? "bs-giam" : ""}">${dau(c.thay_doi, 2)} (${dau(c.ty_le * 100, 2)}%)</span></div></div>`;
 }
 function veTrucTiep() {
   const d = S.live, cho = $("#tt-chi-so"), nb = $("#tt-noi-bat"), ly = $("#tt-ly"); if (!d || !cho) return;
-  if (d.chi_so.length) cho.innerHTML = `<div class="cs-hai">${d.chi_so.map(oChiSo).join("")}</div><div class="bang-nhan cs-luc">Vietcap, lấy lúc ${gioPhut(d.luc)}${d.chi_so.some((c) => c.trong_phien) ? `, tự cập nhật mỗi ${so(d.hoi_lai_giay)} giây` : ""}</div>`;
+  if (d.chi_so.length) cho.innerHTML = `<div class="cs-hai">${d.chi_so.map(oChiSo).join("")}</div>`;
   if (ly) ly.innerHTML = luuY(d.loi.map((x) => `Giá trong phiên chưa lấy được: ${x}. Đang hiện số đóng cửa trong DB.`), true);
   if (!nb) return;
   const n = d.noi_bat; if (!n) { nb.hidden = true; return; }
   const the = (ds) => ds.map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}<small class="${lopDau(r.ty_le)}">${dau(r.ty_le * 100, 1)}%${r.tran ? " trần" : r.san ? " sàn" : ""}</small></button>`).join("") || `<span class="trong">chưa có</span>`;
   const dr = n.do_rong, tong = dr.tang + dr.giam + dr.dung;
   nb.hidden = false;
-  nb.innerHTML = `<h3 class="le">VN100 hôm nay<small>so với giá tham chiếu, lấy lúc ${gioPhut(d.luc)}</small></h3><div class="nb le">
+  nb.innerHTML = `<h3 class="le">VN100 ${d.chi_so.length && khacHomNay(d.chi_so[0].ngay) ? `phiên ${ngay(d.chi_so[0].ngay)}` : "hôm nay"}</h3><div class="nb le">
     <div class="do-rong" role="img" aria-label="${so(dr.tang)} mã tăng, ${so(dr.dung)} đứng giá, ${so(dr.giam)} mã giảm">${tong ? `<i class="dr-tang" style="flex:${dr.tang}"></i><i class="dr-dung" style="flex:${dr.dung}"></i><i class="dr-giam" style="flex:${dr.giam}"></i>` : ""}</div>
     <p><b class="re">${so(dr.tang)} tăng</b> · ${so(dr.dung)} đứng giá · <b class="dat">${so(dr.giam)} giảm</b>${dr.chua_khop ? ` · ${so(dr.chua_khop)} chưa khớp lệnh` : ""}</p>
     <div><b>Tăng mạnh nhất</b><div class="the-ma">${the(n.tang)}</div></div><div><b>Giảm mạnh nhất</b><div class="the-ma">${the(n.giam)}</div></div></div>`;
@@ -252,9 +257,10 @@ let henLive = null;
 async function napTrucTiep() {
   clearTimeout(henLive);
   try { S.live = await api("/api/truc-tiep"); veTrucTiep(); } catch (e) { if (e.daChuyen) return; S.live = null; }
-  // trong phiên: hỏi lại theo máy chủ (30 giây); ngoài phiên: 5 phút một lần để bắt đầu phiên sau; tab ẩn thì chờ hiện lại
-  const song = S.live && S.live.chi_so.some((c) => c.trong_phien);
-  henLive = setTimeout(() => { if (document.hidden) return; napTrucTiep(); }, (song ? S.live.hoi_lai_giay : 300) * 1000);
+  // Máy chủ báo lúc hỏi lại: trong giờ giao dịch 10 giây; ngoài giờ tới mốc kiểm kế tiếp (4 giờ, 8 giờ sáng, lúc mở cửa).
+  // Lỗi mạng: thử lại sau 1 phút. Tab ẩn thì chờ hiện lại.
+  const giay = Math.min((S.live && S.live.hoi_lai_giay) || 60, 6 * 3600);
+  henLive = setTimeout(() => { if (document.hidden) return; napTrucTiep(); }, giay * 1000);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && daBatDau) napTrucTiep(); });
 function veLich(d) {
@@ -729,23 +735,23 @@ function veBonO() {
   if (q) {
     const gom = q.ma.filter((r) => r.nhan === "gom").sort((a, b) => a.ma.localeCompare(b.ma));
     o.push(oTom(1, `<b class="re">${so(q.dem_nhan.gom || 0)}</b> gom · <b class="dat">${so(q.dem_nhan.xa || 0)}</b> xả`,
-      `mã VN100 theo dòng tiền ${esc(q.meta.window)} phiên, đến ${ngay(q.meta.flow_date)}`,
+      `dòng tiền ${esc(q.meta.window)} phiên${cuHonDB(q.meta.flow_date) ? `, đến ${ngay(q.meta.flow_date)}` : ""}`,
       gom.slice(0, SO_THE_O).map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}</button>`).join("")));
   } else o.push(oCho(1, "Đang nạp dòng tiền…"));
   const c = S.cq;
   if (c && c.co) {
     const xx = c.cw.filter((x) => x.nhom === "NÊN XEM XÉT");
-    o.push(oTom(2, `<b class="${xx.length ? "re" : ""}">${so(xx.length)}</b> đạt cả 4 tiêu chí`, `trong ${so(c.tong)} chứng quyền, lần quét ${esc(boNgoac(c.lan_quet))}`,
+    o.push(oTom(2, `<b class="${xx.length ? "re" : ""}">${so(xx.length)}</b> đạt cả 4 tiêu chí`, `trên ${so(c.tong)} mã${c.cu ? `, quét ${esc(boNgoac(c.lan_quet))}` : ""}`,
       xx.slice(0, SO_THE_O).map((x) => `<button type="button" class="o-ma" data-cw="${esc(x.ma)}">${esc(x.ma)}</button>`).join("")));
   } else o.push(oCho(2, c ? "Chưa có lần quét nào" : "Đang nạp chứng quyền…"));
   const e = S.etf;
   if (e && e.co) {
     const dat = e.chiet_khau.dong.filter((h) => h["Đạt"]);
-    o.push(oTom(3, `<b class="${dat.length ? "re" : ""}">${so(dat.length)}</b> mua được dưới NAV`, `đủ ngưỡng, trong ${so(e.so_quy)} quỹ, số liệu ${esc(boNgoac(e.luc))}`,
+    o.push(oTom(3, `<b class="${dat.length ? "re" : ""}">${so(dat.length)}</b> mua được dưới NAV`, `trên ${so(e.so_quy)} quỹ${cuHonDB(e.ngay) ? `, số ${esc(boNgoac(e.luc))}` : ""}`,
       dat.slice(0, SO_THE_O).map((h) => `<button type="button" class="o-ma" data-etf="${esc(h["Mã"])}">${esc(h["Mã"])}</button>`).join("")));
   } else o.push(oCho(3, e ? "Chưa có kết quả ETF" : "Đang nạp ETF…"));
   const hd = S.ps && S.ps.nhom.length ? (S.ps.nhom[0].hop_dong || []).find((x) => !x.thieu_dao_han) : null;
-  if (hd) o.push(oTom(4, `<b class="${hd.basis > 0 ? "re" : hd.basis < 0 ? "dat" : ""}">${dau(hd.basis, 2)}</b> điểm basis`, `${esc(hd.ma)}, còn ${so(hd.con_ngay)} ngày tới đáo hạn`, ""));
+  if (hd) o.push(oTom(4, `<b class="${hd.basis > 0 ? "re" : hd.basis < 0 ? "dat" : ""}">${dau(hd.basis, 2)}</b> điểm basis`, `${esc(hd.ma)}, còn ${so(hd.con_ngay)} ngày`, ""));
   else o.push(oCho(4, S.psLoi ? "Chưa nạp được giá hợp đồng" : "Đang nạp giá hợp đồng…"));
   cho.innerHTML = o.join("");
 }

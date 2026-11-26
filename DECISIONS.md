@@ -1544,3 +1544,13 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - **Margin**: không có nguồn công khai cho call margin theo ngày. DB đã có dư nợ cho vay (`loans`) theo quý của 8 CTCK
   trong VN100 từ 2018 (quý 3/2026: 130.959 tỷ đồng); chưa làm gì thêm.
 
+### D125 — Trang Hôm nay: giá liên tục trong giờ, ngoài giờ chỉ 4 giờ và 8 giờ sáng; bớt chữ, bỏ giờ cập nhật (2026-11-26)
+
+- **Nhịp lấy giá** (`web_live`, `web.live`): T2–T6 09:00–15:05 máy chủ lấy Vietcap nhiều nhất 5 giây một lần, trình duyệt
+  hỏi mỗi 10 giây (trước: 20 và 30 giây). Ngoài giờ số đã lấy dùng tiếp, chỉ lấy lại khi qua mốc 04:00, 08:00, lúc vào
+  giờ và lúc hết giờ (15:05, để có giá đã chốt). Trình duyệt ngoài giờ không hỏi định kỳ nữa mà hẹn đúng mốc kế tiếp.
+- **Bớt chữ** (người dùng: "giảm bớt các từ không có nghĩa", "dẹp luôn thời gian cập nhật"): bỏ "Vietcap, lấy lúc…",
+  "đóng cửa dd/mm", "tính đến phiên", "so với giá tham chiếu, lấy lúc", giờ quét ở các ô. Ngày chỉ hiện khi số không phải
+  của hôm nay hoặc cũ hơn phiên mới nhất trong DB; số cũ, nguồn lỗi vẫn ở nút "Lưu ý". Câu dưới chỉ số: "**Khó khăn**: vĩ
+  mô, xu hướng, khối ngoại xấu; định giá tốt" (`web_market.headline`; app Streamlit giữ câu cũ).
+

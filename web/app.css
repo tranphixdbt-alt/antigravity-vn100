@@ -591,7 +591,6 @@ td .nut-nho { min-height: 34px; }
 .cs-dong span.bs-tang, .bang-so span.bs-tang { color: #8fe5bd; }
 .cs-dong span.bs-giam { color: var(--giam-navy); }
 .cs-song { color: #8fe5bd; font-weight: 600; }
-.cs-luc { margin-top: 4px; }
 .bang-lich { gap: 6px 14px; }
 .bang-lich .bs-ghi { color: var(--tren-navy-2); font-weight: 500; }
 @media (min-width: 960px) { .cs-dong strong { font-size: 46px; } .cs-o + .cs-o .cs-dong strong { font-size: 34px; } }

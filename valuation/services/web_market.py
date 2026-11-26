@@ -29,6 +29,20 @@ from valuation.views import vn100_ranking as vr
 _VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
+def headline(label: str, pillars: list) -> str:
+    """Câu một dòng dưới chỉ số, rút gọn từ `mo.headline` (người dùng 26/11/2026: bớt chữ, nhìn là hiểu).
+
+    "**Khó khăn**: vĩ mô, xu hướng, khối ngoại xấu; định giá tốt". Trụ cột trung tính không nêu.
+    """
+    bad = [mo._SHORT.get(p.name, p.name) for p in pillars if p.score == -1]
+    good = [mo._SHORT.get(p.name, p.name) for p in pillars if p.score == 1]
+    parts = [f"{', '.join(bad)} xấu"] * bool(bad) + [f"{', '.join(good)} tốt"] * bool(
+        good
+    )
+    head = f"**{label[:1].upper()}{label[1:].lower()}**"
+    return head + (": " + "; ".join(parts) if parts else "")
+
+
 def _today() -> dt.date:
     return dt.datetime.now(_VN_TZ).date()
 
@@ -86,7 +100,7 @@ def market(db: Any) -> dict:
             }
         return {
             "nhan": label,
-            "tieu_de": mo.headline(label, pillars),
+            "tieu_de": headline(label, pillars),
             "gia_den": oldest,
             "cu": (
                 None

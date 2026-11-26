@@ -22,6 +22,7 @@ from valuation.data_access.corporate_actions import (
 from valuation.db.models import PricesDaily
 from valuation.db.session import SessionLocalRead
 from valuation.services import web_flow
+from valuation.services import web_market as wm
 from valuation.services.ranking_store import latest_snapshot
 from valuation.views import macro_panel as mp
 from valuation.views import market_overview as mo
@@ -84,7 +85,7 @@ def test_thi_truong_khop_ham_goc(web, db):
     ]
     label = mo.overall(pillars, cfg)[0]
     assert body["nhan"] == label
-    assert body["tieu_de"] == mo.headline(label, pillars)
+    assert body["tieu_de"] == wm.headline(label, pillars)
     assert [(p["ten"], p["diem"], p["tom_tat"]) for p in body["tru_cot"]] == [
         (p.name, p.score, p.summary) for p in pillars
     ]
@@ -153,3 +154,19 @@ def test_chi_co_route_doc(web):
     # nhóm route số liệu chỉ có GET; route ghi nằm riêng ở web_user_routes và chỉ ghi tệp dữ liệu người dùng
     methods = {m for route in web_main.data.routes for m in route.methods}
     assert methods == {"GET"}
+
+
+def test_cau_tieu_de_gon():
+    P = lambda name, score: type("P", (), {"name": name, "score": score})()
+    ps = [
+        P("Vĩ mô & chính sách", -1),
+        P("Xu hướng & độ rộng", -1),
+        P("Khối ngoại", -1),
+        P("Định giá", 1),
+    ]
+    # ảnh người dùng 26/11/2026: "KHÓ KHĂN — thuận: định giá · bất lợi: vĩ mô, xu hướng, khối ngoại"
+    assert (
+        wm.headline("KHÓ KHĂN", ps)
+        == "**Khó khăn**: vĩ mô, xu hướng, khối ngoại xấu; định giá tốt"
+    )
+    assert wm.headline("Trung tính", [P("Định giá", 0)]) == "**Trung tính**"

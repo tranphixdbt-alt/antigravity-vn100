@@ -830,9 +830,12 @@ web:
     logout_path: "/dang-nhap?dang-xuat=1"   # trang đăng nhập chung của *.btinvest.vn (deploy/dang-nhap)
     login_path: "/dang-nhap"
   live:                           # giá trong phiên ở trang Hôm nay (D122, valuation/services/web_live.py); chỉ hiển thị, không ghi DB
-    cache_seconds: 20             # máy chủ lấy Vietcap nhiều nhất 20 giây một lần, dùng chung cho mọi người xem
+    # Người dùng 26/11/2026: trong giờ giao dịch lấy liên tục; ngoài giờ chỉ lấy lúc 4 giờ và 8 giờ sáng để kiểm.
+    live_hours: ["09:00", "15:05"]  # T2–T6; 5 phút sau đóng cửa để lượt cuối có giá đã chốt (ATC xong 14:45)
+    off_hours_checks: ["04:00", "08:00"]  # ngoài giờ: số đã lấy dùng tiếp tới mốc kế tiếp (gồm cả lúc hết live_hours)
+    cache_seconds: 5              # trong giờ: máy chủ lấy Vietcap nhiều nhất 5 giây một lần, dùng chung cho mọi người xem
     error_cache_seconds: 10       # lượt có lỗi chỉ nhớ ngần này giây
-    poll_seconds: 30              # trình duyệt hỏi số mới mỗi 30 giây khi đang mở trang Hôm nay trong giờ giao dịch
+    poll_seconds: 10              # trong giờ: trình duyệt hỏi số mới mỗi 10 giây khi đang mở trang Hôm nay
     timeout_seconds: 8
     top_n: 5                      # số mã tăng mạnh nhất, giảm mạnh nhất hiện ra
     chart_bars: 3                 # số nến ngày xin Vietcap (hôm nay + phiên trước, dư một nến)

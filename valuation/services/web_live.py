@@ -5,8 +5,9 @@ phái sinh. Đo 26/11/2026 từ VPS: 0,35–1,5 giây mỗi lượt.
 - Chỉ số: nến ngày của biểu đồ, gồm nến hôm nay đang chạy trong phiên; thay đổi so với nến phiên trước.
 - Cổ phiếu: một lời gọi bảng giá cho cả 100 mã; thay đổi so với giá tham chiếu. Mã chưa khớp lệnh (giá khớp 0) không tính.
 
-Máy chủ lấy số nhiều nhất mỗi `cache_seconds` giây, dùng chung cho mọi người xem, nên số lượt gọi Vietcap không tăng theo
-số người. Chỉ hiển thị, KHÔNG ghi DB: giá phiên chưa chốt không được vào DB (D121, `ingest/session_guard.py`).
+Trong giờ giao dịch (`live_hours`, T2–T6) máy chủ lấy số nhiều nhất mỗi `cache_seconds` giây, dùng chung cho mọi
+người xem, nên số lượt gọi Vietcap không tăng theo số người. Ngoài giờ (người dùng 26/11/2026) số đã lấy dùng tiếp, chỉ
+lấy lại khi qua một mốc kiểm `off_hours_checks` (4 giờ, 8 giờ sáng) hoặc lúc vừa hết giờ giao dịch (giá đã chốt). Chỉ hiển thị, KHÔNG ghi DB: giá phiên chưa chốt không được vào DB (D121, `ingest/session_guard.py`).
 Lỗi nguồn không bị nuốt: trả câu báo trong `loi` để web hiện nút cảnh báo, phần còn lại vẫn hiện.
 """
 
@@ -142,7 +143,73 @@ def movers(rows: list[dict], top_n: int) -> dict:
 
 
 _lock = threading.Lock()
-_memo: dict[str, tuple[float, dict]] = {}
+_memo: dict[str, tuple[dt.datetime, dict]] = {}
+
+
+def _at(day: dt.date, hhmm: str, tz: ZoneInfo) -> dt.datetime:
+    h, m = (int(x) for x in hhmm.split(":"))
+    return dt.datetime.combine(day, dt.time(h, m), tz)
+
+
+def in_live_hours(now: dt.datetime) -> bool:
+    """Trong giờ lấy giá liên tục: thứ Hai–thứ Sáu, giữa hai mốc `live_hours` (giờ Việt Nam)."""
+    local = now.astimezone(_tz())
+    start, end = _cfg()["live_hours"]
+    return local.weekday() < 5 and start <= local.strftime("%H:%M") < end
+
+
+def _marks(day: dt.date, tz: ZoneInfo) -> list[dt.datetime]:
+    """Các mốc phải lấy lại số trong một ngày: mốc kiểm ngoài giờ, và lúc vào, lúc hết giờ giao dịch (ngày thường)."""
+    cfg = _cfg()
+    out = [_at(day, x, tz) for x in cfg["off_hours_checks"]]
+    if day.weekday() < 5:
+        out += [_at(day, x, tz) for x in cfg["live_hours"]]
+    return out
+
+
+def last_mark(now: dt.datetime) -> dt.datetime:
+    """Mốc gần nhất đã qua; số lấy trước mốc này là cũ."""
+    tz = _tz()
+    local = now.astimezone(tz)
+    for back in range(8):
+        past = [
+            m for m in _marks(local.date() - dt.timedelta(days=back), tz) if m <= local
+        ]
+        if past:
+            return max(past)
+    return local - dt.timedelta(
+        days=1
+    )  # không có mốc nào trong cấu hình: coi như số luôn cũ
+
+
+def next_mark(now: dt.datetime) -> dt.datetime:
+    """Mốc sắp tới; trình duyệt ngoài giờ hỏi lại đúng lúc này."""
+    tz = _tz()
+    local = now.astimezone(tz)
+    for ahead in range(8):
+        later = [
+            m for m in _marks(local.date() + dt.timedelta(days=ahead), tz) if m > local
+        ]
+        if later:
+            return min(later)
+    return local + dt.timedelta(hours=6)
+
+
+def _fresh(at: dt.datetime, value: dict, now: dt.datetime) -> bool:
+    cfg = _cfg()
+    age = (now - at).total_seconds()
+    if value["loi"]:
+        return age < float(cfg["error_cache_seconds"])
+    if in_live_hours(now):
+        return age < float(cfg["cache_seconds"])
+    return at >= last_mark(now)
+
+
+def _poll_after(now: dt.datetime) -> int:
+    """Giây trình duyệt chờ trước khi hỏi lại: trong giờ `poll_seconds`; ngoài giờ tới mốc kế tiếp (+5 giây)."""
+    if in_live_hours(now):
+        return int(_cfg()["poll_seconds"])
+    return max(int((next_mark(now) - now).total_seconds()) + 5, 5)
 
 
 def clear_cache() -> None:
@@ -168,20 +235,17 @@ def _build(now: dt.datetime) -> dict:
         "chi_so": indices,
         "noi_bat": top,
         "loi": errors,
-        "hoi_lai_giay": int(_cfg()["poll_seconds"]),
         "nguon": "Vietcap",
     }
 
 
 def snapshot(now: dt.datetime | None = None) -> dict:
-    """Số trong phiên, nhớ `cache_seconds` giây (lần có lỗi chỉ nhớ `error_cache_seconds`) cho mọi người xem."""
-    cfg = _cfg()
+    """Số trong phiên dùng chung cho mọi người xem; xem `_fresh` cho lúc nào lấy lại. Kèm `hoi_lai_giay` cho trình duyệt."""
+    now = now or dt.datetime.now(_tz())
     with _lock:
         hit = _memo.get("live")
-        if hit is not None:
-            ttl = cfg["error_cache_seconds"] if hit[1]["loi"] else cfg["cache_seconds"]
-            if time.monotonic() - hit[0] < float(ttl):
-                return hit[1]
-        value = _build(now or dt.datetime.now(_tz()))
-        _memo["live"] = (time.monotonic(), value)
-        return value
+        if hit is None or not _fresh(hit[0], hit[1], now):
+            hit = (now, _build(now))
+            _memo["live"] = hit
+        value = hit[1]
+    return {**value, "hoi_lai_giay": _poll_after(now), "trong_gio": in_live_hours(now)}
