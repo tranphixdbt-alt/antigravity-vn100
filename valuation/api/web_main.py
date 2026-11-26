@@ -20,7 +20,7 @@ from valuation.api import web_user_routes
 from valuation.api.web_deps import require_approved
 from valuation.config import load_defaults
 from valuation.db.session import get_read_db
-from valuation.services import web_cw, web_flow, web_market, web_valuation
+from valuation.services import web_cw, web_flow, web_live, web_market, web_valuation
 
 WEB_DIR = FsPath(__file__).resolve().parents[2] / "web"
 
@@ -99,6 +99,12 @@ def bieu_do(
 def thi_truong(db: Db) -> dict:
     """Tổng quan thị trường: đèn tổng, bốn trụ cột, VN-Index, ngành và mã nổi bật."""
     return web_market.market(db)
+
+
+@data.get("/api/truc-tiep")
+def truc_tiep() -> dict:
+    """Giá trong phiên: VN-Index, VN30, mã VN100 tăng giảm mạnh nhất (Vietcap, nhớ 20 giây cho mọi người)."""
+    return web_flow.clean(web_live.snapshot())
 
 
 @data.get("/api/vi-mo")

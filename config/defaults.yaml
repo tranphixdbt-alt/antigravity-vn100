@@ -334,6 +334,7 @@ macro_series_registry:
 macro_dashboard:
   # Số ngày tối đa kể từ ngày quan sát trước khi đánh dấu "cũ" (EVENT: không tính tuổi).
   stale_days: {DAILY: 7, WEEKLY: 14, MONTHLY: 45, QUARTERLY: 120}
+  bulletin_stale_hours: 48     # bản tin vĩ mô AI viết quá ngần này giờ → nút lưu ý trên web (job ban-tin-vi-mo 07:30 T2–T6, D122)
   cpi_target: 0.045           # Mục tiêu lạm phát Quốc hội giao 2026 (~4,5%)
   cpi_near_band: 0.005        # Trong ±0,5 điểm % quanh mục tiêu → "sát mục tiêu"
   fed_lookback_days: 120      # So lãi suất Fed với mức khác gần nhất trong cửa sổ này
@@ -810,6 +811,20 @@ web:
     seen_refresh_seconds: 600     # ghi lại "thấy lần cuối" của một người nhiều nhất 10 phút một lần
     logout_path: "/dang-nhap?dang-xuat=1"   # trang đăng nhập chung của *.btinvest.vn (deploy/dang-nhap)
     login_path: "/dang-nhap"
+  live:                           # giá trong phiên ở trang Hôm nay (D122, valuation/services/web_live.py); chỉ hiển thị, không ghi DB
+    cache_seconds: 20             # máy chủ lấy Vietcap nhiều nhất 20 giây một lần, dùng chung cho mọi người xem
+    error_cache_seconds: 10       # lượt có lỗi chỉ nhớ ngần này giây
+    poll_seconds: 30              # trình duyệt hỏi số mới mỗi 30 giây khi đang mở trang Hôm nay trong giờ giao dịch
+    timeout_seconds: 8
+    top_n: 5                      # số mã tăng mạnh nhất, giảm mạnh nhất hiện ra
+    chart_bars: 3                 # số nến ngày xin Vietcap (hôm nay + phiên trước, dư một nến)
+    chart_url: "https://trading.vietcap.com.vn/api/chart/OHLCChart/gap-chart"
+    board_url: "https://trading.vietcap.com.vn/api/price/symbols/getList"
+    headers:                      # như cw_scanner/cw_scanner.py HEADERS
+      Content-Type: "application/json"
+      Referer: "https://trading.vietcap.com.vn/"
+      Origin: "https://trading.vietcap.com.vn"
+      User-Agent: "Mozilla/5.0"
   alerts:                         # cảnh báo trong web (lát 5c); mọi con số do dịch vụ chứng quyền tính
     cache_seconds: 45             # nhớ phần cảnh báo chung cho mọi người: dịch vụ chứng quyền 1 luồng, mỗi lượt tải cả bảng giá
     error_cache_seconds: 10       # dịch vụ đó lỗi thì nhớ lỗi ngần này giây, không để mọi người cùng chờ hết hạn

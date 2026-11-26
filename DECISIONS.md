@@ -1498,3 +1498,20 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   nhất, còn dòng của phiên chưa chốt thì báo riêng, kể tên mã (`freshness_alert.unfinished_problem`,
   `session_guard.unfinished_session_date(now, close)`). Test tái hiện:
   `test_run_check_reports_unfinished_session_rows_not_missing_tickers`.
+
+### D122 — Rà soát trước bàn giao: lưu ý dữ liệu thu gọn, màu tăng giảm, giá trong phiên, bản tin vĩ mô tự viết (2026-11-26, người dùng « Làm cả 5 phần »)
+
+- **Lưu ý dữ liệu thu vào nút tam giác** (`luuY` trong `web/app.js`): số cũ, nguồn lỗi, mức thường lệch đã cũ, cảnh báo
+  dữ liệu ETF/phái sinh/chứng quyền, xếp hạng cũ, vĩ mô cũ. Bấm mới mở. Lý do người dùng: không để chữ báo lỗi chiếm chỗ
+  làm giảm độ tin cậy, nhưng vẫn xem được khi cần. Trang cũ nhúng từ `cw_scanner` (iframe) vẫn hiện ghi chú ⚠ của nó.
+- **Màu xanh đỏ theo nghĩa**: trụ cột thuận/bất lợi, ngành mạnh/yếu, tin tích cực/tiêu cực, cột "Đà giá", "Tăng giá",
+  "Khối ngoại" ở trang Hôm nay. Không tô thay đổi của ô vĩ mô vì hướng tốt/xấu tùy chỉ số (CPI tăng là xấu).
+- **Giá trong phiên** (`valuation/services/web_live.py`, `/api/truc-tiep`, `web.live` trong config): VN-Index, VN30 từ nến
+  ngày biểu đồ Vietcap; VN100 tăng/giảm mạnh nhất và độ rộng từ bảng giá Vietcap so với giá tham chiếu. Máy chủ lấy tối đa
+  20 giây/lần dùng chung cho mọi người (không tăng lượt gọi theo số người xem), trình duyệt hỏi lại 30 giây trong phiên,
+  5 phút ngoài phiên. Chỉ hiển thị, không ghi DB (giữ D121). TCBS MCP không dùng được ở máy chủ (gắn tài khoản cá nhân).
+- **Lỗi thẻ VN-Index**: `market_overview.load_market_data` bỏ dòng của phiên chưa chốt (26/11 thẻ ghi "giá đến 25/11" mà
+  hiện 1.677,93 là điểm giữa phiên 26/11; phiên 25/11 đóng 1.687,45). Test `test_load_market_data_bo_phien_chua_chot`.
+- **Bản tin vĩ mô AI tự viết lại**: job `ban-tin-vi-mo` 07:30 T2–T6 (`scripts/refresh_macro_bulletin.py`), gọi đúng hàm
+  của nút làm mới ở app cũ; chỉ gọi AI khi tin cafef đổi. Trước đó bản tin đứng ở 19/11 vì chỉ viết khi có người bấm nút.
+  Web ghi giờ viết; quá `macro_dashboard.bulletin_stale_hours` (48) thì hiện nút lưu ý. Job lỗi thoát mã 1.

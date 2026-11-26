@@ -184,7 +184,7 @@ function veXepHang() {
   const d = S.xh;
   if (!d.co) { pane.innerHTML = `<div class="pane-trong">${dau1}<p class="trong le">Chưa có đợt định giá VN100 nào.</p></div>`; return; }
   pane.innerHTML = `<div class="pane-trong">${dau1}
-    <div class="ghi le"><p>Giá trị hợp lý của đợt ${ngay(d.dot)}, giá đến ${ngay(d.gia_den)}. ${so(d.so_dinh_gia)}/${so(d.so_ma)} mã định giá được. Upside = giá trị hợp lý ÷ giá − 1.</p>${d.cu ? `<p class="dat">Giá trị hợp lý đã cũ, nên cập nhật xếp hạng trước khi dùng.</p>` : ""}${d.quy_doi.length ? `<p>Giá trị hợp lý đã quy về thang giá hiện tại do cổ tức hoặc chia tách sau đợt định giá: ${d.quy_doi.map((x) => `${esc(x.ma)} ×${so(x.he_so, 3)}`).join(", ")}.</p>` : ""}</div>
+    <div class="ghi le"><p>Giá trị hợp lý của đợt ${ngay(d.dot)}, giá đến ${ngay(d.gia_den)}. ${so(d.so_dinh_gia)}/${so(d.so_ma)} mã định giá được. Upside = giá trị hợp lý ÷ giá − 1.</p>${d.cu ? luuY(["Giá trị hợp lý đã cũ, nên cập nhật xếp hạng trước khi dùng."]) : ""}${d.quy_doi.length ? `<p>Giá trị hợp lý đã quy về thang giá hiện tại do cổ tức hoặc chia tách sau đợt định giá: ${d.quy_doi.map((x) => `${esc(x.ma)} ×${so(x.he_so, 3)}`).join(", ")}.</p>` : ""}</div>
     <div class="phu-de le">Ứng viên tích sản<small>upside cao nhất sau khi loại lỗi dữ liệu, upside trên ${so(d.bo_loc.upside_toi_da)}% và thanh khoản dưới ${so(d.bo_loc.thanh_khoan_toi_thieu_ty)} tỷ mỗi phiên; tối đa ${so(d.bo_loc.toi_da_moi_nganh)} mã mỗi ngành</small></div>
     <div class="le">${d.tich_san.length ? bang(d.tich_san, true) : `<p class="trong">Đợt này chưa có mã qua đủ bộ lọc.</p>`}</div>
     <div class="phu-de le">Xếp hạng ${so(d.so_ma)} mã</div><div class="le">${bang(d.bang, true)}</div>
@@ -195,21 +195,63 @@ const damChu = (x) => esc(x).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
 const boBieuTuong = (t) => String(t || "").replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/^(\s*[-*•]?\s*)\*\*\s+/gm, "$1**");
 const DAU_TRU = { 1: `<i class="pg re">✓</i>`, 0: `<i class="pg tt">–</i>`, "-1": `<i class="pg dat">✗</i>` };
 const lietKe = (ds) => `<ul class="huy">${ds.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+/* Lưu ý về dữ liệu (số cũ, nguồn lỗi, mức thường lệch đã cũ…) thu vào một nút tam giác nhỏ, bấm mới mở (D122; người dùng:
+   "các thông tin lỗi dữ liệu có thể ẩn, cần thì bấm lên coi", để không làm giảm độ tin cậy khi người mới xem web). */
+let demLy = 0;
+function luuY(ds, nen) {
+  const ds2 = (ds || []).filter(Boolean); if (!ds2.length) return "";
+  const id = `ly-${++demLy}`;
+  return `<div class="ly${nen ? " ly-nen" : ""}"><button type="button" class="ly-nut" aria-expanded="false" aria-controls="${id}" aria-label="Lưu ý về dữ liệu, ${ds2.length} mục">${hinh("canh")}<span>Lưu ý${ds2.length > 1 ? ` (${ds2.length})` : ""}</span></button><div class="ly-than" id="${id}" hidden>${ds2.length > 1 ? `<ul>${ds2.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p>${esc(ds2[0])}</p>`}</div></div>`;
+}
 function veHomNay() {
   const t = S.tt, v = S.vm, cs = t.chi_so, MUI = { 1: "↑", "-1": "↓" }, nt = t.nhan_tin;
-  const dai = `<div class="bang"><div class="bang-trong le"><div class="bang-nhan">${cs ? `VN-Index, giá đến ${ngay(t.gia_den)}` : "Chưa có dữ liệu VN-Index"}${t.cu ? ". Dữ liệu giá đã cũ." : ""}</div>${cs ? `<div class="bang-so"><strong>${esc(cs.diem_chu)}</strong>${cs.thay_doi.map((c) => `<span class="${c.ty_le >= 0 ? "bs-tang" : ""}">${so(c.phien)} phiên ${esc(c.chu)}</span>`).join("")}</div>` : ""}<p class="bang-cau">${damChu(t.tieu_de)}</p></div></div>`;
-  const tru = t.tru_cot.map((p) => mr(`${DAU_TRU[p.diem] || `<i class="pg mo">·</i>`}<b>${esc(p.ten)}</b>: ${esc(p.tom_tat)}`, p.chi_tiet.length ? lietKe(p.chi_tiet) : "<p>Thiếu dữ liệu.</p>", false)).join("");
+  // Số trong DB chỉ tới phiên đã chốt; điểm trong phiên (Vietcap) vẽ ở veTrucTiep, đè lên con số lớn khi có (D122)
+  const ghiCu = [t.cu ? `Giá trong DB đến ${ngay(t.gia_den)}, đã cũ hơn mức cho phép: lượt tải giá tự động có thể chưa chạy.` : ""];
+  const dai = `<div class="bang"><div class="bang-trong le"><div id="tt-chi-so">${cs ? `<div class="bang-nhan">VN-Index, đóng cửa ${ngay(cs.ngay)}</div><div class="bang-so"><strong>${esc(cs.diem_chu)}</strong></div>` : `<div class="bang-nhan">Chưa có dữ liệu VN-Index</div>`}</div>${cs ? `<div class="bang-so bang-lich">${cs.thay_doi.map((c) => `<span class="${c.ty_le >= 0 ? "bs-tang" : ""}">${so(c.phien)} phiên ${esc(c.chu)}</span>`).join("")}<span class="bs-ghi">tính đến phiên ${ngay(cs.ngay)}</span></div>` : ""}<p class="bang-cau">${damChu(t.tieu_de)}</p>${luuY(ghiCu, true)}<div id="tt-ly"></div></div></div>`;
+  const LOP_TRU = { 1: "re", "-1": "dat" };
+  const tru = t.tru_cot.map((p) => mr(`${DAU_TRU[p.diem] || `<i class="pg mo">·</i>`}<b class="${LOP_TRU[p.diem] || ""}">${esc(p.ten)}</b>: <span class="${LOP_TRU[p.diem] || ""}">${esc(p.tom_tat)}</span>`, p.chi_tiet.length ? lietKe(p.chi_tiet) : "<p>Thiếu dữ liệu.</p>", false)).join("");
   const sapToi = cs ? `<section class="khoi"><h3 class="le">VN-Index sắp tới<small>kịch bản, không phải dự báo</small></h3><div class="nb le"><p>Xu hướng: ${cs.xu_huong.map((x) => `${esc(x.khung)} ${MUI[x.huong] || "–"}`).join(" · ")}${thieu(cs.rsi) ? "" : ` · RSI ${so(cs.rsi)}`}.${cs.khang_cu ? ` Kháng cự ${esc(cs.khang_cu.muc)} (${esc(cs.khang_cu.nguon)}).` : ""}${cs.ho_tro ? ` Hỗ trợ ${esc(cs.ho_tro.muc)} (${esc(cs.ho_tro.nguon)}).` : ""}</p>${lietKe(cs.sap_toi)}</div></section>` : "";
-  const noiBat = `<section class="khoi sau"><h3 class="le">Nổi bật ${so(t.so_phien)} phiên</h3><div class="nb le"><p><b>Ngành mạnh:</b> ${esc(t.nganh_manh.join(", ") || "chưa có")}. <b>Ngành yếu:</b> ${esc(t.nganh_yeu.join(", ") || "chưa có")}.</p><div><b>Mã có lực (giá và khối ngoại)</b><div class="the-ma">${t.ma_co_luc.map((m) => `<button type="button" class="o-ma" data-ma="${esc(m)}">${esc(m)}</button>`).join("") || "chưa có"}</div></div>${nt ? `<p><b>Tin tích cực:</b> ${esc(nt.tich_cuc.join(", ") || "chưa có")}. <b>Tin tiêu cực:</b> ${esc(nt.tieu_cuc.join(", ") || "chưa có")}.</p>` : ""}</div>
-    ${mr("Ngành: đà giá so với trung vị VN100 và khối ngoại", bang(t.bang_nganh.map((r) => ({ "Ngành": r.nganh, "Đà giá (%)": thieu(r.rel) ? null : r.rel * 100, "Khối ngoại (tỷ)": thieu(r.flow) ? null : r.flow / 1e9 }))) || "<p>Chưa có số.</p>", false)}
-    ${mr("Mã mạnh nhất", bang(t.ma_manh.map((r) => ({ "Mã": r.ma, "Tăng giá (%)": thieu(r.ret) ? null : r.ret * 100, "Khối ngoại (tỷ)": thieu(r.flow) ? null : r.flow / 1e9, "Có lực": r.co_luc }))) || "<p>Chưa có số.</p>", false)}</section>`;
-  const viMo = v ? `<section class="khoi sau"><h3 class="le">Vĩ mô</h3><div class="vm le">${v.chi_so.map((r) => `<div><span>${esc(r.ten)}</span><b>${esc(r.gia_tri ?? "—")}</b><small>${r.thay_doi ? `${esc(r.thay_doi)} · ` : ""}${r.cu ? "cũ · " : ""}${r.ngay ? ngay(r.ngay) : "chưa có dữ liệu"}</small></div>`).join("")}</div>${v.nhan_dinh.length ? `<div class="le">${lietKe(v.nhan_dinh)}</div>` : ""}<p class="ghi le">Nhận định suy ra từ số liệu trên theo quy tắc cố định; không phải khuyến nghị đầu tư.</p>
-    ${mr(`Bản tin vĩ mô do AI tóm tắt${thieu(v.ban_tin_tuoi_gio) ? "" : `, lưu ${so(v.ban_tin_tuoi_gio)} giờ trước`}`, `<div class="vb">${mdNho(boBieuTuong(v.ban_tin))}</div>`, false)}
+  const noiBat = `<section class="khoi sau"><h3 class="le">Nổi bật ${so(t.so_phien)} phiên</h3><div class="nb le"><p><b>Ngành mạnh:</b> <span class="re">${esc(t.nganh_manh.join(", ") || "chưa có")}</span>. <b>Ngành yếu:</b> <span class="dat">${esc(t.nganh_yeu.join(", ") || "chưa có")}</span>.</p><div><b>Mã có lực (giá và khối ngoại)</b><div class="the-ma">${t.ma_co_luc.map((m) => `<button type="button" class="o-ma" data-ma="${esc(m)}">${esc(m)}</button>`).join("") || "chưa có"}</div></div>${nt ? `<p><b>Tin tích cực:</b> <span class="re">${esc(nt.tich_cuc.join(", ") || "chưa có")}</span>. <b>Tin tiêu cực:</b> <span class="dat">${esc(nt.tieu_cuc.join(", ") || "chưa có")}</span>.</p>` : ""}</div>
+    ${mr("Ngành: đà giá so với trung vị VN100 và khối ngoại", bang(t.bang_nganh.map((r) => ({ "Ngành": r.nganh, "Đà giá (%)": thieu(r.rel) ? null : r.rel * 100, "Khối ngoại (tỷ)": thieu(r.flow) ? null : r.flow / 1e9 })), false, COT_MAU) || "<p>Chưa có số.</p>", false)}
+    ${mr("Mã mạnh nhất", bang(t.ma_manh.map((r) => ({ "Mã": r.ma, "Tăng giá (%)": thieu(r.ret) ? null : r.ret * 100, "Khối ngoại (tỷ)": thieu(r.flow) ? null : r.flow / 1e9, "Có lực": r.co_luc })), false, COT_MAU) || "<p>Chưa có số.</p>", false)}</section>`;
+  const vmCu = v ? v.chi_so.filter((r) => r.cu || !r.ngay).map((r) => (r.ngay ? `${r.ten}: kỳ số liệu mới nhất ${ngay(r.ngay)}, chưa có số mới hơn.` : `${r.ten}: chưa có dữ liệu.`)) : [];
+  const btCu = v && !thieu(v.ban_tin_tuoi_gio) && v.ban_tin_tuoi_gio > (v.ban_tin_cu_gio || 48) ? [`Bản tin AI viết ${so(v.ban_tin_tuoi_gio)} giờ trước; lượt tự viết lại sáng các ngày giao dịch chưa có bản mới (nguồn tin chưa đổi hoặc lỗi).`] : [];
+  const viMo = v ? `<section class="khoi sau"><h3 class="le">Vĩ mô</h3><div class="le">${luuY([...vmCu, ...btCu])}</div><div class="vm le">${v.chi_so.map((r) => `<div><span>${esc(r.ten)}</span><b>${esc(r.gia_tri ?? "—")}</b><small>${r.thay_doi ? `${esc(r.thay_doi)} · ` : ""}${r.ngay ? ngay(r.ngay) : "chưa có dữ liệu"}</small></div>`).join("")}</div>${v.nhan_dinh.length ? `<div class="le">${lietKe(v.nhan_dinh)}</div>` : ""}<p class="ghi le">Nhận định suy ra từ số liệu trên theo quy tắc cố định; không phải khuyến nghị đầu tư.</p>
+    ${mr(`Bản tin vĩ mô do AI tóm tắt${v.ban_tin_luc ? `, viết lúc ${esc(v.ban_tin_luc)}` : ""}`, `<div class="vb">${mdNho(boBieuTuong(v.ban_tin))}</div>`, false)}
     ${mrNap("Lịch cổ tức và quyền mua VN100 sắp tới", "/api/lich-quyen")}</section>` : "";
-  $("#pane-hom-nay").innerHTML = `${dai}<div class="pane-trong"><section class="bo4 le" id="bon-o" aria-label="Bốn loại tài sản"></section><section class="khoi"><h3 class="le">Bốn trụ cột</h3>${tru}</section>${sapToi}${noiBat}${viMo}
+  $("#pane-hom-nay").innerHTML = `${dai}<div class="pane-trong"><section class="bo4 le" id="bon-o" aria-label="Bốn loại tài sản"></section><section class="khoi" id="tt-noi-bat" hidden></section><section class="khoi"><h3 class="le">Bốn trụ cột</h3>${tru}</section>${sapToi}${noiBat}${viMo}
     <p class="chan le">Chấm điều kiện hiện tại theo quy tắc cố định; không dự báo giá, không phải khuyến nghị đầu tư. Hợp đồng tương lai xem ở tab Phái sinh.</p>${hangLH()}</div>`;
-  veBonO();
+  veBonO(); veTrucTiep();
 }
+/* ---------- Giá trong phiên (D122): VN-Index, VN30, mã VN100 tăng giảm mạnh nhất hôm nay ---------- */
+const lopDau = (x) => (x > 0 ? "re" : x < 0 ? "dat" : "tt");
+function oChiSo(c) {
+  const ten = c.ma === "VNINDEX" ? "VN-Index" : c.ma;
+  return `<div class="cs-o"><div class="bang-nhan">${ten} ${c.trong_phien ? `<span class="cs-song">trong phiên</span>` : `đóng cửa ${ngay(c.ngay)}`}</div><div class="cs-dong"><strong>${so(c.diem, 2)}</strong><span class="${c.thay_doi > 0 ? "bs-tang" : c.thay_doi < 0 ? "bs-giam" : ""}">${dau(c.thay_doi, 2)} (${dau(c.ty_le * 100, 2)}%)</span></div></div>`;
+}
+function veTrucTiep() {
+  const d = S.live, cho = $("#tt-chi-so"), nb = $("#tt-noi-bat"), ly = $("#tt-ly"); if (!d || !cho) return;
+  if (d.chi_so.length) cho.innerHTML = `<div class="cs-hai">${d.chi_so.map(oChiSo).join("")}</div><div class="bang-nhan cs-luc">Vietcap, lấy lúc ${gioPhut(d.luc)}${d.chi_so.some((c) => c.trong_phien) ? `, tự cập nhật mỗi ${so(d.hoi_lai_giay)} giây` : ""}</div>`;
+  if (ly) ly.innerHTML = luuY(d.loi.map((x) => `Giá trong phiên chưa lấy được: ${x}. Đang hiện số đóng cửa trong DB.`), true);
+  if (!nb) return;
+  const n = d.noi_bat; if (!n) { nb.hidden = true; return; }
+  const the = (ds) => ds.map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}<small class="${lopDau(r.ty_le)}">${dau(r.ty_le * 100, 1)}%${r.tran ? " trần" : r.san ? " sàn" : ""}</small></button>`).join("") || `<span class="trong">chưa có</span>`;
+  const dr = n.do_rong, tong = dr.tang + dr.giam + dr.dung;
+  nb.hidden = false;
+  nb.innerHTML = `<h3 class="le">VN100 hôm nay<small>so với giá tham chiếu, lấy lúc ${gioPhut(d.luc)}</small></h3><div class="nb le">
+    <div class="do-rong" role="img" aria-label="${so(dr.tang)} mã tăng, ${so(dr.dung)} đứng giá, ${so(dr.giam)} mã giảm">${tong ? `<i class="dr-tang" style="flex:${dr.tang}"></i><i class="dr-dung" style="flex:${dr.dung}"></i><i class="dr-giam" style="flex:${dr.giam}"></i>` : ""}</div>
+    <p><b class="re">${so(dr.tang)} tăng</b> · ${so(dr.dung)} đứng giá · <b class="dat">${so(dr.giam)} giảm</b>${dr.chua_khop ? ` · ${so(dr.chua_khop)} chưa khớp lệnh` : ""}</p>
+    <div><b>Tăng mạnh nhất</b><div class="the-ma">${the(n.tang)}</div></div><div><b>Giảm mạnh nhất</b><div class="the-ma">${the(n.giam)}</div></div></div>`;
+}
+let henLive = null;
+async function napTrucTiep() {
+  clearTimeout(henLive);
+  try { S.live = await api("/api/truc-tiep"); veTrucTiep(); } catch (e) { if (e.daChuyen) return; S.live = null; }
+  // trong phiên: hỏi lại theo máy chủ (30 giây); ngoài phiên: 5 phút một lần để bắt đầu phiên sau; tab ẩn thì chờ hiện lại
+  const song = S.live && S.live.chi_so.some((c) => c.trong_phien);
+  henLive = setTimeout(() => { if (document.hidden) return; napTrucTiep(); }, (song ? S.live.hoi_lai_giay : 300) * 1000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && daBatDau) napTrucTiep(); });
 function veLich(d) {
   return d.su_kien.length ? `<p>Các mốc trong ${so(d.so_ngay)} ngày tới.</p>${bang(d.su_kien.map((r) => ({ "Mã": r.ma, "Ngày": ngayHoac(r.ngay), "Mốc": r.moc, "Nội dung": r.noi_dung, "Tiền mặt (đ)": r.tien_mat })))}` : `<p>Không có mốc cổ tức hay quyền mua nào trong ${so(d.so_ngay)} ngày tới.</p>`;
 }
@@ -233,12 +275,14 @@ const dauTo = (ma, phu, nhan) => `<div class="to-dau"><div class="to-nam" aria-h
    dạng thanh cuộn cho đồng nhất tất cả dữ liệu"): trang không bị kéo dài, mọi loại tài sản trông giống nhau. */
 const khung = (ten, trong) => `<div class="khung" role="region" aria-label="${esc(ten)}" tabindex="0">${trong}</div>`;
 const veDau = (el) => { const k = el && el.closest(".khung, .cuon.doc"); if (k) k.scrollTop = 0; }; // lọc lại thì cuộn về đầu khung
-function bang(rs, doc) {
+// cột mang nghĩa tăng/giảm: số dương xanh, số âm đỏ (D122). Chỉ cột có hướng rõ ràng; chiết khấu, tuổi… không tô.
+const COT_MAU = new Set(["Đà giá (%)", "Khối ngoại (tỷ)", "Tăng giá (%)"]);
+function bang(rs, doc, mau) {
   if (!rs || !rs.length) return "";
   // số lẻ theo tên cột: tiền đồng không lẻ, phần trăm một số lẻ, còn lại hai số lẻ; cột "Mã" bấm được để mở trang mã
   const cot = Object.keys(rs[0]), le = (c, v) => (/\(đ\)|đ\/cp/.test(c) ? 0 : /%/.test(c) ? 1 : Number.isInteger(v) ? 0 : 2);
   const o = (c, v) => (thieu(v) || v === "" ? "—" : v === true ? "có" : v === false ? "không" : c === "Mã" ? `<button type="button" class="o-ma" data-ma="${esc(v)}">${esc(v)}</button>` : typeof v === "number" ? so(v, le(c, v)) : esc(v));
-  return `<div class="cuon${doc ? " doc" : ""}"${doc ? ' role="region" aria-label="Bảng" tabindex="0"' : ""}><table><thead><tr>${cot.map((c, i) => `<th${i ? "" : ' class="trai"'}>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rs.map((r) => `<tr>${cot.map((c) => `<td${typeof r[c] === "number" ? "" : ' class="trai"'}>${o(c, r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="cuon${doc ? " doc" : ""}"${doc ? ' role="region" aria-label="Bảng" tabindex="0"' : ""}><table><thead><tr>${cot.map((c, i) => `<th${i ? "" : ' class="trai"'}>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rs.map((r) => `<tr>${cot.map((c) => `<td${typeof r[c] === "number" ? (mau && mau.has(c) && r[c] ? ` class="${lopDau(r[c])}"` : "") : ' class="trai"'}>${o(c, r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 function tia(giaTri) {
   const d = giaTri.map((v) => (thieu(v) ? 0 : v)), m = Math.max(...d.map(Math.abs), 1), w = d.length * 10;
@@ -492,7 +536,7 @@ function veCQ() {
   const n = Object.fromEntries(q.nhom.map((x) => [x.ma, x.so])), g = q.nguong, gt = q.giai_thich;
   const loc = [...q.nhom.map((x) => [x.ma, x.ten, x.so]), ["moi", "Mới phát hành", q.so_moi], ["tat", "Tất cả", q.tong]];
   pane.innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Chứng quyền</h1><p>Lần quét ${esc(q.lan_quet)}. ${so(q.tong)} chứng quyền, định giá bằng Black-Scholes.</p></div>
-    ${q.cu ? `<div class="le"><div class="bao">${hinh("canh")}<p>Số liệu cũ ${so(q.cu.so_ngay)} ngày: lần quét tự động ngày ${ngay(q.cu.du_kien)} có thể chưa chạy, hoặc hôm đó nghỉ lễ. Số ngày tới đáo hạn và các chỉ số tính tại ngày quét; phần phân tích theo giá lúc này của từng mã thì tính lại khi mở.</p></div></div>` : ""}
+    ${q.cu ? `<div class="le">${luuY([`Số liệu cũ ${so(q.cu.so_ngay)} ngày: lần quét tự động ngày ${ngay(q.cu.du_kien)} có thể chưa chạy, hoặc hôm đó nghỉ lễ. Số ngày tới đáo hạn và các chỉ số tính tại ngày quét; phần phân tích theo giá lúc này của từng mã thì tính lại khi mở.`])}</div>` : ""}
     <div class="tom le"><div class="tom-chinh"><b class="re">${so(n["NÊN XEM XÉT"])}</b><span>chứng quyền đạt cả 4 tiêu chí</span></div>
       <div class="tom-3"><div><b>${so(n["THEO DÕI"])}</b><span>trượt 1 tiêu chí</span></div><div><b>${so(n["BỎ QUA"])}</b><span>trượt từ 2 tiêu chí</span></div><div><b>${so(q.so_moi)}</b><span>mới so với lần quét trước</span></div></div></div>
     <div class="ghi le"><p>Bốn tiêu chí, tính theo giá mua (giá chào bán thấp nhất): còn từ ${so(g.ngay)} ngày, IV − HV không quá ${so(g.iv_hv)} điểm, cổ phiếu cơ sở tăng không quá ${so(g.hoa_von)}% là hòa vốn (chưa gồm phí, thuế), khớp từ ${so(g.kl)} chứng quyền mỗi phiên.</p></div>
@@ -512,7 +556,7 @@ function veCW(d) {
     <div class="kl le"><h2>${esc(tenNhom(c.nhom))}${thieu(c.dat_re) ? "" : `: ${esc(c.chu_dat_re.toLowerCase())} so với giá hợp lý`}</h2>
       <div class="kl-thuoc">${thieu(c.dat_re) ? "" : thuoc(c.dat_re, BIEN_THUOC.cw)}<div class="kl-hai"><div>Giá mua${ct(gt["Giá mua"])}<b>${so(c.gia_mua)} đ</b></div><div>Giá hợp lý (Black-Scholes)<b>${so(c.hop_ly)} đ</b></div></div></div>
       <p class="kl-gio">Số lúc quét ${esc(d.lan_quet)}. Còn ${so(c.con_ngay)} ngày tới đáo hạn ${ngay(d.ngay_dao_han)}${c.gd_cuoi ? `, bán được đến hết ngày ${ngay(c.gd_cuoi)}` : ""}.</p>
-      ${c.canh_bao ? `<div class="bao">${hinh("canh")}<p>${esc(c.canh_bao)}.</p></div>` : ""}</div>
+      ${c.canh_bao ? luuY([`${c.canh_bao}.`]) : ""}</div>
     <section class="khoi"><h3 class="le">Bốn tiêu chí lúc quét</h3><ul class="phieu le">${d.tieu_chi.map((t) => `<li>${t.dat ? `<i class="pg re">✓</i>` : `<i class="pg dat">✗</i>`}<div><b>${esc(t.noi_dung)}</b><span>${esc(t.yeu_cau)}</span></div></li>`).join("")}</ul>
       <div class="ghi le"><p>Kết luận của lần quét: ${esc(c.ly_do)}.</p></div></section>
     <section class="khoi"><h3 class="le">Số chính lúc quét</h3>
@@ -563,15 +607,16 @@ function veETF() {
   const than = S.etfXem === "quy" ? `<div class="le">${bangCot(q.quy, true, true)}</div><div class="khoi">${mr("Giải thích các cột", giaiThichCot(q.quy), false)}</div>`
     : S.etfXem === "cs" ? `<div class="le">${bangCot(q.chi_so, false, true)}</div><div class="khoi">${mr("Giải thích các cột", giaiThichCot(q.chi_so), false)}</div>`
     : `<div class="phu-de le">Xếp theo lãi ròng nếu về NAV<small>cao nhất trước ${ct(gtCot(q.chiet_khau.cot.find((c) => c.khoa === "Lãi ròng nếu về NAV %")))}</small></div>${khung("Danh sách quỹ ETF", `<ul class="ds">${ck.map(dongETF).join("")}</ul>`)}
-      ${tv.quy.length ? `<div class="le"><div class="bao">${hinh("canh")}<p>Mức thường lệch 1 năm có thể đã cũ (lệch trung vị ${so(tv.so_phien)} phiên quá ${so(tv.nguong, 1)} điểm): ${tv.quy.map((x) => `${esc(x.ma)} ${esc(x.chu)}`).join("; ")}. Rẻ hay đắt hơn mức thường của các quỹ này có thể không còn đúng.</p></div></div>` : ""}
+      
       <div class="khoi">${mr("Bảng đủ các cột chiết khấu", bangCot(q.chiet_khau, true), false)}${mr("Giải thích các cột", giaiThichCot(q.chiet_khau), false)}</div>`;
   pane.innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>ETF</h1><p>Số liệu ${esc(q.luc)}. ${so(q.so_quy)} quỹ; trang từng quỹ lấy giá trực tiếp.</p></div>
+    <div class="le">${luuY([...(q.loi ? [q.loi] : []), ...(tv.quy.length ? [`Mức thường lệch 1 năm có thể đã cũ (lệch trung vị ${so(tv.so_phien)} phiên quá ${so(tv.nguong, 1)} điểm): ${tv.quy.map((x) => `${x.ma} ${x.chu}`).join("; ")}. Rẻ hay đắt hơn mức thường của các quỹ này có thể không còn đúng.`] : []), ...q.canh_bao.map((x) => `${x.ma}: ${x.chu}`)])}</div>
     <div class="tom le"><div class="tom-chinh"><b class="${ck.some((h) => h["Đạt"]) ? "re" : ""}">${so(ck.filter((h) => h["Đạt"]).length)}</b><span>quỹ đang mua được dưới NAV đủ ngưỡng</span></div>
       <div class="tom-3"><div><b>${so(dem((v) => v < 0))}</b><span>quỹ chào bán dưới NAV</span></div><div><b>${so(dem((v) => v > 0))}</b><span>quỹ chào bán trên NAV</span></div><div><b>${so(ck.filter((h) => thieu(h["Chiết khấu mua được %"])).length)}</b><span>quỹ chưa có iNAV hoặc giá chào bán</span></div></div></div>
-    <div class="ghi le"><p>Ngưỡng: lãi ròng nếu mua ở giá chào bán rồi bán đúng NAV từ ${so(g.lai_rong)}% và mua được từ ${so(g.mua_duoc / 1e6)} triệu đồng. Chỉ có lời khi giá quay về sát NAV; quỹ ít giao dịch có thể chiết khấu rất lâu, xem mức thường lệch của từng quỹ.</p>${q.loi ? `<p class="dat">${esc(q.loi)}</p>` : ""}</div>
+    <div class="ghi le"><p>Ngưỡng: lãi ròng nếu mua ở giá chào bán rồi bán đúng NAV từ ${so(g.lai_rong)}% và mua được từ ${so(g.mua_duoc / 1e6)} triệu đồng. Chỉ có lời khi giá quay về sát NAV; quỹ ít giao dịch có thể chiết khấu rất lâu, xem mức thường lệch của từng quỹ.</p></div>
     <div class="dk le"><div class="chon-2" role="group" aria-label="Chọn bảng ETF">${xem.map(([k, ten]) => `<button type="button" data-etf-xem="${k}" aria-pressed="${S.etfXem === k}">${ten}</button>`).join("")}</div></div>
     ${than}
-    ${q.canh_bao.length ? `<div class="khoi">${mr(`Cảnh báo dữ liệu (${so(q.canh_bao.length)})`, lietKe(q.canh_bao.map((x) => `${x.ma}: ${x.chu}`)), false)}</div>` : ""}
+    
     <p class="chan le">Thước: chấm là giá chào bán, vạch vàng là iNAV. Sàng lọc theo số liệu, không phải khuyến nghị đầu tư.</p></div>`;
 }
 function veQuy(ma) {
@@ -581,7 +626,7 @@ function veQuy(ma) {
     <div class="kl le"><h2>${thieu(ck) ? "Chưa có iNAV hoặc giá chào bán" : `Đang chào bán ${chuNAV(ck).toLowerCase().replace("nav", "NAV")}`}</h2>
       <div class="kl-thuoc">${thieu(ck) ? "" : thuoc(ck, BIEN_THUOC.etf)}<div class="kl-hai"><div>Giá chào bán<b>${so(h["Giá chào bán"])} đ</b></div><div>iNAV<b>${so(h["iNAV"])} đ</b></div></div></div>
       <p class="kl-gio">Số liệu ${esc(q.luc)}. Lãi ròng nếu mua ở giá chào bán rồi bán đúng NAV: <b>${pt(h["Lãi ròng nếu về NAV %"], 2)}</b>, ngưỡng từ ${so(q.nguong.lai_rong)}%.</p>
-      ${h["Cảnh báo"] ? `<div class="bao">${hinh("canh")}<p>${esc(h["Cảnh báo"])}.</p></div>` : ""}</div>
+      ${h["Cảnh báo"] ? luuY([`${h["Cảnh báo"]}.`]) : ""}</div>
     <section class="khoi"><h3 class="le">Số lúc lập báo cáo</h3>${mr("Chiết khấu so với NAV", dlCot(q.chiet_khau, h), true)}${mr("Giá, xu hướng và thanh khoản", dlCot(q.quy, g), false)}</section>
     ${khoiTrangCu("giá và iNAV trực tiếp, nến, giá so với iNAV trong phiên, mức theo kịp chỉ số")}
     <p class="chan le">Sàng lọc theo số liệu, không phải khuyến nghị đầu tư.</p></div>`;
@@ -601,7 +646,7 @@ function dongPS(h) {
 function vePS() {
   const q = S.ps;
   $("#pane-phai-sinh").innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Phái sinh</h1><p>Hợp đồng tương lai chỉ số. Giá là nến ngày Vietcap lấy lúc ${gioPhut(q.luc)}, nhớ tối đa ${so(q.nho_phut)} phút; trong phiên là giá khớp gần nhất.</p></div>
-    ${q.canh_bao.length ? `<div class="le"><div class="bao">${hinh("canh")}<p>${esc(q.canh_bao.join("; "))}.</p></div></div>` : ""}
+    <div class="le">${luuY(q.canh_bao)}</div>
     ${q.nhom.map((n) => `<div class="phu-de le">Hợp đồng tương lai ${esc(n.chi_so)}<small>${esc(n.chi_so)} ${so(n.diem, 2)} điểm, giá ngày ${ngay(n.ngay)} · ký quỹ ban đầu ${so(n.ty_le_ky_quy)}% (${esc(q.nguon_ky_quy)})</small></div>${khung(`Hợp đồng tương lai ${n.chi_so}`, `<ul class="ds">${n.hop_dong.map(dongPS).join("") || `<li class="trong le">Biểu đồ Vietcap chưa có giá hợp đồng ${esc(n.chi_so)}.</li>`}</ul>`)}`).join("")}
     <div class="ghi le"><p>Basis = giá hợp đồng − chỉ số cơ sở. Basis năm hóa đặt cạnh lãi suất phi rủi ro r = ${so(q.r, 1)}% mỗi năm (giả định, dùng chung với định giá chứng quyền) để bạn tự so. Chưa có tiêu chí "nên xem xét" cho hợp đồng tương lai nên tab này không xếp nhóm.</p></div>
     <div class="khoi">${mr("Basis là gì", `<p>${esc(q.giai_thich)}</p>`, false)}</div>
@@ -1264,6 +1309,7 @@ to.addEventListener("pointerup", thaKeo); to.addEventListener("pointercancel", t
 
 /* ---------- Bấm ---------- */
 app.addEventListener("click", (e) => {
+  const ly = e.target.closest(".ly-nut"); if (ly) { const t = document.getElementById(ly.getAttribute("aria-controls")), mo = ly.getAttribute("aria-expanded") !== "true"; ly.setAttribute("aria-expanded", mo); if (t) t.hidden = !mo; return; }
   if (e.target.closest("#nut-ech")) { moChat(); return; }
   if (e.target.closest("#chat-dong")) { dongChat(); return; }
   const hoi = e.target.closest("[data-hoi]"); if (hoi) { hoiEch(hoi.dataset.hoi); return; }
@@ -1359,7 +1405,7 @@ function batDau() {
   try { history.replaceState(null, ""); } catch (e) { /* trình duyệt không cho đổi địa chỉ thì bỏ qua */ }
   datDangXem(viTriHash >= 0 ? viTriHash : 0, false); ghiDiaChi(false);
   hoiTin(); setInterval(hoiTin, GIAY_XET_LUOT * 1000); // tin cảnh báo: máy chủ chỉ tính trong giờ khớp lệnh
-  napHomNay();
+  napHomNay(); napTrucTiep();
   if (!rong.matches) trang.scrollLeft = dangXem * trang.clientWidth;
   datVach(dangXem);
   Promise.all([napTongQuan(), api("/api/ma").then((ds) => { S.ds = ds; }).catch(() => { S.ds = []; })]).then(() => {

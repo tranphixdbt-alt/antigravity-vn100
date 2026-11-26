@@ -26,6 +26,9 @@ JOBS = [
     # Việt Nam). Chỉ thêm kỳ chưa có (~3 lời gọi, vài giây). Trước đó nạp tay, CPI đứng ở tháng 9, GDP quý 2.
     ("vi-mo-vn", range(0, 5), "07:25", ["python", "scripts/update_vn_macro.py"]),
     # D101 (22/11/2026): lưu mua/bán chủ động FHSC (~100 lời gọi ≈ 3 phút). FHSC chỉ giữ ~61 phiên → phải chạy mỗi ngày.
+    # D122 (26/11/2026): viết lại bản tin vĩ mô AI của trang Hôm nay (trước đó chỉ viết khi bấm nút ở app cũ, đứng ở
+    # 19/11 suốt một tuần). Chỉ gọi AI khi tin cafef đổi. Sau vi-mo-vn để dùng số vĩ mô mới, trước báo cáo sáng.
+    ("ban-tin-vi-mo", range(0, 5), "07:30", ["python", "scripts/refresh_macro_bulletin.py"]),
     ("active-flow", range(0, 5), "07:35", ["python", "scripts/update_active_flow.py"]),
     ("daily-report", range(0, 5), "07:50", ["python", "scripts/daily_report.py"]),
     # D97: flow-daily (khớp/thỏa thuận tách, VCI qua vnstock_data) tắt — gói bị khóa từ 10/11/2026, job lỗi mỗi ngày.
@@ -114,7 +117,7 @@ def _selftest() -> None:
     # D121: giờ các job mới (ngày thường), quét bù chỉ thứ Hai và thứ Năm
     by_name = {name: (days, hhmm) for name, days, hhmm, _ in JOBS}
     thu = dt.datetime(2026, 11, 26)  # thứ Năm
-    for name, hhmm in (("vi-mo-vn", "07:25"), ("kiem-du-lieu-sang", "08:20"), ("gia-cuoi-phien", "15:45"),
+    for name, hhmm in (("vi-mo-vn", "07:25"), ("ban-tin-vi-mo", "07:30"), ("kiem-du-lieu-sang", "08:20"), ("gia-cuoi-phien", "15:45"),
                        ("kiem-du-lieu-chieu", "16:10"), ("quet-bu", "20:00")):
         h, m = map(int, hhmm.split(":"))
         assert by_name[name][1] == hhmm and due(thu.replace(hour=h, minute=m), by_name[name][0], hhmm, None), name

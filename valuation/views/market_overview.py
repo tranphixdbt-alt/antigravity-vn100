@@ -23,7 +23,12 @@ from valuation.views.macro_panel import MacroObs, _pct, _pts
 _INDEX_SCALE = 1000.0
 _ROUTING = Path(__file__).resolve().parents[1] / "config" / "routing.json"
 _SECTOR_NAMES = {"NH": "Ngân hàng", "CK": "Chứng khoán", "BH": "Bảo hiểm"}
-_LEVELS = {1: ":green[**✓**]", 0: ":gray[–]", -1: ":red[**✗**]", None: ":gray[·]"}  # ký hiệu chữ có màu, không dùng emoji
+_LEVELS = {
+    1: ":green[**✓**]",
+    0: ":gray[–]",
+    -1: ":red[**✗**]",
+    None: ":gray[·]",
+}  # ký hiệu chữ có màu, không dùng emoji
 
 
 @dataclass(frozen=True)
@@ -251,16 +256,21 @@ def sector_map() -> dict[str, str]:
 
 
 def load_market_data(
-    db, cfg: dict
+    db, cfg: dict, now: datetime.datetime | None = None
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame, int]:
-    """(VN-Index, giá đóng cửa VN100, khối ngoại VN100, số mã VN100) — cắt đến ngày cuối đủ phủ."""
+    """(VN-Index, giá đóng cửa VN100, khối ngoại VN100, số mã VN100) — cắt đến ngày cuối đủ phủ.
+
+    Chỉ lấy phiên ĐÃ CHỐT: trước giờ đóng phiên, bỏ dòng của hôm nay nếu DB lỡ có (lỗi 26/11/2026: thẻ VN-Index ghi
+    "giá đến 25/11" nhưng hiện 1.677,93 là điểm giữa phiên 26/11 do Quét VN100 code cũ ghi; phiên 25/11 đóng 1.687,45).
+    """
     from sqlalchemy import or_
 
     from valuation.db.models import PricesDaily, Ticker
+    from valuation.ingest.session_guard import unfinished_session_date
 
-    today = datetime.datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
-    start = today - datetime.timedelta(days=int(cfg["history_days"]))
-    rows = (
+    now = now or datetime.datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    start = now.date() - datetime.timedelta(days=int(cfg["history_days"]))
+    query = (
         db.query(
             PricesDaily.ticker,
             PricesDaily.trade_date,
@@ -270,8 +280,11 @@ def load_market_data(
         .join(Ticker, Ticker.ticker == PricesDaily.ticker)
         .filter(or_(Ticker.is_vn100, PricesDaily.ticker == "VNINDEX"))
         .filter(PricesDaily.trade_date >= start)
-        .all()
     )
+    unfinished = unfinished_session_date(now)
+    if unfinished is not None:
+        query = query.filter(PricesDaily.trade_date < unfinished)
+    rows = query.all()
     universe = db.query(Ticker).filter(Ticker.is_vn100).count()
     df = pd.DataFrame(rows, columns=["ticker", "date", "close", "flow"])
     if df.empty:

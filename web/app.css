@@ -571,3 +571,32 @@ td .nut-nho { min-height: 34px; }
   .chat-dau { padding-top: 0; } .chat-chu { padding-bottom: 8px; }
   .chat-o textarea { font-size: 15px; }
 }
+
+/* ---------- D122: lưu ý dữ liệu thu vào nút tam giác, giá trong phiên, VN100 hôm nay ---------- */
+.ly { margin-block: 4px 8px; }
+.ly-nut { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px 0 8px; border: 1px solid var(--ke); border-radius: 6px; font-size: 12.5px; font-weight: 600; color: var(--vang-chu); background: transparent; }
+.ly-nut svg { width: 16px; height: 16px; }
+.ly-nut[aria-expanded="true"] { border-color: currentColor; }
+.ly-than { margin-top: 8px; max-width: 78ch; font-size: 13px; line-height: 1.5; color: var(--muc-2); }
+.ly-than ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.ly-nen .ly-nut { color: var(--vang); border-color: var(--tren-navy-2); }
+.ly-nen .ly-than { color: var(--tren-navy); }
+.ly-nen .ly-nut:focus-visible { outline-color: #fff; }
+.cs-hai { display: flex; flex-wrap: wrap; gap: 10px 40px; }
+.cs-o { display: grid; gap: 2px; }
+.cs-dong { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.cs-dong strong { font-size: 38px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; }
+.cs-o + .cs-o .cs-dong strong { font-size: 30px; }
+.cs-dong span { font-size: 15px; font-weight: 700; color: var(--tren-navy); white-space: nowrap; }
+.cs-dong span.bs-tang, .bang-so span.bs-tang { color: #8fe5bd; }
+.cs-dong span.bs-giam { color: var(--giam-navy); }
+.cs-song { color: #8fe5bd; font-weight: 600; }
+.cs-luc { margin-top: 4px; }
+.bang-lich { gap: 6px 14px; }
+.bang-lich .bs-ghi { color: var(--tren-navy-2); font-weight: 500; }
+@media (min-width: 960px) { .cs-dong strong { font-size: 46px; } .cs-o + .cs-o .cs-dong strong { font-size: 34px; } }
+.do-rong { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--ke); }
+.do-rong i { display: block; min-width: 0; }
+.dr-tang { background: var(--tang-dam); } .dr-giam { background: var(--giam-dam); } .dr-dung { background: var(--muc-3); }
+.the-ma .o-ma small.re { color: var(--tang); } .the-ma .o-ma small.dat { color: var(--giam); }
+td.re { color: var(--tang); } td.dat { color: var(--giam); }

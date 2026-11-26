@@ -2,7 +2,8 @@
 
 Lát 3 (docs/PLAN_WEB_HOP_NHAT.md mục 12). Chỉ đọc: lắp ráp y như `views.market_overview.render_market_overview`,
 `views.macro_panel.render_macro_panel` và `views.vn100_ranking.render_vn100_ranking`, rồi đổi sang JSON.
-Không gọi mạng, không AI: bản tin vĩ mô chỉ đọc bản đã lưu (`get_macro_bulletin_cached(force=False)`).
+Không gọi mạng, không AI: bản tin vĩ mô chỉ đọc bản đã lưu (`get_macro_bulletin_cached(force=False)`); job
+`ban-tin-vi-mo` (scripts/refresh_macro_bulletin.py, D122) viết lại mỗi sáng ngày giao dịch.
 """
 
 from __future__ import annotations
@@ -175,6 +176,7 @@ def macro(db: Any) -> dict:
                 "cu": mp.is_stale(obs, cfg, today),
             }
         )
+    age = mn.get_macro_cache_age_hours()
     tickers, sectors = mn._allowed_tags()
     text = mn.split_news_tags(
         mn.get_macro_bulletin_cached(force=False), set(tickers) | set(sectors)
@@ -184,7 +186,16 @@ def macro(db: Any) -> dict:
             "chi_so": rows,
             "nhan_dinh": mp.quick_takes(snap, cfg, today),
             "ban_tin": text,
-            "ban_tin_tuoi_gio": mn.get_macro_cache_age_hours(),
+            "ban_tin_tuoi_gio": age,
+            # giờ viết bản tin (giờ VN) và ngưỡng cũ: quá ngưỡng thì web hiện nút lưu ý (D122, job ban-tin-vi-mo 07:30)
+            "ban_tin_luc": (
+                None
+                if age is None
+                else (dt.datetime.now(_VN_TZ) - dt.timedelta(hours=age)).strftime(
+                    "%H:%M %d/%m/%Y"
+                )
+            ),
+            "ban_tin_cu_gio": int(cfg["bulletin_stale_hours"]),
         }
     )
 
