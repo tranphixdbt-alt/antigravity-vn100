@@ -47,6 +47,10 @@ JOBS = [
     # D121: tải giá, khối ngoại, tự doanh ngay sau đóng cửa (trước đây phải chờ 07:50 sáng hôm sau mới có phiên).
     ("gia-cuoi-phien", range(0, 5), "15:45", ["python", "scripts/update_close_prices.py"]),
     ("kiem-du-lieu-chieu", range(0, 5), "16:10", ["python", "scripts/check_data_freshness.py"]),
+    # D128 (27/11/2026): tải lại sau khi sở chốt tự doanh (~16:20–17:15, `money_flow.prop_settle_time` 17:30). Lượt 15:45
+    # chạy trước giờ đó nên tự doanh của phiên chỉ vào DB lúc 07:50 sáng phiên sau. Cùng lệnh với 15:45 (upsert COALESCE:
+    # số đã có không bị ghi đè bằng NULL), mất ~7 phút.
+    ("tu-doanh-toi", range(0, 5), "17:45", ["python", "scripts/update_close_prices.py"]),
     # D121: tối thứ Hai, thứ Năm tải lại phần còn thiếu của các mã trong đợt Quét VN100 08:00 (VCI hay trả 418 buổi sáng).
     ("quet-bu", [0, 3], "20:00", ["python", "scripts/retry_partial_update.py"]),
     # D112 (25/11/2026): sao lưu tệp dữ liệu người dùng của web hợp nhất btinvest.vn (/data/web_user/web_user.db: tài
@@ -118,10 +122,11 @@ def _selftest() -> None:
     by_name = {name: (days, hhmm) for name, days, hhmm, _ in JOBS}
     thu = dt.datetime(2026, 11, 26)  # thứ Năm
     for name, hhmm in (("vi-mo-vn", "07:25"), ("ban-tin-vi-mo", "07:30"), ("kiem-du-lieu-sang", "08:20"), ("gia-cuoi-phien", "15:45"),
-                       ("kiem-du-lieu-chieu", "16:10"), ("quet-bu", "20:00")):
+                       ("kiem-du-lieu-chieu", "16:10"), ("quet-bu", "20:00"), ("tu-doanh-toi", "17:45")):
         h, m = map(int, hhmm.split(":"))
         assert by_name[name][1] == hhmm and due(thu.replace(hour=h, minute=m), by_name[name][0], hhmm, None), name
     assert not due(dt.datetime(2026, 11, 25, 20, 0), by_name["quet-bu"][0], "20:00", None)  # thứ Tư không quét bù
+    assert not due(dt.datetime(2026, 11, 28, 17, 45), by_name["tu-doanh-toi"][0], "17:45", None)  # thứ Bảy không tải
     names = [name for name, *_ in JOBS]
     assert len(names) == len(set(names)), "tên job trùng nhau thì hai job dùng chung một dòng trạng thái"
     print("selftest OK")

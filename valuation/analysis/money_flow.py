@@ -1157,6 +1157,13 @@ def compute_money_flow(
         "dropped": cm["dropped"],
         "disclaimer": DISCLAIMER,
     }
+    # D128: phiên cuối có số tách khớp/thỏa thuận (flow_daily VCI); job tải bảng này tắt từ D97 nên ngày này đứng yên
+    ex_days = (
+        exact.loc[exact["fr_net_match_val"].notna(), "trade_date"]
+        if exact is not None and not exact.empty
+        else []
+    )
+    meta["exact_date"] = _iso(pd.to_datetime(ex_days).max()) if len(ex_days) else None
     if fd is None:
         return _empty(meta, cfg)
     ev = stock_events(actions)

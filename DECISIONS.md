@@ -1574,3 +1574,31 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   chi tiết từng mã.
 - Bỏ cho gọn: khối số tóm tắt (trùng số trên các nút nhóm), đoạn bốn tiêu chí và lời giải thích cảnh báo (vào dấu "!"),
   dòng "Danh sách … chứng quyền", câu "định giá bằng Black-Scholes" ở đầu trang (còn ở chân trang).
+
+### D128 — Biểu đồ và dòng tiền chạy trong phiên; tự doanh tải 17:45 (2026-11-27, người dùng « nhiều dữ liệu biểu đồ và dòng tiền chưa phải real time », duyệt « Làm cả 3 »)
+
+- Kiểm 27/11: trong giờ giao dịch chỉ khối VN-Index/VN30/mã tăng giảm của trang Hôm nay lấy giá liên tục. Biểu đồ từng
+  mã, tab Dòng tiền, bốn trụ cột chỉ đọc DB nên dừng ở phiên trước tới job 15:45; tự doanh tới 07:50 sáng phiên sau (sở
+  chốt ~16:20–17:15, sau giờ job chạy); trình duyệt nạp các tab một lần lúc mở web.
+- Phần 1 — phiên trên bảng giá, chỉ hiển thị, KHÔNG ghi DB (giữ luật D121): `web_live.session_bars` đọc từ đúng lượt
+  bảng giá Vietcap trang Hôm nay đang gọi (nhớ 5 giây chung cho mọi người, không thêm lượt gọi). Khối ngoại bảng giá khớp
+  từng đồng với số job 15:45 ghi (FPT ròng 181.892.097.950 đ, HPG 52.255.534.500 đ phiên 27/11).
+  - Biểu đồ: `web_flow.with_session` thêm nến cuối (mở/cao/thấp/khớp, KL khớp, khối ngoại tới lúc lấy) khi DB chưa có
+    phiên đó; tự doanh, thỏa thuận, CMF, trong nước để trống (NaN), MA/MACD tính lại. Chú thích ghi nến nào là tạm.
+    Trong giờ, trang mã đang mở thay nến cuối mỗi `web.live.chart_poll_seconds` (30 giây) bằng postMessage vào khung
+    biểu đồ, giữ chỗ đang phóng to, kéo.
+  - Trang Hôm nay: khối ngoại ròng VN100 và 5 mã mua/bán ròng nhiều nhất trong phiên. Tab Cổ phiếu: dòng "Hôm nay, chưa
+    chốt" ở tóm tắt, số hôm nay của từng ngành và từng mã; trang một mã: một dòng khối ngoại hôm nay.
+  - Nhãn dòng tiền, ba phiếu, bốn trụ cột vẫn tính trên phiên đã chốt: ghép nửa phiên vào cửa sổ 20 phiên làm phiếu khối
+    lượng lệch (KL lúc 10 giờ chỉ bằng một phần cả phiên).
+- Phần 2 — tự nạp lại: `web_flow.data_version` (dấu số giá, khối ngoại, tự doanh 10 ngày gần trong DB, hỏi DB tối đa
+  30 giây một lần) gắn vào khóa bộ nhớ đệm của dòng tiền, lịch sử mã, trang Hôm nay, và gửi qua `/api/truc-tiep`
+  (`phien_db`). Dấu đổi thì trình duyệt nạp lại Hôm nay, Dòng tiền, biểu đồ đang mở. Ngoài giờ trình duyệt vẫn hỏi web 5
+  phút một lần (`db_poll_seconds`, không gọi Vietcap) để thấy số 15:45, 17:45, 07:50. Tab Phái sinh đang mở thì nạp lại
+  mỗi phút trong giờ (dịch vụ chứng quyền vẫn nhớ giá 5 phút).
+- Phần 3 — job `tu-doanh-toi` 17:45 T2–T6 chạy lại `scripts/update_close_prices.py` (upsert COALESCE, không ghi đè số đã
+  có bằng NULL). Sửa dòng trạng thái tab Dòng tiền: bỏ câu sai "flow_daily theo job hằng ngày; prices_daily khi bấm Quét
+  VN100", thay bằng ngày cuối có số tách khớp/thỏa thuận (`meta.exact_date`, 12/11 từ D97) và "prices_daily tải tự động".
+- Chưa làm: chứng quyền vẫn quét một lần 14:00 (lượt quét còn gửi báo cáo Discord, phải tách định giá khỏi báo cáo
+  trước khi quét dày hơn). Tự doanh FHSC có ngày trống cả rổ (18/11, 25/11) và ngày thiếu (26/11: 68/100 mã); lượt 17:45
+  chỉ lấy được khi FHSC đã có số.

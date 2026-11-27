@@ -180,8 +180,10 @@ def test_trong_gio_lay_lien_tuc_ngoai_gio_chi_4h_8h(monkeypatch):
     assert lan() == 4 and r["trong_gio"] is False
     r = web_live.snapshot(t(26, 20, 8))
     assert lan() == 4
-    # 20:08 → 04:00 hôm sau là 7 giờ 52 phút = 28.320 giây, +5 giây
-    assert r["hoi_lai_giay"] == 28320 + 5
+    # D128: ngoài giờ trình duyệt vẫn hỏi web 5 phút một lần để thấy DB có số mới (15:45, 17:45), nhưng lượt hỏi đó
+    # không gọi Vietcap (lan() vẫn 4 ở trên); sát mốc 4 giờ thì hỏi đúng mốc: 03:58 → 04:00 là 120 giây, +5 giây
+    assert r["hoi_lai_giay"] == 300
+    assert web_live.snapshot(t(27, 3, 58))["hoi_lai_giay"] == 125 and lan() == 4
     web_live.snapshot(t(27, 4, 0, 1))
     assert lan() == 5
     web_live.snapshot(t(27, 7, 59))
@@ -241,3 +243,98 @@ def test_job_ban_tin_vi_mo_bao_dung_trang_thai(tmp_path, monkeypatch, capsys):
         mn, "get_macro_bulletin_cached", lambda force: "⚠️ Không thể lấy được bản tin"
     )
     assert mod.main() == 1 and '"loi"' in capsys.readouterr().out
+
+
+# ---------- D128: phiên trên bảng giá của từng mã (nến hôm nay, khối ngoại trong phiên) ----------
+def _bg_phien(ma, time, khop, mo=1, cao=1, thap=1, mua=0, ban=0, kl=0, gt=0):
+    return {
+        "listingInfo": {"symbol": ma, "refPrice": 43_500},
+        "matchPrice": {
+            "symbol": ma,
+            "time": time,
+            "matchPrice": khop,
+            "openPrice": mo,
+            "highest": cao,
+            "lowest": thap,
+            "accumulatedVolume": kl,
+            "accumulatedValue": gt,
+            "foreignBuyValue": mua,
+            "foreignSellValue": ban,
+        },
+    }
+
+
+def test_session_bars_tinh_tay_fpt_27_11():
+    """Số thật FPT phiên 27/11/2026 trên bảng giá Vietcap, khớp từng đồng với dòng job 15:45 ghi vào DB."""
+    rows = [
+        _bg_phien(
+            "FPT", "2026-11-27T07:45:00.006Z", 44_600, 43_800, 45_300, 43_750,
+            268_400_876_200, 86_508_778_250, 12_431_700, 554_623_000_000,
+        ),
+        _bg_phien("AAA", "2026-11-27T02:20:00Z", 0),  # chưa khớp lệnh: bỏ
+        _bg_phien("BBB", "2026-11-26T20:00:00Z", 10_000, 0, 10_100, 9_900),  # 03:00 ngày 27/11 giờ VN; thiếu giá mở
+        _bg_phien("CCC", "không phải ngày", 10_000),  # không đọc được giờ: bỏ, không đoán ngày
+    ]  # fmt: skip
+    bars = web_live.session_bars(rows, VN)
+    assert set(bars) == {"FPT", "BBB"}
+    f = bars["FPT"]
+    assert f["ngay"] == dt.date(2026, 11, 27)  # 07:45 UTC = 14:45 giờ VN
+    assert (f["mo"], f["cao"], f["thap"], f["gia"], f["kl"]) == (
+        43_800, 45_300, 43_750, 44_600, 12_431_700
+    )  # fmt: skip
+    # tính tay: 268.400.876.200 − 86.508.778.250 = 181.892.097.950 đồng (DB 27/11: foreign_net_val 181.892.097.950)
+    assert f["nn_rong"] == 181_892_097_950 and f["nen"] is True
+    b = bars["BBB"]
+    assert (
+        b["ngay"] == dt.date(2026, 11, 27) and b["nen"] is False
+    )  # không vẽ nến thiếu giá mở
+    assert (
+        b["nn_rong"] == 0
+    )  # mua 0, bán 0 là số thật (không ai giao dịch), không phải thiếu
+
+
+def test_foreign_summary_tinh_tay():
+    d, cu = dt.date(2026, 11, 27), dt.date(2026, 11, 26)
+    bars = {
+        "AAA": {"ngay": d, "nn_rong": 5e9},
+        "BBB": {"ngay": d, "nn_rong": -3e9},
+        "CCC": {"ngay": d, "nn_rong": 2e9},
+        "DDD": {"ngay": d, "nn_rong": None},  # thiếu số: không tính
+        "EEE": {"ngay": cu, "nn_rong": 9e9},  # phiên cũ hơn: không tính
+    }
+    s = web_live.foreign_summary(bars, 1)
+    # tính tay: 5 − 3 + 2 = 4 tỷ trên 3 mã; mua ròng nhiều nhất AAA, bán ròng nhiều nhất BBB
+    assert s == {
+        "ngay": d,
+        "rong": 4e9,
+        "so_ma": 3,
+        "mua": [{"ma": "AAA", "rong": 5e9}],
+        "ban": [{"ma": "BBB", "rong": -3e9}],
+    }
+    assert web_live.foreign_summary({}, 3) is None
+
+
+def test_snapshot_co_khoi_ngoai_nhung_khong_gui_tung_ma(monkeypatch):
+    monkeypatch.setattr(
+        web_live,
+        "_chart",
+        lambda ma: _nen([("2026-11-26", 100.0), ("2026-11-27", 101.0)]),
+    )
+    rows = [
+        _bg_phien("FPT", "2026-11-27T03:00:00Z", 44_600, 43_800, 45_000, 43_700, 3e9, 1e9),
+        _bg_phien("HPG", "2026-11-27T03:00:00Z", 19_900, 19_800, 20_000, 19_700, 1e9, 2e9),
+    ]  # fmt: skip
+    for r in rows:
+        r["listingInfo"]["refPrice"] = r["matchPrice"]["matchPrice"]
+    monkeypatch.setattr(web_live, "_board", lambda syms: rows)
+    monkeypatch.setattr(web_live, "_vn100", lambda: ["FPT", "HPG"])
+    web_live.clear_cache()
+    now = dt.datetime(2026, 11, 27, 10, 0, tzinfo=VN)
+    s = web_live.snapshot(now)
+    assert "phien" not in s  # 100 mã × 10 trường không gửi mỗi 10 giây
+    kn = s["noi_bat"]["khoi_ngoai"]
+    assert kn["rong"] == 1e9 and [x["ma"] for x in kn["mua"]] == ["FPT"]  # 2 − 1 tỷ
+    bars, loi = web_live.session_data(now)
+    assert set(bars) == {"FPT", "HPG"} and loi == []
+    assert s["hoi_bieu_do_giay"] == 30
+    web_live.clear_cache()

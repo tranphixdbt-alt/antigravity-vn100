@@ -21,7 +21,7 @@ from valuation.data_access.corporate_actions import (
     load_upcoming_vn100_corporate_actions,
 )
 from valuation.services.ranking_store import latest_snapshot
-from valuation.services.web_flow import _cached, clean
+from valuation.services.web_flow import _cached, clean, data_version
 from valuation.views import macro_panel as mp
 from valuation.views import market_overview as mo
 from valuation.views import vn100_ranking as vr
@@ -153,7 +153,8 @@ def market(db: Any) -> dict:
             "nhan_tin": mn.latest_news_tags(),
         }
 
-    return clean(_cached("market", make))
+    # D128: khóa gắn dấu phiên bản DB → job 15:45, 17:45 vừa ghi thì trang Hôm nay tính lại ngay
+    return clean(_cached(f"market:{data_version(db)}", make))
 
 
 def macro(db: Any) -> dict:

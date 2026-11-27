@@ -5,6 +5,7 @@
 
 ## Đang chờ
 
+- [x] D128: biểu đồ, khối ngoại chạy trong phiên từ bảng giá; web tự nạp lại khi DB có số mới; tự doanh tải thêm 17:45.
 - [x] D127: Tab Chứng quyền thành bảng gọn, bấm tiêu đề cột để xếp.
 - [x] D126: Hỏi Ếch đọc chứng quyền, ETF, hợp đồng tương lai và cảnh báo.
 - [x] D125: trang Hôm nay lấy giá liên tục trong giờ, ngoài giờ chỉ 4 giờ và 8 giờ sáng; bớt chữ, bỏ giờ cập nhật khi số đúng.

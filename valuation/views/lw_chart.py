@@ -463,9 +463,10 @@ P.panes.forEach((pane, i) => {
     const api = chart.addSeries(LW[s.type + 'Series'], opts, i);
     if (s.margins) api.priceScale().applyOptions({scaleMargins: s.margins});
     api.setData(s.data);
-    if (s.markers && s.markers.length) LW.createSeriesMarkers(api, s.markers);
-    if (s.vp) api.attachPrimitive(new VolumeProfile(s.vp));
-    made.push({api, s});
+    const mk = s.type === 'Candlestick' || (s.markers && s.markers.length) ? LW.createSeriesMarkers(api, s.markers || []) : null;
+    const vp = s.vp ? new VolumeProfile(s.vp) : null;
+    if (vp) api.attachPrimitive(vp);
+    made.push({api, s, mk, vp});
   });
   if (i > 0) chart.panes()[i].setStretchFactor(pane.height / P.panes[0].height);
   const el = document.createElement('div'); el.className = 'lg'; wrap.appendChild(el);
@@ -512,6 +513,19 @@ function place() {
 }
 chart.subscribeCrosshairMove(draw);
 draw(null);
+// D128: trang chứa gửi dữ liệu mới (cùng các tầng) trong phiên → thay số, giữ nguyên chỗ đang phóng to, kéo
+window.addEventListener('message', e => {
+  const N = e.source === window.parent && e.data && e.data.loai === 'bt-bieu-do' ? e.data.du_lieu : null;
+  if (!N || !N.panes || N.panes.length !== legends.length) return;
+  if (N.panes.some((p, i) => p.series.length !== legends[i].made.length)) return;
+  N.panes.forEach((p, i) => p.series.forEach((s, k) => {
+    const m = legends[i].made[k];
+    m.api.setData(s.data); m.s.data = s.data;
+    if (m.mk) m.mk.setMarkers(s.markers || []);
+    if (m.vp && s.vp) m.vp.d = s.vp;
+  }));
+  draw(null);
+});
 chart.timeScale().fitContent();
 requestAnimationFrame(() => requestAnimationFrame(place));
 new ResizeObserver(() => requestAnimationFrame(place)).observe(wrap);

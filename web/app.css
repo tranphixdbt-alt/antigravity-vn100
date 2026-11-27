@@ -621,3 +621,10 @@ td.re { color: var(--tang); } td.dat { color: var(--giam); }
 .bang-cq td.re, .bang-cq td.dat { font-weight: 700; }
 .loc-ct { flex: none; display: inline-flex; align-items: center; padding-inline: 2px 4px; }
 .cuon.bang-cq td.trai:first-child, .cuon.bang-cq th.trai:first-child { min-width: 0; max-width: none; padding-right: 12px; }
+
+/* D128: số của phiên đang chạy (bảng giá) ở Hôm nay, tab Cổ phiếu và trang một mã */
+.nb b.re, .dong-so b.re, .tom-hn b.re, .ma-hn b.re { color: var(--tang); }
+.nb b.dat, .dong-so b.dat, .tom-hn b.dat, .ma-hn b.dat { color: var(--giam); }
+.don-vi { font-size: 12px; font-weight: 400; color: var(--muc-3); }
+.tom-hn { grid-column: 1 / -1; font-size: 13.5px; color: var(--muc-2); }
+.tom-hn b, .ma-hn b { font-weight: 700; }

@@ -1,5 +1,8 @@
 """Giá trong phiên cho trang Hôm nay của btinvest.vn (D122): VN-Index, VN30 và mã VN100 tăng, giảm mạnh nhất.
 
+D128: cùng lượt bảng giá đó cho thêm phiên đang chạy của từng mã (`session_bars`: nến, khối ngoại) để biểu đồ và tab
+Dòng tiền chạy trong phiên (`web_flow.with_session`, `web_flow.session_flows`), và khối ngoại VN100 ở trang Hôm nay.
+
 Nguồn: bảng giá và biểu đồ Vietcap (`web.live` trong config), cùng nguồn repo `cw_scanner` đang dùng cho chứng quyền,
 phái sinh. Đo 26/11/2026 từ VPS: 0,35–1,5 giây mỗi lượt.
 - Chỉ số: nến ngày của biểu đồ, gồm nến hôm nay đang chạy trong phiên; thay đổi so với nến phiên trước.
@@ -142,6 +145,86 @@ def movers(rows: list[dict], top_n: int) -> dict:
     }
 
 
+def _num(x: Any) -> float | None:
+    """Số dương đọc được; 0, âm, rỗng hay chữ là thiếu (bảng giá trả 0 cho trường chưa có số)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
+def _money(x: Any) -> float | None:
+    """Giá trị tiền (đồng) hoặc khối lượng: 0 là số thật (không ai mua), rỗng hay chữ là thiếu."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if v >= 0 else None
+
+
+def session_bars(rows: list[dict], tz: ZoneInfo) -> dict[str, dict]:
+    """Phiên đang chạy (hoặc vừa đóng) của từng mã, đọc từ một lượt bảng giá (D128). Chỉ để HIỂN THỊ, không ghi DB.
+
+    Ngày phiên = ngày (giờ Việt Nam) của lần khớp cuối `matchPrice.time`. Mã chưa khớp lệnh (giá khớp 0) bỏ qua.
+    Đơn vị như prices_daily: giá đồng/cp, khối lượng cp, giá trị đồng. Khối ngoại trên bảng giá khớp từng đồng với số
+    job 15:45 ghi vào DB (đo FPT, HPG 27/11/2026). Thiếu mở/cao/thấp thì không vẽ nến (`nen` False), khối ngoại vẫn dùng.
+    """
+    out: dict[str, dict] = {}
+    for r in rows:
+        m = r.get("matchPrice") or {}
+        info = r.get("listingInfo") or {}
+        ma, gia = m.get("symbol") or info.get("symbol"), _num(m.get("matchPrice"))
+        if not ma or gia is None:
+            continue
+        try:
+            luc = dt.datetime.fromisoformat(str(m["time"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        if luc.tzinfo is None:
+            continue  # không rõ múi giờ thì không suy được ngày phiên
+        mua, ban = _money(m.get("foreignBuyValue")), _money(m.get("foreignSellValue"))
+        mo, cao, thap = (_num(m.get(k)) for k in ("openPrice", "highest", "lowest"))
+        out[ma] = {
+            "ngay": luc.astimezone(tz).date(),
+            "mo": mo,
+            "cao": cao,
+            "thap": thap,
+            "gia": gia,
+            "tham_chieu": _num(info.get("refPrice")),
+            "kl": _money(m.get("accumulatedVolume")),
+            "gt": _money(m.get("accumulatedValue")),
+            "nn_mua": mua,
+            "nn_ban": ban,
+            "nn_rong": None if mua is None or ban is None else mua - ban,
+            "nen": None not in (mo, cao, thap),
+        }
+    return out
+
+
+def foreign_summary(bars: dict[str, dict], top_n: int) -> dict | None:
+    """Khối ngoại của phiên mới nhất trên bảng giá: tổng ròng VN100, mã mua ròng và bán ròng nhiều nhất (đồng)."""
+    if not bars:
+        return None
+    day = max(b["ngay"] for b in bars.values())
+    net = {
+        ma: b["nn_rong"]
+        for ma, b in bars.items()
+        if b["ngay"] == day and b["nn_rong"] is not None
+    }
+    if not net:
+        return None
+    buy = sorted((x for x in net.items() if x[1] > 0), key=lambda x: -x[1])
+    sell = sorted((x for x in net.items() if x[1] < 0), key=lambda x: x[1])
+    return {
+        "ngay": day,
+        "rong": sum(net.values()),
+        "so_ma": len(net),
+        "mua": [{"ma": m, "rong": v} for m, v in buy[:top_n]],
+        "ban": [{"ma": m, "rong": v} for m, v in sell[:top_n]],
+    }
+
+
 _lock = threading.Lock()
 _memo: dict[str, tuple[dt.datetime, dict]] = {}
 
@@ -206,10 +289,16 @@ def _fresh(at: dt.datetime, value: dict, now: dt.datetime) -> bool:
 
 
 def _poll_after(now: dt.datetime) -> int:
-    """Giây trình duyệt chờ trước khi hỏi lại: trong giờ `poll_seconds`; ngoài giờ tới mốc kế tiếp (+5 giây)."""
+    """Giây trình duyệt chờ trước khi hỏi lại: trong giờ `poll_seconds`; ngoài giờ tới mốc kế tiếp (+5 giây), nhưng
+    không quá `db_poll_seconds` để thấy DB vừa có số mới (D128; lượt hỏi đó không gọi Vietcap, xem `_fresh`).
+    """
+    cfg = _cfg()
     if in_live_hours(now):
-        return int(_cfg()["poll_seconds"])
-    return max(int((next_mark(now) - now).total_seconds()) + 5, 5)
+        return int(cfg["poll_seconds"])
+    return min(
+        max(int((next_mark(now) - now).total_seconds()) + 5, 5),
+        int(cfg["db_poll_seconds"]),
+    )
 
 
 def clear_cache() -> None:
@@ -225,9 +314,13 @@ def _build(now: dt.datetime) -> dict:
             indices.append(index_row(sym, _chart(sym), now))
         except LiveDataError as exc:
             errors.append(f"{sym}: {exc}")
-    top = None
+    top, bars = None, {}
     try:
-        top = movers(_board(_vn100()), int(_cfg()["top_n"]))
+        rows = _board(_vn100())
+        top_n = int(_cfg()["top_n"])
+        top = movers(rows, top_n)
+        bars = session_bars(rows, _tz())
+        top["khoi_ngoai"] = foreign_summary(bars, top_n)
     except LiveDataError as exc:
         errors.append(f"Bảng giá VN100: {exc}")
     return {
@@ -236,16 +329,33 @@ def _build(now: dt.datetime) -> dict:
         "noi_bat": top,
         "loi": errors,
         "nguon": "Vietcap",
+        "phien": bars,  # từng mã, không gửi nguyên cho trình duyệt (xem `snapshot`, `session_data`)
     }
 
 
-def snapshot(now: dt.datetime | None = None) -> dict:
-    """Số trong phiên dùng chung cho mọi người xem; xem `_fresh` cho lúc nào lấy lại. Kèm `hoi_lai_giay` cho trình duyệt."""
-    now = now or dt.datetime.now(_tz())
+def _hit(now: dt.datetime) -> dict:
     with _lock:
         hit = _memo.get("live")
         if hit is None or not _fresh(hit[0], hit[1], now):
             hit = (now, _build(now))
             _memo["live"] = hit
-        value = hit[1]
-    return {**value, "hoi_lai_giay": _poll_after(now), "trong_gio": in_live_hours(now)}
+        return hit[1]
+
+
+def snapshot(now: dt.datetime | None = None) -> dict:
+    """Số trong phiên dùng chung cho mọi người xem; xem `_fresh` cho lúc nào lấy lại. Kèm `hoi_lai_giay` cho trình duyệt."""
+    now = now or dt.datetime.now(_tz())
+    value = {k: v for k, v in _hit(now).items() if k != "phien"}
+    return {
+        **value,
+        "hoi_lai_giay": _poll_after(now),
+        "trong_gio": in_live_hours(now),
+        "hoi_bieu_do_giay": int(_cfg()["chart_poll_seconds"]),
+        "hoi_phai_sinh_giay": int(_cfg()["ps_poll_seconds"]),
+    }
+
+
+def session_data(now: dt.datetime | None = None) -> tuple[dict[str, dict], list[str]]:
+    """Phiên trên bảng giá của từng mã VN100 (cùng lượt lấy, cùng bộ nhớ với `snapshot`) và các lỗi nguồn."""
+    value = _hit(now or dt.datetime.now(_tz()))
+    return value["phien"], [x for x in value["loi"] if x.startswith("Bảng giá")]

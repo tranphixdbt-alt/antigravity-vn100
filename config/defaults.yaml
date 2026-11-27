@@ -822,6 +822,10 @@ web:
   search_limit: 12                # số gợi ý tối đa của ô tìm mã
   cw_base_url: "http://127.0.0.1:8000"  # dịch vụ chứng quyền, ETF, phái sinh (repo cw_scanner, web.py) trên cùng máy
   cw_timeout_seconds: 30          # trang phân tích từng mã ở dịch vụ đó tải giá trực tiếp, có lúc mất hơn 10 giây
+  # D128: dấu phiên bản số giá/khối ngoại/tự doanh trong DB (web_flow.data_version). Gắn vào khóa bộ nhớ đệm và gửi cho
+  # trình duyệt, để job 15:45, 17:45, 07:50 vừa ghi là web tính lại và nạp lại các tab, không chờ hết cache_seconds.
+  data_version_seconds: 30        # hỏi DB nhiều nhất 30 giây một lần (một câu đếm ~40 ms trên VPS)
+  data_version_days: 10           # xét các phiên trong 10 ngày gần nhất: đủ phủ đệm 5 ngày mà job tải lại
   auth:
     cookie_name: access_token     # cookie phiên của dịch vụ coin (D98), Domain=.btinvest.vn
     cache_seconds: 60             # nhớ kết quả hỏi coin /me theo mã băm cookie; coin giới hạn 600 lượt/phút/IP
@@ -837,6 +841,11 @@ web:
     cache_seconds: 5              # trong giờ: máy chủ lấy Vietcap nhiều nhất 5 giây một lần, dùng chung cho mọi người xem
     error_cache_seconds: 10       # lượt có lỗi chỉ nhớ ngần này giây
     poll_seconds: 10              # trong giờ: trình duyệt hỏi số mới mỗi 10 giây khi đang mở trang Hôm nay
+    # D128: ngoài giờ trình duyệt vẫn hỏi máy chủ web 5 phút một lần, chỉ để thấy DB vừa có số mới (job 15:45, 17:45,
+    # 07:50). Lượt hỏi này không gọi Vietcap: số bảng giá ngoài giờ vẫn chỉ lấy lại ở các mốc off_hours_checks.
+    db_poll_seconds: 300
+    chart_poll_seconds: 30        # trong phiên: biểu đồ của mã đang mở thay nến cuối mỗi 30 giây
+    ps_poll_seconds: 60           # trong phiên: tab Phái sinh đang mở thì nạp lại bảng hợp đồng mỗi phút (dịch vụ chứng quyền nhớ giá 5 phút)
     timeout_seconds: 8
     top_n: 5                      # số mã tăng mạnh nhất, giảm mạnh nhất hiện ra
     chart_bars: 3                 # số nến ngày xin Vietcap (hôm nay + phiên trước, dư một nến)

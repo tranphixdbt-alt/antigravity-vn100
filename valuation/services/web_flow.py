@@ -7,6 +7,7 @@ kiểu JSON được; không tính lại, không làm tròn lại con số nào.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import math
 import re
 import threading
@@ -15,10 +16,15 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
+import numpy as np
 import pandas as pd
+from sqlalchemy import func
 
 from valuation.analysis import money_flow as mf
+from valuation.analysis.technical_chart import add_technical_indicators
 from valuation.config import load_defaults
+from valuation.db.models import PricesDaily
+from valuation.services import web_live
 from valuation.services.ranking_store import latest_snapshot
 from valuation.views import lw_chart
 from valuation.views import money_flow as vmf
@@ -97,6 +103,44 @@ def _cached(key: str, make: Callable[[], Any]) -> Any:
 def clear_cache() -> None:
     with _lock:
         _cache.clear()
+        _version.clear()
+
+
+_version: dict[str, tuple[float, str]] = {}
+
+
+def data_version(db: Any) -> str:
+    """Dấu phiên bản số giá, khối ngoại, tự doanh trong DB (D128).
+
+    Đổi khi job ghi phiên mới (15:45), tự doanh (17:45) hay sửa số các phiên gần (07:50 tải lại đệm 5 ngày). Bộ nhớ
+    đệm của web gắn dấu này vào khóa, nên DB vừa đổi thì lần hỏi sau tính lại ngay, không chờ hết `cache_seconds`;
+    trình duyệt thấy dấu đổi thì nạp lại các tab. Hỏi DB nhiều nhất `data_version_seconds` giây một lần.
+    """
+    cfg = _web_cfg()
+    with _lock:
+        hit = _version.get("v")
+        if hit is not None and time.monotonic() - hit[0] < float(
+            cfg["data_version_seconds"]
+        ):
+            return hit[1]
+    since = vmf._now_vn().date() - dt.timedelta(days=int(cfg["data_version_days"]))
+    row = (
+        db.query(
+            func.max(PricesDaily.trade_date),
+            func.count(PricesDaily.close),
+            func.count(PricesDaily.foreign_net_val),
+            func.count(PricesDaily.proprietary_net_val),
+            func.sum(PricesDaily.close),
+            func.sum(PricesDaily.foreign_net_val),
+            func.sum(PricesDaily.proprietary_net_val),
+        )
+        .filter(PricesDaily.trade_date >= since)
+        .one()
+    )
+    value = hashlib.sha1(repr(tuple(row)).encode()).hexdigest()[:12]
+    with _lock:
+        _version["v"] = (time.monotonic(), value)
+    return value
 
 
 def _result(db: Any) -> dict:
@@ -111,7 +155,7 @@ def _result(db: Any) -> dict:
         res["upside"] = vmf.upsides(db, latest_snapshot())
         return res
 
-    return _cached("flow", make)
+    return _cached(f"flow:{data_version(db)}", make)
 
 
 def model_upsides(db: Any) -> dict:
@@ -133,7 +177,77 @@ def _history(db: Any, ticker: str) -> pd.DataFrame:
             p["prices"], p["exact"], p["actions"], cfg, vmf._now_vn()
         )
 
-    return _cached(f"history:{ticker}", make)
+    return _cached(f"history:{ticker}:{data_version(db)}", make)
+
+
+def with_session(h: pd.DataFrame, bar: dict | None) -> tuple[pd.DataFrame, bool]:
+    """Thêm phiên trên bảng giá vào cuối lịch sử biểu đồ khi DB chưa có phiên đó (D128). Chỉ để hiển thị.
+
+    Nến và KL khớp lấy từ bảng giá; khối ngoại ròng = mua − bán tới lúc lấy (cùng định nghĩa cột prices_daily: gộp
+    khớp lệnh và thỏa thuận). Tự doanh, phần thỏa thuận, CMF, trong nước để trống (NaN, không thành 0): bảng giá
+    không có các số này. MA, MACD tính lại trên cả chuỗi giá. Trả (khung, có thêm phiên không). Không thêm khi bảng
+    giá thiếu mở/cao/thấp hoặc DB đã có phiên đó (sau job 15:45).
+    """
+    if bar is None or not bar.get("nen") or h.empty:
+        return h, False
+    day = pd.Timestamp(bar["ngay"])
+    if day <= h.index.max():
+        return h, False
+    row: dict[str, Any] = {
+        c: False if h[c].dtype == bool else np.nan for c in h.columns
+    }
+    row |= {
+        "open": bar["mo"],
+        "high": bar["cao"],
+        "low": bar["thap"],
+        "close": bar["gia"],
+        "vol_match": bar["kl"],
+        "deal_is_lb": False,
+        "f": bar["nn_rong"],
+        "block": False,
+        "big_block": False,
+        "source": "live",
+    }
+    idx = pd.DatetimeIndex([day], name=h.index.name)
+    out = pd.concat([h, pd.DataFrame([row], index=idx).astype(h.dtypes.to_dict())])
+    ind = add_technical_indicators(
+        out[["close"]].assign(high=out["high"], low=out["low"])
+    )
+    for c in ("MA20", "MA50", "MACD", "MACD_SIGNAL", "MACD_HIST"):
+        out[c] = ind[c]
+    return out, True
+
+
+def session_flows(db: Any) -> dict:
+    """Khối ngoại ròng của phiên trên bảng giá theo từng mã và ngành, khi DB chưa có phiên đó (D128).
+
+    `co` False: bảng giá chưa có phiên nào mới hơn phiên cuối trong DB (ngoài giờ, sau job 15:45) hoặc lỗi nguồn
+    (`loi`). Đơn vị đồng; mã không có số khối ngoại thì không có mặt, không tính là 0.
+    """
+    res = _result(db)
+    bars, errors = web_live.session_data()
+    day = max((b["ngay"] for b in bars.values()), default=None)
+    last = res["meta"]["price_date"]
+    if day is None or (last is not None and day <= dt.date.fromisoformat(last)):
+        return {"co": False, "loi": errors}
+    sector = {ma: tk["sector"] for ma, tk in res["tickers"].items()}
+    net = {
+        ma: b["nn_rong"]
+        for ma, b in bars.items()
+        if b["ngay"] == day and ma in sector and b["nn_rong"] is not None
+    }
+    by_sector: dict[str, float] = {}
+    for ma, v in net.items():
+        by_sector[sector[ma]] = by_sector.get(sector[ma], 0.0) + v
+    return {
+        "co": True,
+        "ngay": day,
+        "rong": sum(net.values()),
+        "so_ma": len(net),
+        "nganh": by_sector,
+        "ma": net,
+        "loi": errors,
+    }
 
 
 def normalize_ticker(raw: str) -> str | None:
@@ -280,6 +394,7 @@ def chart(
     layers: list[str],
     profile_on: bool,
     dark: bool,
+    data_only: bool = False,
 ) -> dict | None:
     """Biểu đồ giá và dòng tiền của tab cũ (Lightweight Charts, D90): HTML để nhúng + chiều cao + chú thích.
 
@@ -295,7 +410,11 @@ def chart(
             "cao": 0,
             "chu_thich": "Chưa có dữ liệu giá cho mã này.",
             "ho_so": None,
+            "trong_phien": False,
         }
+    # D128: phiên trên bảng giá mà DB chưa có (trong giờ giao dịch, tới lúc job 15:45 ghi) thành nến cuối
+    bars, live_errors = web_live.session_data()
+    h, live = with_session(h, bars.get(ma))
     v = vmf.chart_slice(h, int(ccfg["ranges"][rng]))
     vp_cfg = ccfg["volume_profile"]
     profile = (
@@ -316,7 +435,7 @@ def chart(
     )
     src = (
         "VCI khớp lệnh/thỏa thuận (flow_daily)"
-        if (v["source"] == "exact").all()
+        if (v["source"][v["source"] != "live"] == "exact").all()
         else "một phần ước từ prices_daily (KL thỏa thuận chỉ là cận dưới)"
     )
     note = (
@@ -328,11 +447,26 @@ def chart(
             else "Chế độ Loại: lũy kế chỉ khớp lệnh."
         )
     )
-    return {
-        "html": lw_chart.render_html(payload, dark),
+    if live:
+        note = (
+            f"Nến {vmf._d(mf._iso(v.index[-1]))} lấy từ bảng giá Vietcap, chưa chốt: khối ngoại tính tới lúc lấy "
+            f"(gồm cả thỏa thuận), tự doanh chưa có. {note}"
+        )
+    elif live_errors and web_live.in_live_hours(dt.datetime.now(web_live._tz())):
+        note = (
+            f"Chưa lấy được bảng giá trong phiên, biểu đồ dừng ở phiên đã chốt. {note}"
+        )
+    out = {
         "cao": lw_chart.chart_height(payload),
         "chu_thich": note,
         "ho_so": clean(
             {k: profile[k] for k in ("poc", "vah", "val", "total")} if profile else None
         ),
+        "trong_phien": live,
     }
+    # trình duyệt hỏi lại trong phiên chỉ cần dữ liệu để thay vào biểu đồ đang mở (giữ chỗ đang phóng to, kéo)
+    return out | (
+        {"du_lieu": clean(payload)}
+        if data_only
+        else {"html": lw_chart.render_html(payload, dark)}
+    )

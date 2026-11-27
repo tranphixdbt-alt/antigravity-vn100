@@ -399,13 +399,17 @@ def test_status_line_names_update_paths():
         "universe": 100, "prop_coverage": 76, "n_sessions": 20, "window_start": "2026-09-24",
         "gap_sessions": 0, "config_hash": "abcd1234", "sources": {"A": 100},
     }  # fmt: skip
-    assert "chỉ cập nhật khi bấm «Quét VN100 hàng tuần»" in status_line(meta, "loai")
-    meta["sources"] = {"exact": 50, "A": 50}
+    s = status_line(meta, "loai")
+    assert "prices_daily tải tự động sau giờ đóng cửa và sáng phiên sau" in s
+    assert "flow_daily" not in s and "Quét VN100" not in s
+    # D128: flow_daily chỉ còn tới phiên job cuối chạy (tắt từ D97) → nói rõ ngày đó, không ghi "job hằng ngày"
+    meta |= {"sources": {"exact": 50, "A": 50}, "exact_date": "2026-11-12"}
     s = status_line(meta, "loai")
     assert (
-        "flow_daily theo job hằng ngày; prices_daily khi bấm «Quét VN100 hàng tuần»"
+        "tách khớp/thỏa thuận (flow_daily) chỉ có đến 12/11, sau đó ước từ prices_daily"
         in s
     )
+    assert "job hằng ngày" not in s
 
 
 def test_l10_calculator_warns_when_position_exceeds_capital(run_tab):

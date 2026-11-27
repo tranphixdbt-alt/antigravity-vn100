@@ -621,6 +621,19 @@ def test_exact_path_mch_uses_matched_foreign_and_exact_deal_badge():
     assert any("GT ước ~" in b for b in tka["badges"])
 
 
+def test_meta_exact_date_is_last_flow_daily_session_with_foreign():
+    """D128: dòng trạng thái nói flow_daily chỉ có tới ngày nào (job tắt từ D97), không ghi "job hằng ngày"."""
+    df, ex = _mch()
+    last = pd.Timestamp(ex["trade_date"].max())
+    ex.loc[pd.to_datetime(ex["trade_date"]) == last, "fr_net_match_val"] = NAN
+    meta = compute_money_flow(df, ex, None, {}, CFG, NOW)["meta"]
+    want = pd.to_datetime(ex.loc[ex["fr_net_match_val"].notna(), "trade_date"]).max()
+    assert want < last and meta["exact_date"] == want.date().isoformat()
+    assert (
+        compute_money_flow(df, None, None, {}, CFG, NOW)["meta"]["exact_date"] is None
+    )
+
+
 def test_exact_path_room_closed_makes_foreign_vote_not_applicable():
     df, ex = _mch(room=0.0)
     tk = compute_money_flow(df, ex, None, {}, CFG, NOW)["tickers"]["MCH"]

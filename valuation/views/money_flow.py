@@ -277,12 +277,18 @@ def status_line(meta: dict, mode: str) -> str:
     """Dải trạng thái (truy vết AGENTS #5): ngày giá/dòng tiền, độ phủ, cửa sổ, nguồn, cấu hình."""
     src = meta.get("sources") or {}
     n_ex = src.get("exact", 0) + src.get("mixed", 0)
+    # D128: job flow_daily tắt từ D97, còn prices_daily tải tự động mỗi ngày giao dịch (câu cũ "flow_daily theo job
+    # hằng ngày; prices_daily khi bấm Quét VN100" đã sai từ đó).
+    ex = meta.get("exact_date")
     tail = [
-        (
-            f"flow_daily theo job hằng ngày; prices_daily khi bấm {_SCAN}"
-            if n_ex
-            else f"chỉ cập nhật khi bấm {_SCAN}"
+        *(
+            [
+                f"tách khớp/thỏa thuận (flow_daily) chỉ có đến {_d(ex)}, sau đó ước từ prices_daily"
+            ]
+            if n_ex and ex
+            else []
         ),
+        "prices_daily tải tự động sau giờ đóng cửa và sáng phiên sau",
         f"cấu hình money_flow #{meta['config_hash']} (D73)",
     ]
     if meta.get("flow_date") is None:

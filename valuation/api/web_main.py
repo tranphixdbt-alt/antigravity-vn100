@@ -77,8 +77,12 @@ def bieu_do(
     tang: str | None = None,
     ho_so: bool = False,
     toi: bool = False,
+    chi_du_lieu: bool = False,
 ) -> dict:
-    """Biểu đồ giá và dòng tiền nhiều tầng của tab cũ, trả về HTML để nhúng."""
+    """Biểu đồ giá và dòng tiền nhiều tầng của tab cũ, trả về HTML để nhúng.
+
+    `chi_du_lieu=true` (D128): chỉ dữ liệu các tầng, để trình duyệt thay vào biểu đồ đang mở trong phiên.
+    """
     ccfg = load_defaults()["money_flow_chart"]
     rng = khung or ccfg["default_range"]
     if rng not in ccfg["ranges"]:
@@ -87,7 +91,7 @@ def bieu_do(
         layers = web_flow.parse_layers(tang)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    data = web_flow.chart(db, _known(ma), che_do, rng, layers, ho_so, toi)
+    data = web_flow.chart(db, _known(ma), che_do, rng, layers, ho_so, toi, chi_du_lieu)
     if data is None:
         raise HTTPException(
             status_code=404, detail="Mã không có trong bảng dòng tiền VN100."
@@ -102,9 +106,16 @@ def thi_truong(db: Db) -> dict:
 
 
 @data.get("/api/truc-tiep")
-def truc_tiep() -> dict:
-    """Giá trong phiên: VN-Index, VN30, mã VN100 tăng giảm mạnh nhất (Vietcap, nhớ 20 giây cho mọi người)."""
-    return web_flow.clean(web_live.snapshot())
+def truc_tiep(db: Db, dong_tien: bool = False) -> dict:
+    """Giá trong phiên: VN-Index, VN30, mã VN100 tăng giảm mạnh nhất, khối ngoại (Vietcap, nhớ chung cho mọi người).
+
+    D128: kèm `phien_db` (dấu phiên bản số trong DB) để trình duyệt nạp lại các tab khi job vừa ghi; `dong_tien=true`
+    (tab Dòng tiền, trang một mã đang mở) kèm khối ngoại ròng của phiên đang chạy theo từng mã và ngành.
+    """
+    out = web_live.snapshot() | {"phien_db": web_flow.data_version(db)}
+    if dong_tien:
+        out["dong_tien"] = web_flow.session_flows(db)
+    return web_flow.clean(out)
 
 
 @data.get("/api/vi-mo")

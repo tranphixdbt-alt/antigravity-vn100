@@ -64,7 +64,7 @@ const docPhieu = (v) => (v === 1 ? "gom" : v === -1 ? "xả" : v === 0 ? "trung 
 // Trạng thái của trang: chế độ loại/gồm thỏa thuận, tổng quan, danh sách mã, bộ lọc, mã đang mở, lựa chọn biểu đồ
 const S = { cheDo: "loai", tq: null, ds: [], loc: { nhan: "tat", nganh: null }, ma: null, bd: null, xem: "dt", xh: null, tt: null, vm: null,
   loai: null, cq: null, cqLoc: "NÊN XEM XÉT", cqTim: "", cqXep: null, etf: null, etfXem: "ck", ps: null, trangCu: null,
-  dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null,
+  dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null, dtHN: null,
   chat: { tt: null, tin: [], dang: false, mo: false } };
 const tenMa = (ma) => { const r = S.ds.find((x) => x.ma === ma); return r ? [r.ten, r.nganh].filter(Boolean).join(" · ") : ""; };
 const dangToi = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
@@ -85,6 +85,7 @@ function datDangXem(i, cuon) {
   if (rong.matches) datVach(i);
   else if (cuon) { const dich = i * trang.clientWidth; if (Math.abs(trang.scrollLeft - dich) > 1) dichCuon = i; trang.scrollTo({ left: dich, behavior: itChuyenDong ? "auto" : "smooth" }); }
   if (TAB[i][0] === "phai-sinh") napPS();
+  if (TAB[i][0] === "co-phieu" && doi && S.live) napTrucTiep(); // xin ngay khối ngoại trong phiên của từng mã (D128)
   // chủ động chuyển tab (menu, ô tìm, địa chỉ): thêm một bước lịch sử; đang mở tờ thì chỉ sửa bước của tờ.
   // Vuốt ngang trên điện thoại (cuon = false) đi qua nhiều vị trí, nên chỉ ghi bước khi cuộn đã dừng (cuonYen).
   if (cuon) ghiDiaChi(doi && !S.loai);
@@ -150,7 +151,7 @@ rong.addEventListener("change", () => { datVach(dangXem); if (!rong.matches) tra
 function dongDT(r) {
   const c = r.cot || {}, kN = Object.keys(c).find((k) => k.startsWith("Ngoại")), up = c["Upside (%)"];
   const so3 = [[kN ? kN.replace(" (tỷ)", "") : "Ngoại", kN && !thieu(c[kN]) ? `${dau(c[kN], 1)} tỷ` : "—"], ["CMF20", thieu(c.CMF20) ? "—" : dau(c.CMF20, 2)], ["Giữ nhãn từ", c["Giữ nhãn từ"] || "—"]];
-  return `<li><button class="dong le" type="button" data-ma="${esc(r.ma)}"><span class="dong-ma">${esc(r.ma)}</span><span class="phieu-3" role="img" aria-label="Ba phiếu: khối ngoại ${docPhieu(r.phieu[0])}, giá và khối lượng ${docPhieu(r.phieu[1])}, tự doanh ${docPhieu(r.phieu[2])}">${r.phieu.map(gp).join("")}</span><span class="dong-kl ${LOP_NHAN[r.nhan] || "tt"}">${esc(S.tq.ten_nhan[r.nhan] || r.nhan)}</span><span class="dong-phu">${esc(r.nganh)} · ${esc(r.boi_canh)}</span><span class="dong-nho">${thieu(up) ? "" : `Upside ${dau(up, 1)}%`}</span><span class="dong-so">${so3.map(([a, b]) => `<span>${esc(a)}<b>${esc(b)}</b></span>`).join("")}</span></button></li>`;
+  return `<li><button class="dong le" type="button" data-ma="${esc(r.ma)}"><span class="dong-ma">${esc(r.ma)}</span><span class="phieu-3" role="img" aria-label="Ba phiếu: khối ngoại ${docPhieu(r.phieu[0])}, giá và khối lượng ${docPhieu(r.phieu[1])}, tự doanh ${docPhieu(r.phieu[2])}">${r.phieu.map(gp).join("")}</span><span class="dong-kl ${LOP_NHAN[r.nhan] || "tt"}">${esc(S.tq.ten_nhan[r.nhan] || r.nhan)}</span><span class="dong-phu">${esc(r.nganh)} · ${esc(r.boi_canh)}</span><span class="dong-nho">${thieu(up) ? "" : `Upside ${dau(up, 1)}%`}</span><span class="dong-so">${so3.map(([a, b]) => `<span>${esc(a)}<b>${esc(b)}</b></span>`).join("")}<span data-dt-hn="${esc(r.ma)}" hidden></span></span></button></li>`;
 }
 function veDs() {
   // số trên nút lọc tính theo ngành đang chọn ở Bản đồ ngành (lỗi 26/11/2026: chọn Ngân hàng, nút vẫn ghi "Dấu hiệu gom 9"
@@ -163,17 +164,18 @@ function veDs() {
   $("#ds-cp").innerHTML = ds.map(dongDT).join(""); veDau($("#ds-cp"));
   const trong = $("#cp-trong"); trong.hidden = ds.length > 0;
   $("#dem-ds").textContent = `${ds.length} mã${S.loc.nganh ? `, ngành ${S.loc.nganh}` : ""}`;
+  veDongTienHN();
 }
 const chonXem = () => `<div class="dk le"><div class="chon-2" role="group" aria-label="Chọn cách xem cổ phiếu"><button type="button" data-xem="dt" aria-pressed="${S.xem === "dt"}">Dòng tiền</button><button type="button" data-xem="xh" aria-pressed="${S.xem === "xh"}">Xếp hạng VN100</button></div></div>`;
 function veCoPhieu() {
   if (S.xem === "xh") { veXepHang(); return; }
   const q = S.tq, W = String(q.meta.window), t = q.tong[W] || {}, maxR = Math.max(...q.nganh.map((r) => Math.abs(r.r_f || 0)), 1e-9);
-  const nganh = q.nganh.map((r) => `<li><button class="ng le" type="button" data-nganh="${esc(r.sector)}" aria-pressed="${S.loc.nganh === r.sector}"><span class="ng-ten">${esc(r.sector)}<small>${so(r.n)} mã</small></span><span class="ng-thanh ${(r.f || 0) >= 0 ? "re" : "dat"}"><i style="width:${Math.max((Math.abs(r.r_f || 0) / maxR) * 50, 0.8).toFixed(1)}%"></i></span><span class="ng-so ${(r.f || 0) >= 0 ? "re" : "dat"}">${ty(r.f, Math.abs(r.f || 0) < 1e11 ? 1 : 0)}</span><span class="ng-phu">${so(r.breadth_pos)}/${so(r.breadth_n)} mã ngoại mua ròng · ${esc(r.label_count)} · tự doanh ${ty(r.p, 1)}${r.dominant ? ` · ${esc(r.dominant)} chiếm ${so((r.dominant_share || 0) * 100)}%` : ""}</span></button></li>`).join("");
+  const nganh = q.nganh.map((r) => `<li><button class="ng le" type="button" data-nganh="${esc(r.sector)}" aria-pressed="${S.loc.nganh === r.sector}"><span class="ng-ten">${esc(r.sector)}<small>${so(r.n)} mã</small></span><span class="ng-thanh ${(r.f || 0) >= 0 ? "re" : "dat"}"><i style="width:${Math.max((Math.abs(r.r_f || 0) / maxR) * 50, 0.8).toFixed(1)}%"></i></span><span class="ng-so ${(r.f || 0) >= 0 ? "re" : "dat"}">${ty(r.f, Math.abs(r.f || 0) < 1e11 ? 1 : 0)}</span><span class="ng-phu">${so(r.breadth_pos)}/${so(r.breadth_n)} mã ngoại mua ròng · ${esc(r.label_count)} · tự doanh ${ty(r.p, 1)}${r.dominant ? ` · ${esc(r.dominant)} chiếm ${so((r.dominant_share || 0) * 100)}%` : ""}<span data-ng-hn="${esc(r.sector)}"></span></span></button></li>`).join("");
   const loc = [["tat", "Tất cả", q.ma.length], ...Object.entries(q.ten_nhan).filter(([k]) => q.dem_nhan[k]).map(([k, ten]) => [k, ten, q.dem_nhan[k]])];
   $("#pane-co-phieu").innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Cổ phiếu</h1><p>Dòng tiền ${esc(W)} phiên của ${so(q.meta.universe)} mã VN100. Giá đến ${ngay(q.meta.price_date)}, dòng tiền đến ${ngay(q.meta.flow_date)}.</p></div>${chonXem()}
     <div class="dk le"><div class="chon-2" role="group" aria-label="Phiên thỏa thuận"><button type="button" data-chedo="loai" aria-pressed="${S.cheDo === "loai"}">Loại thỏa thuận</button><button type="button" data-chedo="gom" aria-pressed="${S.cheDo === "gom"}">Gồm thỏa thuận</button></div></div>
     <div class="tom le"><div class="tom-chinh"><b class="${(t.f || 0) >= 0 ? "re" : "dat"}">${so(Math.abs(t.f || 0) / 1e9)} tỷ</b><span>khối ngoại ${(t.f || 0) >= 0 ? "mua" : "bán"} ròng trong ${esc(W)} phiên</span></div>
-      <div class="tom-3"><div><b class="re">${so(q.dem_nhan.gom || 0)}</b><span>mã có dấu hiệu gom</span></div><div><b class="dat">${so(q.dem_nhan.xa || 0)}</b><span>mã có dấu hiệu xả</span></div><div><b>${ty(t.p)}</b><span>tự doanh ròng</span></div></div></div>
+      <div class="tom-3"><div><b class="re">${so(q.dem_nhan.gom || 0)}</b><span>mã có dấu hiệu gom</span></div><div><b class="dat">${so(q.dem_nhan.xa || 0)}</b><span>mã có dấu hiệu xả</span></div><div><b>${ty(t.p)}</b><span>tự doanh ròng</span></div></div><p class="tom-hn" id="dt-hn" hidden></p></div>
     <div class="ghi le"><p>${esc(q.ket_luan)}.</p><p>${esc(q.chi_tiet)}.</p></div>
     <div class="phu-de le">Bản đồ ngành<small>khối ngoại ròng ${esc(W)} phiên; bấm một ngành để lọc danh sách mã</small></div>
     ${khung("Bản đồ ngành", `<ul class="ds-ng" id="ds-ng">${nganh}</ul>`)}
@@ -184,6 +186,19 @@ function veCoPhieu() {
   veDs();
 }
 /* ---------- Xếp hạng VN100 và tab Hôm nay (lát 3) ---------- */
+/* D128: khối ngoại của phiên đang chạy (bảng giá Vietcap) cho tab Cổ phiếu và trang một mã, khi DB chưa có phiên đó.
+   Điền vào chỗ có sẵn mỗi lượt hỏi 10 giây, không vẽ lại danh sách (giữ chỗ đang cuộn). Nhãn, phiếu vẫn tính trên phiên đã chốt. */
+function veDongTienHN() {
+  const d = S.dtHN, co = !!(d && d.co), nhan = co ? (khacHomNay(d.ngay) ? `Phiên ${ngay(d.ngay)}` : "Hôm nay") : "";
+  const muaBan = (v) => `<b class="${lopDau(v)}">${v >= 0 ? "mua" : "bán"} ròng ${so(Math.abs(v) / 1e9, 1)} tỷ</b>`;
+  const tom = $("#dt-hn");
+  if (tom) { tom.hidden = !co; tom.innerHTML = co ? `${nhan}, chưa chốt: khối ngoại ${muaBan(d.rong)} trên ${so(d.so_ma)} mã` : ""; }
+  $$("[data-ng-hn]").forEach((el) => { const v = co ? d.nganh[el.dataset.ngHn] : null; el.textContent = thieu(v) ? "" : ` · ${nhan.toLowerCase()} ${ty(v, 1)}`; });
+  $$("[data-dt-hn]").forEach((el) => { const v = co ? d.ma[el.dataset.dtHn] : null; el.hidden = thieu(v); el.innerHTML = thieu(v) ? "" : `${nhan}<b class="${lopDau(v)}">${ty(v, 1)}</b>`; });
+  const m = $("#ma-hn", to); if (!m) return;
+  const v = co && S.ma ? d.ma[S.ma] : null;
+  m.hidden = thieu(v); m.innerHTML = thieu(v) ? "" : `${nhan}, chưa chốt: khối ngoại ${muaBan(v)}, là cột cuối trên biểu đồ.`;
+}
 function veXepHang() {
   const pane = $("#pane-co-phieu"), dau1 = `<div class="pane-dau le"><h1>Cổ phiếu</h1><p>Xếp hạng VN100 theo mô hình định giá.</p></div>${chonXem()}`;
   if (!S.xh) {
@@ -246,21 +261,41 @@ function veTrucTiep() {
   if (!nb) return;
   const n = d.noi_bat; if (!n) { nb.hidden = true; return; }
   const the = (ds) => ds.map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}<small class="${lopDau(r.ty_le)}">${dau(r.ty_le * 100, 1)}%${r.tran ? " trần" : r.san ? " sàn" : ""}</small></button>`).join("") || `<span class="trong">chưa có</span>`;
-  const dr = n.do_rong, tong = dr.tang + dr.giam + dr.dung;
+  const dr = n.do_rong, tong = dr.tang + dr.giam + dr.dung, kn = n.khoi_ngoai;
+  // D128: khối ngoại trong phiên của rổ VN100 (cùng lượt bảng giá), số trên thẻ là tỷ đồng mua/bán ròng
+  const theNN = (ds) => ds.map((r) => `<button type="button" class="o-ma" data-ma="${esc(r.ma)}">${esc(r.ma)}<small class="${lopDau(r.rong)}">${dau(r.rong / 1e9, 1)}</small></button>`).join("") || `<span class="trong">chưa có</span>`;
+  const khoiNN = kn ? `<p><b>Khối ngoại</b> <b class="${lopDau(kn.rong)}">${kn.rong >= 0 ? "mua" : "bán"} ròng ${so(Math.abs(kn.rong) / 1e9, 1)} tỷ</b> trên ${so(kn.so_ma)} mã</p>
+    <div><b>Ngoại mua ròng nhiều nhất</b> <small class="don-vi">tỷ đồng</small><div class="the-ma">${theNN(kn.mua)}</div></div><div><b>Ngoại bán ròng nhiều nhất</b> <small class="don-vi">tỷ đồng</small><div class="the-ma">${theNN(kn.ban)}</div></div>` : "";
   nb.hidden = false;
   nb.innerHTML = `<h3 class="le">VN100 ${d.chi_so.length && khacHomNay(d.chi_so[0].ngay) ? `phiên ${ngay(d.chi_so[0].ngay)}` : "hôm nay"}</h3><div class="nb le">
     <div class="do-rong" role="img" aria-label="${so(dr.tang)} mã tăng, ${so(dr.dung)} đứng giá, ${so(dr.giam)} mã giảm">${tong ? `<i class="dr-tang" style="flex:${dr.tang}"></i><i class="dr-dung" style="flex:${dr.dung}"></i><i class="dr-giam" style="flex:${dr.giam}"></i>` : ""}</div>
     <p><b class="re">${so(dr.tang)} tăng</b> · ${so(dr.dung)} đứng giá · <b class="dat">${so(dr.giam)} giảm</b>${dr.chua_khop ? ` · ${so(dr.chua_khop)} chưa khớp lệnh` : ""}</p>
-    <div><b>Tăng mạnh nhất</b><div class="the-ma">${the(n.tang)}</div></div><div><b>Giảm mạnh nhất</b><div class="the-ma">${the(n.giam)}</div></div></div>`;
+    <div><b>Tăng mạnh nhất</b><div class="the-ma">${the(n.tang)}</div></div><div><b>Giảm mạnh nhất</b><div class="the-ma">${the(n.giam)}</div></div>${khoiNN}</div>`;
 }
-let henLive = null;
+let henLive = null, lucPS = 0;
+// tab Cổ phiếu hoặc trang một mã đang mở: xin thêm khối ngoại trong phiên của từng mã (D128)
+const canDongTien = () => TAB[dangXem][0] === "co-phieu" || S.loai === "cp";
 async function napTrucTiep() {
   clearTimeout(henLive);
-  try { S.live = await api("/api/truc-tiep"); veTrucTiep(); } catch (e) { if (e.daChuyen) return; S.live = null; }
-  // Máy chủ báo lúc hỏi lại: trong giờ giao dịch 10 giây; ngoài giờ tới mốc kiểm kế tiếp (4 giờ, 8 giờ sáng, lúc mở cửa).
-  // Lỗi mạng: thử lại sau 1 phút. Tab ẩn thì chờ hiện lại.
+  const cu = S.live && S.live.phien_db;
+  try {
+    const d = await api(`/api/truc-tiep${canDongTien() ? "?dong_tien=true" : ""}`);
+    S.live = d; veTrucTiep();
+    if (d.dong_tien) { S.dtHN = d.dong_tien; veDongTienHN(); }
+    if (d.trong_gio && S.loai === "cp" && henBD === null) henBieuDo(); // phiên vừa mở cửa khi đang xem một mã
+    // D128: job vừa ghi số mới vào DB (15:45 giá và khối ngoại, 17:45 tự doanh, 07:50) thì nạp lại các tab đọc DB
+    if (cu && d.phien_db && d.phien_db !== cu) lamMoiDB();
+    if (d.trong_gio && TAB[dangXem][0] === "phai-sinh" && Date.now() - lucPS >= (d.hoi_phai_sinh_giay || 60) * 1000) { choPS = null; napPS(); }
+  } catch (e) { if (e.daChuyen) return; S.live = null; }
+  // Máy chủ báo lúc hỏi lại: trong giờ giao dịch 10 giây; ngoài giờ 5 phút (chỉ xem DB có số mới chưa, không gọi
+  // Vietcap) hoặc sớm hơn nếu sắp tới mốc kiểm 4 giờ, 8 giờ sáng, lúc mở cửa. Lỗi mạng: thử lại sau 1 phút. Tab ẩn thì chờ hiện lại.
   const giay = Math.min((S.live && S.live.hoi_lai_giay) || 60, 6 * 3600);
-  henLive = setTimeout(() => { if (document.hidden) return; napTrucTiep(); }, giay * 1000);
+  // hai lượt gọi chồng nhau (đổi tab lúc đang chờ) chỉ được để lại một hẹn giờ, không thành hai vòng hỏi
+  clearTimeout(henLive); henLive = setTimeout(() => { if (document.hidden) return; napTrucTiep(); }, giay * 1000);
+}
+function lamMoiDB() {
+  napHomNay(); napTongQuan(); S.xh = null; if (S.xem === "xh" && TAB[dangXem][0] === "co-phieu") veXepHang();
+  if (S.loai === "cp" && S.ma) veBieuDo(); // nến tạm trong phiên được thay bằng phiên đã chốt
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && daBatDau) napTrucTiep(); });
 function veLich(d) {
@@ -306,17 +341,44 @@ function khoiBieuDo() {
       <div class="loc" role="group" aria-label="Các tầng của biểu đồ">${b.tang.map((t, i) => `<button type="button" data-tang="${i}" aria-pressed="${S.bd.tang.has(i)}">${esc(t)}</button>`).join("")}<button type="button" data-hoso aria-pressed="${S.bd.hoSo}">Volume profile</button></div></div>
     <div class="le"><div id="cho-bd" class="dang-ve">Đang vẽ biểu đồ…</div></div><p class="ghi le" id="ghi-bd"></p></section>`;
 }
+const duongBD = (ma) => `/api/co-phieu/${encodeURIComponent(ma)}/bieu-do?che_do=${S.cheDo}&khung=${encodeURIComponent(S.bd.khung)}&tang=${[...S.bd.tang].sort((a, b) => a - b).join(",")}&ho_so=${S.bd.hoSo}`;
+const ghiBD = (d) => d.chu_thich + (d.ho_so ? ` Volume profile: POC ${so(d.ho_so.poc)} · VAH ${so(d.ho_so.vah)} · VAL ${so(d.ho_so.val)} · tổng KL khớp ${so(d.ho_so.total)} cp.` : "");
+let henBD = null;
 async function veBieuDo() {
+  clearTimeout(henBD); henBD = null;
   const cho = $("#cho-bd", to), ma = S.ma; if (!cho || !ma) return;
+  const url = duongBD(ma);
   cho.className = "dang-ve"; cho.textContent = "Đang vẽ biểu đồ…";
   try {
-    const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/bieu-do?che_do=${S.cheDo}&khung=${encodeURIComponent(S.bd.khung)}&tang=${[...S.bd.tang].sort((a, b) => a - b).join(",")}&ho_so=${S.bd.hoSo}&toi=${dangToi()}`);
+    const d = await api(`${url}&toi=${dangToi()}`);
     if (S.ma !== ma || !cho.isConnected) return;
     if (!d.html) { cho.textContent = d.chu_thich; return; }
     cho.className = ""; cho.innerHTML = `<iframe class="khung-bd" title="Biểu đồ giá và dòng tiền của ${esc(ma)}" sandbox="allow-scripts"></iframe>`;
-    const khung = cho.firstElementChild; khung.style.height = `${Number(d.cao) || 600}px`; khung.srcdoc = d.html;
-    $("#ghi-bd", to).textContent = d.chu_thich + (d.ho_so ? ` Volume profile: POC ${so(d.ho_so.poc)} · VAH ${so(d.ho_so.vah)} · VAL ${so(d.ho_so.val)} · tổng KL khớp ${so(d.ho_so.total)} cp.` : "");
+    const khung = cho.firstElementChild; khung.style.height = `${Number(d.cao) || 600}px`; khung.srcdoc = d.html; khung.dataset.url = url;
+    $("#ghi-bd", to).textContent = ghiBD(d);
+    henBieuDo();
   } catch (e) { cho.className = "loi"; cho.textContent = `Không vẽ được biểu đồ. ${e.message}`; }
+}
+/* D128: trong giờ giao dịch, biểu đồ của mã đang mở thay nến cuối (bảng giá) mỗi `hoi_bieu_do_giay` giây. Chỉ gửi dữ
+   liệu vào khung đang vẽ (postMessage), không vẽ lại khung: giữ chỗ người dùng đang phóng to, kéo. */
+function henBieuDo() {
+  clearTimeout(henBD); henBD = null;
+  if (S.loai !== "cp" || !S.live || !S.live.trong_gio) return; // ngoài giờ không có gì để thay
+  henBD = setTimeout(capNhatBieuDo, (S.live.hoi_bieu_do_giay || 30) * 1000);
+}
+async function capNhatBieuDo() {
+  const khung = $(".khung-bd", to), ma = S.ma;
+  if (!khung || S.loai !== "cp" || !ma || khung.dataset.url !== duongBD(ma)) { henBD = null; return; }
+  if (!document.hidden) {
+    try {
+      const d = await api(`${khung.dataset.url}&chi_du_lieu=true`);
+      if (S.ma === ma && khung.isConnected && khung.contentWindow && d.du_lieu) {
+        khung.contentWindow.postMessage({ loai: "bt-bieu-do", du_lieu: d.du_lieu }, "*");
+        $("#ghi-bd", to).textContent = ghiBD(d);
+      }
+    } catch (e) { if (e.daChuyen) return; } // lỗi một lượt: giữ biểu đồ đang có, lượt sau thử lại
+  }
+  henBieuDo();
 }
 function veMa(d) {
   demMr = 0;
@@ -328,7 +390,7 @@ function veMa(d) {
   return dauTo(d.ma, tenMa(d.ma) || d.nganh, `<span class="muc ${lop}">${esc(d.nhan.text)}</span>`) + `<div class="to-than">
     <section class="dgd le" id="khoi-tt" aria-label="Định giá và giá mục tiêu"><div class="dang-ve">Đang định giá ${esc(d.ma)}… Mã ngân hàng có thể mất hơn 10 giây ở lần đầu.</div></section>
     <div class="dt-kl le"><h2>${esc(d.nhan.text)}, ${esc(d.boi_canh)}</h2><p class="ly-do">${esc(d.nhan.reason)}</p>
-      <div>${tia(d.tia)}<p>Khối ngoại mua ròng (xanh) và bán ròng (đỏ) từng phiên, ${d.tia.length} phiên gần nhất, cũ đến mới.</p></div>
+      <div>${tia(d.tia)}<p>Khối ngoại mua ròng (xanh) và bán ròng (đỏ) từng phiên, ${d.tia.length} phiên gần nhất, cũ đến mới.</p></div><p class="ma-hn" id="ma-hn" hidden></p>
       <p>Cửa sổ ${esc(d.cua_so)} phiên. Giá đến ${ngay(d.gia_den)}, dòng tiền đến ${ngay(d.dong_tien_den)}.${them.length ? ` ${esc(them.join(". "))}.` : ""}</p></div>
     <section class="khoi"><h3 class="le">Ba phiếu làm bằng chứng</h3><ul class="phieu le">${phieu}</ul>
       <div class="ghi le"><p>${esc(d.phieu.rvol.chip || "")}</p>${d.huy_hieu.length ? `<ul class="huy">${d.huy_hieu.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</div></section>
@@ -506,7 +568,8 @@ async function moMa(ma, tu) {
   try {
     const d = await api(`/api/co-phieu/${encodeURIComponent(ma)}/dong-tien?che_do=${S.cheDo}`);
     if (S.ma !== ma) return;
-    $(".to-trong", to).innerHTML = veMa(d); veBieuDo(); napDinhGia(ma); napBaoCaoAI(ma);
+    $(".to-trong", to).innerHTML = veMa(d); veDongTienHN(); veBieuDo(); napDinhGia(ma); napBaoCaoAI(ma);
+    if (!S.dtHN) napTrucTiep(); // mở mã từ tab khác: xin ngay khối ngoại trong phiên, không chờ lượt 10 giây
   } catch (e) { if (S.ma === ma) $(".to-than", to).innerHTML = `<p class="loi le">Không nạp được ${esc(ma)}. ${esc(e.message)}</p>`; }
 }
 
@@ -812,7 +875,7 @@ async function napETF() { try { S.etf = await api("/api/etf"); veETF(); veBonO()
 // hợp đồng tương lai lấy giá trực tiếp từ Vietcap; dịch vụ chứng quyền nhớ kết quả 5 phút nên nạp ngay lúc vào trang
 // cũng chỉ gọi Vietcap tối đa mỗi 5 phút một lần, dùng cho ô Phái sinh ở trang chủ (D118)
 let choPS = null;
-function napPS() { if (!choPS) choPS = api("/api/phai-sinh").then((d) => { S.ps = d; S.psLoi = null; vePS(); veBonO(); }).catch((e) => { choPS = null; S.psLoi = e.message; veBonO(); loiPane("phai-sinh", "Phái sinh", e); }); return choPS; }
+function napPS() { if (!choPS) choPS = api("/api/phai-sinh").then((d) => { S.ps = d; S.psLoi = null; lucPS = Date.now(); vePS(); veBonO(); }).catch((e) => { choPS = null; S.psLoi = e.message; veBonO(); loiPane("phai-sinh", "Phái sinh", e); }); return choPS; }
 
 /* Dấu "!" giải thích: máy tính rê chuột vào thì hiện, rê ra thì mất; điện thoại bấm để hiện, bấm chỗ khác để tắt */
 const noi = document.createElement("div"); noi.id = "noi"; noi.setAttribute("role", "tooltip"); app.appendChild(noi);
@@ -1360,6 +1423,7 @@ function dongTo(truot, roi) {
   setTimeout(() => { if (choDong !== cho) return; choDong = null; dongTaiCho(truot); if (roi) roi(); }, 1200);
 }
 function dongTaiCho(truot) {
+  clearTimeout(henBD); henBD = null;
   S.ma = null; S.loai = null; S.trangCu = null; S.dm = null; S.cb = null; ghiDiaChi(false); to.classList.remove("mo"); man.classList.remove("mo");
   if (!rong.matches && !itChuyenDong) { if (!truot && dongGoc && dongGoc.isConnected && dongGoc.getClientRects().length) to.style.clipPath = khungDong(dongGoc); else to.style.transform = "translateY(100%)"; }
   setTimeout(() => { if (S.loai) return; to.hidden = true; man.hidden = true; to.style.clipPath = ""; to.style.transform = ""; to.innerHTML = ""; if (dongGoc && dongGoc.isConnected) dongGoc.focus({ preventScroll: true }); }, itChuyenDong ? 0 : 450);

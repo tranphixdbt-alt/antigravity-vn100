@@ -5,8 +5,9 @@ Trước đây giá chỉ vào DB lúc 07:50 sáng hôm sau, nên từ chiều t
 gửi Discord, không định giá lại. Lượt 07:50 sáng hôm sau vẫn tải lại phiên này (đệm 5 ngày) và ghi trong báo cáo
 sáng số mã đổi so với lượt này (`recheck`).
 
-Lịch VPS: 15:45 thứ Hai–thứ Sáu (vn100-worker). Thoát mã 1 khi bị khóa (Quét VN100 đang chạy) hoặc không mã nào
-cập nhật được giá, để scheduler báo lỗi lên Discord.
+Lịch VPS: 15:45 thứ Hai–thứ Sáu (vn100-worker), chạy lại 17:45 (job `tu-doanh-toi`, D128) để lấy tự doanh: sở chốt
+tự doanh ~16:20–17:15 nên lượt 15:45 chưa có. Thoát mã 1 khi bị khóa (Quét VN100 đang chạy) hoặc không mã nào cập
+nhật được giá, để scheduler báo lỗi lên Discord.
 
     python scripts/update_close_prices.py
 """
