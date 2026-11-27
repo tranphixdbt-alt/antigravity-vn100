@@ -5,6 +5,7 @@
 
 ## Đang chờ
 
+- [x] D127: Tab Chứng quyền thành bảng gọn, bấm tiêu đề cột để xếp.
 - [x] D126: Hỏi Ếch đọc chứng quyền, ETF, hợp đồng tương lai và cảnh báo.
 - [x] D125: trang Hôm nay lấy giá liên tục trong giờ, ngoài giờ chỉ 4 giờ và 8 giờ sáng; bớt chữ, bỏ giờ cập nhật khi số đúng.
 - [x] D124: chặn phiên khối ngoại FHSC trả trống cả rổ, vá 23/11 từ Vietcap, Ếch có công cụ khối ngoại từng mã và mua/bán ròng nhiều nhất.

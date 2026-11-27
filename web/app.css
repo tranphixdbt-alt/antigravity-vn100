@@ -601,3 +601,23 @@ td .nut-nho { min-height: 34px; }
 td.re { color: var(--tang); } td.dat { color: var(--giam); }
 /* D123: nút bỏ lọc ngành cạnh các nút lọc nhãn */
 .loc .bo-nganh { border-color: var(--vang-chu); color: var(--vang-chu); }
+
+/* ---------- Bảng chứng quyền: bấm tiêu đề cột để xếp (27/11/2026) ---------- */
+.bang-cq table { font-variant-numeric: tabular-nums; }
+.bang-cq th { padding-block: 0; }
+.bang-cq th .xep { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; font: inherit; color: inherit; white-space: nowrap; }
+.bang-cq th[aria-sort] .xep { color: var(--muc); }
+.bang-cq .mui { width: 8px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.bang-cq .mui path { opacity: .35; }
+.bang-cq th[aria-sort="ascending"] .mui-len, .bang-cq th[aria-sort="descending"] .mui-xuong { opacity: 1; }
+.bang-cq th[aria-sort="ascending"] .mui-xuong, .bang-cq th[aria-sort="descending"] .mui-len { opacity: 0; }
+.bang-cq tbody tr { cursor: pointer; }
+.bang-cq tbody tr:hover td { background: var(--giay); }
+.bang-cq td.trai:first-child { padding-block: 6px; }
+.bang-cq .cq-ma { display: flex; align-items: center; gap: 6px; }
+.bang-cq td .o-ma { min-height: 0; text-align: left; }
+.bang-cq td.trai:first-child small { display: block; font-size: 12px; color: var(--muc-3); }
+.bang-cq td small { font-size: 11px; color: var(--muc-3); }
+.bang-cq td.re, .bang-cq td.dat { font-weight: 700; }
+.loc-ct { flex: none; display: inline-flex; align-items: center; padding-inline: 2px 4px; }
+.cuon.bang-cq td.trai:first-child, .cuon.bang-cq th.trai:first-child { min-width: 0; max-width: none; padding-right: 12px; }

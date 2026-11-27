@@ -1562,3 +1562,15 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
 - Số lấy đúng từ dịch vụ chứng quyền như các tab đang hiện (`web_cw.fetch`), không tính lại. Mã chứng quyền, ETF kiểm bằng
   biểu thức như route web; trần dòng `assistant.cw_max_rows` 20.
 
+
+### D127 — Tab Chứng quyền: bảng gọn, bấm tiêu đề cột để xếp (2026-11-27, người dùng « muốn lọc bằng cách bấm vào tiêu đề »)
+
+- Danh sách chứng quyền đổi từ dòng thẻ sang bảng cuộn có tiêu đề dính và cột mã đứng yên bên trái (cùng kiểu bảng ETF).
+  Bấm tiêu đề để xếp, bấm lần nữa để đảo chiều, như bảng của web chứng quyền cũ. Lần bấm đầu chọn chiều có ích nhất: rẻ
+  nhất, IV − HV thấp nhất, hòa vốn thấp nhất, đòn bẩy cao nhất, còn nhiều ngày nhất, khớp nhiều nhất trước. Số thiếu luôn
+  nằm cuối. Chưa bấm thì giữ thứ tự của lần quét. Cách xếp giữ nguyên khi đổi nhóm.
+- Cột: Mã CW (dưới là mã cơ sở · tổ chức phát hành), So với hợp lý, IV − HV, Hòa vốn, Đòn bẩy, Còn ngày, Giá mua, Hợp lý,
+  KL khớp; cột Nhóm chỉ hiện ở "Mới phát hành" và "Tất cả". IV riêng, lệch 20 phiên, delta, KL chào bán, lý do vẫn ở tờ
+  chi tiết từng mã.
+- Bỏ cho gọn: khối số tóm tắt (trùng số trên các nút nhóm), đoạn bốn tiêu chí và lời giải thích cảnh báo (vào dấu "!"),
+  dòng "Danh sách … chứng quyền", câu "định giá bằng Black-Scholes" ở đầu trang (còn ở chân trang).

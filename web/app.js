@@ -63,7 +63,7 @@ const gp = (v) => (v === 1 ? `<i class="pg re">▲</i>` : v === -1 ? `<i class="
 const docPhieu = (v) => (v === 1 ? "gom" : v === -1 ? "xả" : v === 0 ? "trung tính" : "chưa đủ dữ liệu");
 // Trạng thái của trang: chế độ loại/gồm thỏa thuận, tổng quan, danh sách mã, bộ lọc, mã đang mở, lựa chọn biểu đồ
 const S = { cheDo: "loai", tq: null, ds: [], loc: { nhan: "tat", nganh: null }, ma: null, bd: null, xem: "dt", xh: null, tt: null, vm: null,
-  loai: null, cq: null, cqLoc: "NÊN XEM XÉT", cqTim: "", etf: null, etfXem: "ck", ps: null, trangCu: null,
+  loai: null, cq: null, cqLoc: "NÊN XEM XÉT", cqTim: "", cqXep: null, etf: null, etfXem: "ck", ps: null, trangCu: null,
   dm: null, cb: null, tin: null, tinLoi: null, ai: null, aiDangViet: null,
   chat: { tt: null, tin: [], dang: false, mo: false } };
 const tenMa = (ma) => { const r = S.ds.find((x) => x.ma === ma); return r ? [r.ten, r.nganh].filter(Boolean).join(" · ") : ""; };
@@ -528,35 +528,64 @@ const pt = (v, d = 1) => (thieu(v) ? "—" : `${dau(v, d)}%`);
 const thuocTT = (lech, bien) => `<span class="thuoc ${lech < 0 ? "duoi" : lech > 0 ? "tren" : ""}" style="--a:${Math.min(Math.abs(lech) / bien, 1).toFixed(3)}" aria-hidden="true"><i class="t-day"></i><i class="t-doan"></i><i class="t-vach"></i><i class="t-cham"></i></span>`;
 const loiPane = (id, ten, e) => { $(`#pane-${id}`).innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>${ten}</h1></div><p class="loi le">Không nạp được dữ liệu ${ten.toLowerCase()}. ${esc(e.message)}</p></div>`; };
 
-/* Chứng quyền */
-function dongCQ(c) {
-  const nguon = c.nguon_gia && c.nguon_gia !== "ask" ? ` (${c.nguon_gia === "tham chiếu" ? "tham chiếu" : esc(c.nguon_gia)})` : "";
-  const so6 = [["Giá mua", so(c.gia_mua) + nguon], ["Hợp lý", so(c.hop_ly)], ["IV − HV", thieu(c.iv_hv) ? "—" : dau(c.iv_hv, 1)], ["Hòa vốn", pt(c.hoa_von)], ["Đòn bẩy", `${so(c.don_bay, 1)}x`], ["KL khớp", so(c.kl)]];
-  return `<li><button class="dong rong le" type="button" data-cw="${esc(c.ma)}"><span class="dong-ma">${esc(c.ma)}${c.moi ? `<span class="nho-the">Mới</span>` : ""}${dauCanh(c.canh_bao)}</span>${thieu(c.dat_re) ? "<span></span>" : thuoc(c.dat_re, BIEN_THUOC.cw)}<span class="dong-kl ${lopDR(c)}">${esc(c.chu_dat_re)}</span><span class="dong-phu">${esc(c.cs)} · ${esc(c.tcph)} · còn ${so(c.con_ngay)} ngày</span><span class="dong-nho">${esc(tenNhom(c.nhom))}</span><span class="dong-so">${so6.map(([a, b]) => `<span>${a}<b>${b}</b></span>`).join("")}</span></button></li>`;
+/* Chứng quyền: bảng gọn, bấm tiêu đề cột để xếp, bấm lần nữa để đảo chiều (như bảng của web chứng quyền cũ). Người dùng
+   27/11/2026: giữ cách trình bày của web mới nhưng xếp bằng cách bấm tiêu đề, bỏ bớt phần thừa. Cột bỏ so với web cũ
+   (IV riêng, lệch 20 phiên, delta, KL chào bán, lý do) vẫn có trong tờ chi tiết của từng mã. */
+// k: trường của /api/chung-quyen; tang: chiều của lần bấm đầu, chọn chiều có ích nhất (rẻ nhất, đòn bẩy cao nhất, khớp nhiều nhất trước)
+const COT_CQ = [
+  { k: "ma", ten: "Mã CW", tang: true }, { k: "dat_re", ten: "So với hợp lý", tang: true }, { k: "iv_hv", ten: "IV − HV", tang: true },
+  { k: "hoa_von", ten: "Hòa vốn", tang: true }, { k: "don_bay", ten: "Đòn bẩy", tang: false }, { k: "con_ngay", ten: "Còn ngày", tang: false },
+  { k: "gia_mua", ten: "Giá mua", tang: true }, { k: "hop_ly", ten: "Hợp lý", tang: true }, { k: "kl", ten: "KL khớp", tang: false },
+  { k: "nhom", ten: "Nhóm", tang: true },
+];
+const cqNhieuNhom = () => S.cqLoc === "tat" || S.cqLoc === "moi"; // cột Nhóm chỉ cần khi bảng có nhiều nhóm
+// chưa bấm cột nào: giữ thứ tự của lần quét (theo nhóm, trong mỗi nhóm IV − HV thấp nhất trước) và đánh dấu đúng cột đó
+const cqXep = () => S.cqXep || { k: cqNhieuNhom() ? "nhom" : "iv_hv", tang: true };
+const muiXep = `<svg class="mui" viewBox="0 0 10 14" aria-hidden="true"><path class="mui-len" d="M2 5.5 5 2.5l3 3"/><path class="mui-xuong" d="M2 8.5l3 3 3-3"/></svg>`;
+function xepCQ(ds) {
+  const { k, tang } = cqXep(), thu = new Map(S.cq.cw.map((c, i) => [c.ma, i])), vt = (c) => thu.get(c.ma);
+  const gt = k === "nhom" ? (c) => { const i = S.cq.nhom.findIndex((n) => n.ma === c.nhom); return i < 0 ? null : i; } : (c) => c[k];
+  return [...ds].sort((a, b) => {
+    const x = gt(a), y = gt(b);
+    if (thieu(x) || thieu(y)) return thieu(x) - thieu(y) || vt(a) - vt(b); // thiếu số luôn nằm cuối, chiều nào cũng vậy
+    const kq = typeof x === "string" ? x.localeCompare(y, "vi") : x - y;
+    return (tang ? kq : -kq) || vt(a) - vt(b);
+  });
+}
+function oCQ(k, c) {
+  if (k === "ma") return `<td class="trai"><span class="cq-ma"><button type="button" class="o-ma">${esc(c.ma)}</button>${c.moi ? `<span class="nho-the">Mới</span>` : ""}${dauCanh(c.canh_bao)}</span><small>${esc(c.cs)} · ${esc(c.tcph)}</small></td>`;
+  if (k === "dat_re") return `<td class="${lopDR(c)}">${thieu(c.dat_re) ? "—" : esc(c.chu_dat_re)}</td>`;
+  if (k === "iv_hv") return `<td>${thieu(c.iv_hv) ? "—" : dau(c.iv_hv, 1)}</td>`;
+  if (k === "hoa_von") return `<td>${pt(c.hoa_von)}</td>`;
+  if (k === "don_bay") return `<td>${thieu(c.don_bay) ? "—" : `${so(c.don_bay, 1)}x`}</td>`;
+  if (k === "gia_mua") return `<td>${so(c.gia_mua)}${c.nguon_gia && c.nguon_gia !== "ask" ? ` <small>${c.nguon_gia === "tham chiếu" ? "TC" : esc(c.nguon_gia)}</small>` : ""}</td>`;
+  if (k === "nhom") return `<td class="trai">${esc(tenNhom(c.nhom))}</td>`;
+  return `<td>${so(c[k])}</td>`;
 }
 function veDsCQ() {
   const k = boDau(S.cqTim.trim());
-  const ds = S.cq.cw.filter((c) => (S.cqLoc === "tat" || (S.cqLoc === "moi" ? c.moi : c.nhom === S.cqLoc)) && (!k || boDau(`${c.ma} ${c.cs} ${c.tcph}`).includes(k)));
-  $("#ds-cq").innerHTML = ds.map(dongCQ).join(""); veDau($("#ds-cq"));
-  $("#cq-dem").textContent = `${so(ds.length)} chứng quyền`;
+  const loc = S.cq.cw.filter((c) => (S.cqLoc === "tat" || (S.cqLoc === "moi" ? c.moi : c.nhom === S.cqLoc)) && (!k || boDau(`${c.ma} ${c.cs} ${c.tcph}`).includes(k)));
+  const ds = S.cqXep ? xepCQ(loc) : loc, cot = COT_CQ.filter((o) => o.k !== "nhom" || cqNhieuNhom()), x = cqXep();
+  const dau1 = cot.map((o, i) => `<th${i && o.k !== "nhom" ? "" : ' class="trai"'}${x.k === o.k ? ` aria-sort="${x.tang ? "ascending" : "descending"}"` : ""}><button type="button" class="xep" data-cq-xep="${o.k}">${o.ten}${muiXep}</button></th>`).join("");
+  const bang = $("#bang-cq");
+  bang.innerHTML = `<thead><tr>${dau1}</tr></thead><tbody>${ds.map((c) => `<tr data-cw="${esc(c.ma)}">${cot.map((o) => oCQ(o.k, c)).join("")}</tr>`).join("")}</tbody>`;
+  veDau(bang); bang.parentElement.hidden = !ds.length;
   $("#cq-trong").hidden = ds.length > 0;
 }
 function veCQ() {
   const q = S.cq, pane = $("#pane-chung-quyen");
   if (!q.co) { pane.innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Chứng quyền</h1></div><p class="trong le">Chưa có lần quét chứng quyền nào.</p></div>`; return; }
-  const n = Object.fromEntries(q.nhom.map((x) => [x.ma, x.so])), g = q.nguong, gt = q.giai_thich;
+  const g = q.nguong;
   const loc = [...q.nhom.map((x) => [x.ma, x.ten, x.so]), ["moi", "Mới phát hành", q.so_moi], ["tat", "Tất cả", q.tong]];
-  pane.innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Chứng quyền</h1><p>Lần quét ${esc(q.lan_quet)}. ${so(q.tong)} chứng quyền, định giá bằng Black-Scholes.</p></div>
+  const tieuChi = `Nên xem xét là đạt cả bốn tiêu chí, Theo dõi là trượt 1, Bỏ qua là trượt từ 2. Bốn tiêu chí tính theo giá mua (giá chào bán thấp nhất): còn từ ${so(g.ngay)} ngày, IV − HV không quá ${so(g.iv_hv)} điểm, cổ phiếu cơ sở tăng không quá ${so(g.hoa_von)}% là hòa vốn (chưa gồm phí, thuế), khớp từ ${so(g.kl)} chứng quyền mỗi phiên. Mới phát hành là mã chưa có ở lần quét trước.`;
+  pane.innerHTML = `<div class="pane-trong"><div class="pane-dau le"><h1>Chứng quyền</h1><p>Lần quét ${esc(q.lan_quet)}.</p></div>
     ${q.cu ? `<div class="le">${luuY([`Số liệu cũ ${so(q.cu.so_ngay)} ngày: lần quét tự động ngày ${ngay(q.cu.du_kien)} có thể chưa chạy, hoặc hôm đó nghỉ lễ. Số ngày tới đáo hạn và các chỉ số tính tại ngày quét; phần phân tích theo giá lúc này của từng mã thì tính lại khi mở.`])}</div>` : ""}
-    <div class="tom le"><div class="tom-chinh"><b class="re">${so(n["NÊN XEM XÉT"])}</b><span>chứng quyền đạt cả 4 tiêu chí</span></div>
-      <div class="tom-3"><div><b>${so(n["THEO DÕI"])}</b><span>trượt 1 tiêu chí</span></div><div><b>${so(n["BỎ QUA"])}</b><span>trượt từ 2 tiêu chí</span></div><div><b>${so(q.so_moi)}</b><span>mới so với lần quét trước</span></div></div></div>
-    <div class="ghi le"><p>Bốn tiêu chí, tính theo giá mua (giá chào bán thấp nhất): còn từ ${so(g.ngay)} ngày, IV − HV không quá ${so(g.iv_hv)} điểm, cổ phiếu cơ sở tăng không quá ${so(g.hoa_von)}% là hòa vốn (chưa gồm phí, thuế), khớp từ ${so(g.kl)} chứng quyền mỗi phiên.</p></div>
     <section class="khoi" id="cq-canh-bao"><div class="dang-ve le">Đang nạp cảnh báo chứng quyền hôm nay…</div></section>
-    <div class="phu-de le">Danh sách<small id="cq-dem"></small><small>trong mỗi nhóm xếp theo IV − HV, thấp nhất trước ${ct(gt["IV − HV"])}</small></div>
     <div class="o-loc le"><label class="an-doc" for="cq-tim">Tìm chứng quyền</label><input id="cq-tim" type="search" placeholder="Tìm mã hoặc tổ chức phát hành" autocomplete="off" spellcheck="false" value="${esc(S.cqTim)}"></div>
-    <div class="loc le" role="group" aria-label="Lọc theo nhóm">${loc.map(([k, ten, sl]) => `<button type="button" data-cq-loc="${esc(k)}" aria-pressed="${S.cqLoc === k}">${esc(ten)}<b>${so(sl)}</b></button>`).join("")}</div>
-    ${khung("Danh sách chứng quyền", `<ul class="ds" id="ds-cq"></ul>`)}<p class="trong le" id="cq-trong" hidden>Không có chứng quyền nào khớp.</p>
-    <p class="chan le">Thước: chấm là giá mua, vạch vàng là giá hợp lý theo Black-Scholes. Sàng lọc theo mô hình, không phải khuyến nghị đầu tư. Luôn kiểm tra điều khoản trên trang của tổ chức phát hành hoặc HOSE trước khi mua.</p></div>`;
+    <div class="loc le" role="group" aria-label="Lọc theo nhóm">${loc.map(([k, ten, sl]) => `<button type="button" data-cq-loc="${esc(k)}" aria-pressed="${S.cqLoc === k}">${esc(ten)}<b>${so(sl)}</b></button>`).join("")}<span class="loc-ct">${ct(tieuChi)}</span></div>
+    <div class="le"><div class="cuon doc bang-cq" role="region" aria-label="Danh sách chứng quyền" tabindex="0"><table id="bang-cq"></table></div></div>
+    <p class="trong le" id="cq-trong" hidden>Không có chứng quyền nào khớp.</p>
+    <p class="chan le">Bấm tiêu đề cột để xếp, bấm lần nữa để đảo chiều; bấm một dòng để xem chi tiết. Định giá bằng Black-Scholes, sàng lọc theo mô hình, không phải khuyến nghị đầu tư.</p></div>`;
   veDsCQ(); veCBCQ();
 }
 const khoiTrangCu = (phu) => `<section class="khoi sau"><h3 class="le">Phân tích theo giá lúc này<small>${phu}</small></h3><div id="cho-cu" class="dang-ve le">Đang tải giá trực tiếp và biểu đồ…</div></section>`;
@@ -772,8 +801,8 @@ function veCBCQ() {
   const ng = c.nguong, n = c.cw.length + c.giam_manh.length;
   const loc = ng.loc_gia_toi_thieu ? `Đã lọc chặt: giá từ ${so(ng.loc_gia_toi_thieu)} đ, không đắt hơn giá hợp lý theo HV, còn từ ${so(ng.loc_ngay_gd_cuoi)} ngày tới ngày giao dịch cuối, mua được ${so(ng.loc_mua_duoc / 1e6)} triệu ở giá không cao hơn giá báo quá ${so(ng.loc_bien_gia_pct)}%.` : "";
   const gio = c.ngoai_gio ? "Ngoài giờ khớp lệnh: danh sách giảm mạnh là các mã đã báo trong ngày." : "";
-  cho.innerHTML = `<h3 class="le">Cảnh báo hôm nay<small>${n ? `${so(n)} chứng quyền` : "chưa có"}</small></h3>
-    <div class="ghi le"><p>Chứng quyền đang mua được ở giá thấp bất thường so với cổ phiếu cơ sở. ${esc(loc)} ${esc(gio)} Sàng lọc, không phải khuyến nghị đầu tư.</p></div>
+  // lời giải thích dài nằm sau dấu "!" để khối cảnh báo chỉ còn tiêu đề và các dòng (người dùng 27/11/2026: bỏ bớt cho gọn)
+  cho.innerHTML = `<h3 class="le">Cảnh báo hôm nay<small>${n ? `${so(n)} chứng quyền` : "chưa có"}</small>${ct(`Chứng quyền đang mua được ở giá thấp bất thường so với cổ phiếu cơ sở. ${loc} ${gio} Sàng lọc, không phải khuyến nghị đầu tư.`.replace(/\s+/g, " "))}</h3>
     ${c.cw.length ? `<div class="phu-de le">Rẻ bất thường<small>${so(c.cw.length)}</small></div><ul class="ds">${c.cw.map(dongCBcw).join("")}</ul>` : ""}
     ${c.giam_manh.length ? `<div class="phu-de le">Giảm mạnh hôm nay<small>${so(c.giam_manh.length)}</small></div><ul class="ds">${c.giam_manh.map(dongCBgiam).join("")}</ul>` : ""}
     ${n ? "" : `<p class="trong le">Hôm nay chưa có chứng quyền nào qua đủ điều kiện.</p>`}
@@ -1376,9 +1405,10 @@ app.addEventListener("click", (e) => {
   dongNoi();
   const lui = e.target.closest("#to-lui"); if (lui) { dongTo(false); return; }
   const sang = e.target.closest("[data-sang]"); if (sang) { datDangXem(+sang.dataset.sang, true); return; }
-  const cw = e.target.closest("[data-cw]"); if (cw) { moCW(cw.dataset.cw, cw.classList.contains("dong") ? cw : null); return; }
+  const cw = e.target.closest("[data-cw]"); if (cw) { moCW(cw.dataset.cw, cw.classList.contains("dong") || cw.tagName === "TR" ? cw : null); return; }
   const quy = e.target.closest("[data-etf]"); if (quy) { moETF(quy.dataset.etf, quy.classList.contains("dong") ? quy : null); return; }
   const hd = e.target.closest("[data-ps]"); if (hd) { moPS(hd.dataset.ps, hd); return; }
+  const cqX = e.target.closest("[data-cq-xep]"); if (cqX) { const k = cqX.dataset.cqXep, x = cqXep(); S.cqXep = { k, tang: x.k === k ? !x.tang : COT_CQ.find((o) => o.k === k).tang }; veDsCQ(); $(`[data-cq-xep="${k}"]`).focus({ preventScroll: true }); return; }
   const cqLoc = e.target.closest("[data-cq-loc]"); if (cqLoc) { S.cqLoc = cqLoc.dataset.cqLoc; $$("[data-cq-loc]").forEach((x) => x.setAttribute("aria-pressed", x === cqLoc)); veDsCQ(); return; }
   const ex = e.target.closest("[data-etf-xem]"); if (ex) { if (ex.dataset.etfXem !== S.etfXem) { S.etfXem = ex.dataset.etfXem; veETF(); } return; }
   const d = e.target.closest("button.dong[data-ma]"); if (d) { moMa(d.dataset.ma, d); return; }
