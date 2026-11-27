@@ -661,6 +661,7 @@ assistant:
   answer_max_tokens: 1000
   breadth_max_sessions: 60       # trần số phiên của công cụ độ rộng (chỉ góc chat web dùng, valuation/services/web_chat_tools.py)
   foreign_max_sessions: 60       # trần số phiên của hai công cụ khối ngoại (góc chat web)
+  cw_max_rows: 20                # trần số dòng chứng quyền, ETF một câu trả lời (dữ liệu gửi AI có trần data_chars)
 
 # Mô hình tổng hợp CTCK (valuation/engine/models/broker_synth.py, docs/BROKER_SYNTH.md).
 broker_synth:
@@ -863,6 +864,7 @@ web:
       - "So sánh FPT với các mã cùng ngành"
       - "Tín hiệu kỹ thuật của HPG thế nào?"
       - "Khối ngoại mua ròng mã nào nhiều nhất 5 phiên qua?"
+      - "Chứng quyền nào đang rẻ nhất so với giá hợp lý?"
   ai_report:                      # nút "Sinh báo cáo AI" bản ngắn trên tờ mã (lát 7, D116, valuation/services/web_ai_report.py)
     daily_limit: 5                # lượt sinh mới mỗi tài khoản mỗi ngày (giờ VN), người dùng chốt 25/11/2026; dùng lại bản cũ không tính lượt
     target_words: 500             # độ dài người dùng chốt 25/11/2026: tổng quan công ty + nhận định về mã

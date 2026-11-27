@@ -458,6 +458,246 @@ def tool_foreign_top(sessions: int, top: int) -> dict:
     return foreign_rank(_foreign_frame(int(sessions * 1.6) + 15), sessions, top)
 
 
+# ---------- chứng quyền, ETF, hợp đồng tương lai (người dùng 27/11/2026: "cho Ếch đọc hết số liệu") ----------
+# Lấy đúng số các tab của web đang hiện, từ dịch vụ chứng quyền (`web_cw.fetch`, repo cw_scanner); không tính lại gì.
+
+CW_GROUPS = {"nen_xem_xet": "NÊN XEM XÉT", "theo_doi": "THEO DÕI", "bo_qua": "BỎ QUA"}
+CW_SORTS = {
+    "re": ("dat_re", False),
+    "don_bay": ("don_bay", True),
+    "kl": ("kl", True),
+    "hoa_von": ("hoa_von", False),
+}
+CW_FIELDS = (
+    "ma",
+    "cs",
+    "tcph",
+    "con_ngay",
+    "gd_cuoi",
+    "gia_cs",
+    "gia_th",
+    "ty_le",
+    "gia_mua",
+    "hop_ly",
+    "dat_re",
+    "hoa_von",
+    "don_bay",
+    "delta",
+    "hv",
+    "iv",
+    "iv_hv",
+    "kl",
+    "kl_chao_ban",
+    "nhom",
+    "ly_do",
+)
+CW_NOTE = (
+    "dat_re: % giá mua so với giá hợp lý Black-Scholes theo HV (âm là rẻ hơn); hoa_von: % cổ phiếu cơ sở phải tăng để"
+    " hòa vốn tới đáo hạn; hv, iv: %/năm; iv_hv: điểm %; con_ngay: ngày tới đáo hạn; giá đồng. Số lúc quét."
+)
+
+
+def _cw_fetch(path: str) -> Any:
+    from valuation.services import web_cw
+
+    try:
+        return web_cw.fetch(path)
+    except web_cw.CwServiceError as exc:
+        return {"error": f"Dịch vụ chứng quyền: {exc.detail}"}
+
+
+def _pick(row: dict, keys: tuple[str, ...]) -> dict:
+    return {k: row.get(k) for k in keys}
+
+
+def cw_table(
+    data: dict, underlying: str | None, group: str | None, sort: str | None, top: int
+) -> dict:
+    """Lọc, xếp danh sách chứng quyền của lần quét mới nhất. Không có cách xếp: giữ thứ tự của tab (theo nhóm)."""
+    if data.get("error") or not data.get("co"):
+        return {"error": data.get("error") or "Chưa có lần quét chứng quyền nào"}
+    rows = list(data["cw"])
+    if underlying:
+        rows = [r for r in rows if r.get("cs") == underlying]
+    if group:
+        rows = [r for r in rows if r.get("nhom") == CW_GROUPS[group]]
+    if sort:
+        key, desc = CW_SORTS[sort]
+        rows = [r for r in rows if r.get(key) is not None]
+        rows.sort(key=lambda r: float(r[key]), reverse=desc)
+    return {
+        "lan_quet": data.get("lan_quet"),
+        "quet_cu": data.get("cu"),
+        "tong_so_cw": data.get("tong"),
+        "so_theo_nhom": {g["ten"]: g["so"] for g in data.get("nhom", [])},
+        "tieu_chi_nhom": "Nên xem xét = đạt cả 4 tiêu chí (ngày còn lại, IV − HV, % hòa vốn, khối lượng); Theo dõi = trượt 1",
+        "nguong": data.get("nguong"),
+        "so_dong_khop_loc": len(rows),
+        "cw": [_pick(r, CW_FIELDS) for r in rows[:top]],
+        "ghi_chu": CW_NOTE,
+    }
+
+
+def tool_cw_list(
+    underlying: str | None, group: str | None, sort: str | None, top: int
+) -> dict:
+    return cw_table(_cw_fetch("/api/chung-quyen"), underlying, group, sort, top)
+
+
+def tool_cw_detail(code: str) -> dict:
+    d = _cw_fetch(f"/api/chung-quyen/{code}")
+    if d.get("error"):
+        return d
+    return {
+        "lan_quet": d.get("lan_quet"),
+        "cw": _pick(d["cw"], CW_FIELDS),
+        "tieu_chi": d.get("tieu_chi"),
+        "ngay_dao_han": d.get("ngay_dao_han"),
+        "lai_suat_phi_rui_ro_pct": d.get("r"),
+        "cung_co_phieu_co_so": [
+            _pick(
+                r,
+                (
+                    "ma",
+                    "tcph",
+                    "con_ngay",
+                    "gia_mua",
+                    "dat_re",
+                    "iv_hv",
+                    "hoa_von",
+                    "nhom",
+                ),
+            )
+            for r in d.get("cung_cs", [])[:12]
+        ],
+        "ghi_chu": CW_NOTE,
+    }
+
+
+ETF_FIELDS = (
+    "Mã",
+    "Chỉ số",
+    "Đạt",
+    "Giá chào bán",
+    "KL chào bán",
+    "iNAV",
+    "Chiết khấu mua được %",
+    "Lãi ròng nếu về NAV %",
+    "Mua được đạt ngưỡng (đ)",
+    "CL NAV trung vị 20P %",
+    "CL NAV trung vị 1N %",
+    "GTGD TB20 (tỷ)",
+    "Phí quản lý %",
+    "Cảnh báo",
+)
+
+
+def etf_table(data: dict, code: str | None, top: int) -> dict:
+    if data.get("error") or not data.get("co"):
+        return {"error": data.get("error") or "Chưa có kết quả ETF"}
+    rows = data["chiet_khau"]["dong"]  # đã xếp theo lãi ròng nếu về NAV, cao trước
+    if code:
+        rows = [r for r in rows if r.get("Mã") == code]
+        if not rows:
+            return {"error": f"Không có quỹ {code} trong bảng ETF"}
+    return {
+        "luc": data.get("luc"),
+        "so_quy": data.get("so_quy"),
+        "nguong": data.get("nguong"),
+        "so_quy_dat_nguong": sum(1 for r in data["chiet_khau"]["dong"] if r.get("Đạt")),
+        "quy": [_pick(r, ETF_FIELDS) for r in rows[:top]],
+        "chi_so": [
+            _pick(
+                r,
+                (
+                    "Mã",
+                    "Giá",
+                    "1T %",
+                    "3T %",
+                    "1N %",
+                    "Xu hướng",
+                    "RSI14",
+                    "Cách đỉnh 1N %",
+                ),
+            )
+            for r in data["chi_so"]["dong"]
+        ],
+        "ghi_chu": "Chiết khấu dương: mua được dưới iNAV. Đạt: lãi ròng nếu về NAV ≥ ngưỡng và mua được ≥ mức tối thiểu. CL = chênh lệch giá so với NAV.",
+    }
+
+
+def tool_etf(code: str | None, top: int) -> dict:
+    return etf_table(_cw_fetch("/api/etf"), code, top)
+
+
+def tool_futures() -> dict:
+    d = _cw_fetch("/api/phai-sinh")
+    if d.get("error"):
+        return d
+    keys = (
+        "ma",
+        "thang",
+        "gia",
+        "ngay_gia",
+        "kl",
+        "gd_cuoi",
+        "con_ngay",
+        "so_phien",
+        "basis",
+        "basis_pt",
+        "nam_hoa",
+        "ky_quy",
+    )
+    return {
+        "luc": d.get("luc"),
+        "he_so_nhan": d.get("he_so_nhan"),
+        "lai_suat_phi_rui_ro_pct": d.get("r"),
+        "chi_so": [
+            {
+                "chi_so": n["chi_so"],
+                "diem": n["diem"],
+                "ngay": n["ngay"],
+                "ty_le_ky_quy_pct": n["ty_le_ky_quy"],
+                "hop_dong": [_pick(h, keys) for h in n["hop_dong"]],
+            }
+            for n in d.get("nhom", [])
+        ],
+        "canh_bao": d.get("canh_bao"),
+        "ghi_chu": "basis = giá hợp đồng − điểm chỉ số (điểm); basis_pt, nam_hoa: %; ky_quy: đồng ký quỹ ban đầu mỗi hợp đồng.",
+    }
+
+
+def tool_alerts() -> dict:
+    """Cảnh báo bất thường đang mua được, cùng số với chuông Cảnh báo của web."""
+    from valuation.services import web_alerts, web_cw
+
+    try:
+        c = web_alerts._shared(False)
+    except web_cw.CwServiceError as exc:
+        return {"error": f"Dịch vụ chứng quyền: {exc.detail}"}
+    hd = (
+        "bi_danh",
+        "chi_so",
+        "gia",
+        "basis",
+        "hop_ly",
+        "lech",
+        "lai_khoa",
+        "tin_hieu",
+        "ly_do",
+    )
+    return {
+        "luc": c.get("luc"),
+        "ngoai_gio": c.get("ngoai_gio"),
+        "nguong": c.get("nguong"),
+        "cw_re_bat_thuong": (c.get("cw") or [])[:10],
+        "cw_giam_manh_hom_nay": (c.get("giam_manh") or [])[:10],
+        "etf_bat_thuong": (c.get("etf") or [])[:10],
+        "hop_dong_tuong_lai": [_pick(h, hd) for h in c.get("hd") or []],
+        "loi": c.get("loi") or [],
+    }
+
+
 WEB_TOOLS: dict = {
     **assistant.TOOLS,
     "market_today": (
@@ -489,6 +729,31 @@ WEB_TOOLS: dict = {
         tool_foreign_top,
         "Mã VN100 khối ngoại mua ròng, bán ròng nhiều nhất cộng dồn N phiên, và tổng ròng cả rổ.",
         '{"sessions": 5, "top": 5}',
+    ),
+    "cw_list": (
+        tool_cw_list,
+        "Chứng quyền của lần quét mới nhất: lọc theo mã cơ sở, nhóm (nen_xem_xet, theo_doi, bo_qua), xếp theo re (rẻ nhất so với giá hợp lý), don_bay, kl, hoa_von; số theo nhóm.",
+        '{"underlying": "VRE"|null, "group": "nen_xem_xet"|null, "sort": "re"|null, "top": 10}',
+    ),
+    "cw_detail": (
+        tool_cw_detail,
+        "Một chứng quyền: giá, giá hợp lý, đắt rẻ, IV, HV, đòn bẩy, hòa vốn, 4 tiêu chí, ngày đáo hạn, các chứng quyền cùng mã cơ sở.",
+        '{"code": "CVRE2609"}',
+    ),
+    "etf": (
+        tool_etf,
+        "Quỹ ETF: chiết khấu so với iNAV, lãi ròng nếu về NAV, quỹ đạt ngưỡng mua dưới NAV, biến động các chỉ số; code để xem 1 quỹ.",
+        '{"code": "FUEVFVND"|null, "top": 10}',
+    ),
+    "futures": (
+        tool_futures,
+        "Hợp đồng tương lai VN30, VN100: giá, basis, basis năm hóa, ngày đáo hạn, ký quỹ.",
+        "{}",
+    ),
+    "alerts": (
+        tool_alerts,
+        "Cảnh báo hôm nay: chứng quyền rẻ bất thường, chứng quyền giảm mạnh, ETF bất thường, hợp đồng tương lai lệch giá hợp lý.",
+        "{}",
     ),
     "peers": (
         tool_peers,

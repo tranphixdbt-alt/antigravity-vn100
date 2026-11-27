@@ -1554,3 +1554,11 @@ Routine `trig_01R7tohvvnWM5t1jiGx7odZo` đổi nguồn sang `vn100_knowledge` (c
   của hôm nay hoặc cũ hơn phiên mới nhất trong DB; số cũ, nguồn lỗi vẫn ở nút "Lưu ý". Câu dưới chỉ số: "**Khó khăn**: vĩ
   mô, xu hướng, khối ngoại xấu; định giá tốt" (`web_market.headline`; app Streamlit giữ câu cũ).
 
+### D126 — Hỏi Ếch đọc chứng quyền, ETF, hợp đồng tương lai, cảnh báo (2026-11-27, người dùng « cho Ếch đọc hết số liệu »)
+
+- Năm công cụ mới ở `web_chat_tools` (chỉ góc chat web): `cw_list` (lọc theo mã cơ sở, nhóm, xếp theo rẻ/đòn bẩy/khối
+  lượng/hòa vốn), `cw_detail` (một chứng quyền, 4 tiêu chí, các mã cùng cơ sở), `etf` (chiết khấu so với iNAV, quỹ đạt
+  ngưỡng, các chỉ số), `futures` (basis, năm hóa, ký quỹ), `alerts` (cùng số với chuông Cảnh báo).
+- Số lấy đúng từ dịch vụ chứng quyền như các tab đang hiện (`web_cw.fetch`), không tính lại. Mã chứng quyền, ETF kiểm bằng
+  biểu thức như route web; trần dòng `assistant.cw_max_rows` 20.
+

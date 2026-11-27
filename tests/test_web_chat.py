@@ -29,6 +29,7 @@ CFG = {
     "max_sessions": 250,
     "breadth_max_sessions": 60,
     "foreign_max_sessions": 60,
+    "cw_max_rows": 20,
 }
 
 
@@ -162,31 +163,53 @@ def _khoi_ngoai() -> pd.DataFrame:
         ("VCB", d[3], 10e9, 5e9, 5e9, 1e5),
         ("HPG", d[3], 1e9, 41e9, -40e9, -1e6),
     ]
-    return pd.DataFrame(rows, columns=["ma", "ngay", "mua", "ban", "rong", "rong_kl"]).astype(
-        {c: float for c in ("mua", "ban", "rong", "rong_kl")}
-    )
+    return pd.DataFrame(
+        rows, columns=["ma", "ngay", "mua", "ban", "rong", "rong_kl"]
+    ).astype({c: float for c in ("mua", "ban", "rong", "rong_kl")})
 
 
 def test_khoi_ngoai_mot_ma_tinh_tay():
-    out = t.foreign_ticker_table(_khoi_ngoai(), "FPT", 3)  # 3 phiên cuối của rổ: 20, 23, 25/11
+    out = t.foreign_ticker_table(
+        _khoi_ngoai(), "FPT", 3
+    )  # 3 phiên cuối của rổ: 20, 23, 25/11
     assert out["so_phien"] == 3 and out["phien_thieu"] == ["2026-11-20"]
     assert [x["ngay"] for x in out["phien"]] == ["2026-11-23", "2026-11-25"]
     # 225.151.047.950 đ = 225,15 tỷ; ròng 25.029.761.450 đ = 25,03 tỷ
-    assert out["phien"][0] == {"ngay": "2026-11-23", "mua_ty": 225.15, "ban_ty": 200.12, "rong_ty": 25.03, "rong_cp": 519010}
+    assert out["phien"][0] == {
+        "ngay": "2026-11-23",
+        "mua_ty": 225.15,
+        "ban_ty": 200.12,
+        "rong_ty": 25.03,
+        "rong_cp": 519010,
+    }
     # tổng ròng = 25,03 + 0 = 25,03 tỷ; 1 phiên mua ròng, phiên ròng 0 không tính mua hay bán
-    assert out["tong_rong_ty"] == 25.03 and (out["phien_mua_rong"], out["phien_ban_rong"]) == (1, 0)
-    assert t.foreign_ticker_table(_khoi_ngoai(), "MBB", 3)["tong_rong_ty"] is None  # không có số: không bịa 0
+    assert out["tong_rong_ty"] == 25.03 and (
+        out["phien_mua_rong"],
+        out["phien_ban_rong"],
+    ) == (1, 0)
+    assert (
+        t.foreign_ticker_table(_khoi_ngoai(), "MBB", 3)["tong_rong_ty"] is None
+    )  # không có số: không bịa 0
 
 
 def test_khoi_ngoai_xep_hang_tinh_tay():
     out = t.foreign_rank(_khoi_ngoai(), 2, 5)  # 23/11 và 25/11
-    assert (out["tu_ngay"], out["den_ngay"], out["so_phien"]) == ("2026-11-23", "2026-11-25", 2)
+    assert (out["tu_ngay"], out["den_ngay"], out["so_phien"]) == (
+        "2026-11-23",
+        "2026-11-25",
+        2,
+    )
     # VCB 30 + 5 = 35 tỷ; FPT 25,03 + 0; HPG −40; cả rổ 35 + 25,03 − 40 = 20,03
-    assert out["mua_rong_nhieu_nhat"] == [{"ma": "VCB", "rong_ty": 35.0}, {"ma": "FPT", "rong_ty": 25.03}]
+    assert out["mua_rong_nhieu_nhat"] == [
+        {"ma": "VCB", "rong_ty": 35.0},
+        {"ma": "FPT", "rong_ty": 25.03},
+    ]
     assert out["ban_rong_nhieu_nhat"] == [{"ma": "HPG", "rong_ty": -40.0}]
     assert out["ro_rong_ty"] == 20.03 and out["phien_thieu_khoi_ngoai"] == []
     # 3 phiên: 20/11 chỉ FPT có dòng và dòng đó thiếu số (0% < 50%) → ghi phiên thiếu
-    assert t.foreign_rank(_khoi_ngoai(), 3, 5)["phien_thieu_khoi_ngoai"] == ["2026-11-20"]
+    assert t.foreign_rank(_khoi_ngoai(), 3, 5)["phien_thieu_khoi_ngoai"] == [
+        "2026-11-20"
+    ]
 
 
 def test_kiem_tham_so_cong_cu_khoi_ngoai():
@@ -202,6 +225,118 @@ def test_kiem_tham_so_cong_cu_khoi_ngoai():
         ("foreign_flow", {"ticker": "FPT", "sessions": 60}),
         ("foreign_top", {"sessions": 5, "top": 30}),
     ]
+
+
+def _cw(ma, cs, nhom, dat_re, don_bay):
+    return {
+        "ma": ma,
+        "cs": cs,
+        "nhom": nhom,
+        "dat_re": dat_re,
+        "don_bay": don_bay,
+        "kl": 1000,
+        "tcph": "X",
+        "con_ngay": 81,
+    }
+
+
+CW_DATA = {
+    "co": True,
+    "lan_quet": "14:02 27/11/2026",
+    "cu": None,
+    "tong": 4,
+    "nhom": [
+        {"ma": "NÊN XEM XÉT", "ten": "Nên xem xét", "so": 2},
+        {"ma": "BỎ QUA", "ten": "Bỏ qua", "so": 2},
+    ],
+    "cw": [
+        # dòng đầu là số thật CVRE2609 lúc quét 27/11/2026: giá mua 800, giá hợp lý 1.068 → rẻ 25,1%
+        _cw("CVRE2609", "VRE", "NÊN XEM XÉT", -25.1, 8.1),
+        _cw("CVRE2610", "VRE", "BỎ QUA", 12.0, 5.0),
+        _cw("CFPT2601", "FPT", "NÊN XEM XÉT", -3.0, 9.5),
+        _cw("CHPG2602", "HPG", "BỎ QUA", None, 4.0),
+    ],
+}
+
+
+def test_chung_quyen_loc_va_xep():
+    out = t.cw_table(CW_DATA, "VRE", None, None, 10)
+    assert [r["ma"] for r in out["cw"]] == ["CVRE2609", "CVRE2610"] and out[
+        "so_dong_khop_loc"
+    ] == 2
+    assert (
+        out["so_theo_nhom"] == {"Nên xem xét": 2, "Bỏ qua": 2}
+        and out["lan_quet"] == "14:02 27/11/2026"
+    )
+    # rẻ nhất trước; mã thiếu số đắt/rẻ bị bỏ khỏi phép xếp
+    assert [r["ma"] for r in t.cw_table(CW_DATA, None, None, "re", 10)["cw"]] == [
+        "CVRE2609",
+        "CFPT2601",
+        "CVRE2610",
+    ]
+    assert [
+        r["ma"] for r in t.cw_table(CW_DATA, None, "nen_xem_xet", "don_bay", 1)["cw"]
+    ] == ["CFPT2601"]
+    assert t.cw_table({"co": False}, None, None, None, 5) == {
+        "error": "Chưa có lần quét chứng quyền nào"
+    }
+    assert t.cw_table(
+        {"error": "Dịch vụ chứng quyền: không kết nối được"}, None, None, None, 5
+    )["error"].startswith("Dịch vụ")
+
+
+def test_etf_mot_quy_va_dem_dat():
+    data = {
+        "co": True,
+        "luc": "lúc 15:10 26/11/2026",
+        "so_quy": 2,
+        "nguong": {"lai_rong": 0.5},
+        "chiet_khau": {
+            "dong": [
+                {"Mã": "FUEVFVND", "Đạt": True, "Chiết khấu mua được %": 1.2},
+                {"Mã": "FUEPHVNS", "Đạt": False, "Chiết khấu mua được %": 0.49},
+            ]
+        },
+        "chi_so": {"dong": [{"Mã": "VNINDEX", "Giá": 1629.68, "1T %": -7.59}]},
+    }
+    out = t.etf_table(data, None, 10)
+    assert out["so_quy_dat_nguong"] == 1 and [r["Mã"] for r in out["quy"]] == [
+        "FUEVFVND",
+        "FUEPHVNS",
+    ]
+    assert out["chi_so"][0]["Giá"] == 1629.68
+    assert [r["Mã"] for r in t.etf_table(data, "FUEPHVNS", 10)["quy"]] == ["FUEPHVNS"]
+    assert "error" in t.etf_table(data, "ZZZZ", 10)
+
+
+def test_kiem_tham_so_cong_cu_chung_quyen_etf():
+    plan = {
+        "calls": [
+            {
+                "tool": "cw_list",
+                "args": {"underlying": "vre", "group": "xau", "sort": "re", "top": 999},
+            },
+            {"tool": "cw_detail", "args": {"code": "cvre2609; drop"}},
+            {"tool": "etf", "args": {"code": "fuevfvnd"}},
+        ]
+    }
+    calls, notes = a.validate(plan, U, CFG, t.WEB_TOOLS)
+    assert calls == [
+        ("cw_list", {"underlying": "VRE", "group": None, "sort": "re", "top": 20}),
+        ("etf", {"code": "FUEVFVND", "top": 10}),
+    ] and any("chứng quyền không hợp lệ" in n for n in notes)
+    calls, _ = a.validate(
+        {
+            "calls": [
+                {"tool": "cw_detail", "args": {"code": "CVRE2609"}},
+                {"tool": "futures"},
+            ]
+        },
+        U,
+        CFG,
+        t.WEB_TOOLS,
+    )
+    assert calls == [("cw_detail", {"code": "CVRE2609"}), ("futures", {})]
 
 
 def test_bo_cong_cu_web_khong_doi_bot_discord():
@@ -240,6 +375,11 @@ def test_bo_cong_cu_web_khong_doi_bot_discord():
         "technical",
         "foreign_flow",
         "foreign_top",
+        "cw_list",
+        "cw_detail",
+        "etf",
+        "futures",
+        "alerts",
         "peers",
     }
 
@@ -291,7 +431,7 @@ def test_trang_thai_va_tra_loi_tru_mot_luot(env, ai):
     assert (
         s["con_lai"] == 20
         and s["gioi_han"] == 20
-        and len(s["goi_y"]) == 7
+        and len(s["goi_y"]) == 8
         and s["toi_da_ky_tu"] == 300
     )
     r = hoi(an)
@@ -412,5 +552,9 @@ def test_cong_cu_tren_db_that():
     )
     assert p["ma"] == "VRE" and p["so_ma_cung_nganh"] >= 1
     assert h["nhan_thi_truong"] and len(h["bon_tru_cot"]) == 4
-    assert f["ma"] == "VRE" and f["so_phien"] == 10 and len(f["phien"]) + len(f["phien_thieu"]) == 10
+    assert (
+        f["ma"] == "VRE"
+        and f["so_phien"] == 10
+        and len(f["phien"]) + len(f["phien_thieu"]) == 10
+    )
     assert r["so_phien"] == 5 and len(r["mua_rong_nhieu_nhat"]) <= 3
